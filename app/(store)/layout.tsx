@@ -22,13 +22,13 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
             <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap' }}>
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Visit</p>
-                {[['Rent a room', '/facilities'], ['Memberships', '/memberships'], ['Shop', '/shop'], ['Sign a waiver', '/waiver']].map(([label, href]) => (
+                {[['Rent a room', '/facilities'], ['Event packages', '/packages'], ['Fitness memberships', '/memberships'], ['Shop', '/shop']].map(([label, href]) => (
                   <Link key={href} href={href} style={{ display: 'block', fontSize: 12.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none', marginBottom: 5 }}>{label}</Link>
                 ))}
               </div>
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Members</p>
-                {[['My account', '/account'], ['Membership card', '/account/card'], ['My bookings', '/account/bookings'], ['Billing', '/account/billing']].map(([label, href]) => (
+                {[['My account', '/account'], ['Member card', '/account/card'], ['My bookings', '/account/bookings'], ['Billing', '/account/billing']].map(([label, href]) => (
                   <Link key={href} href={href} style={{ display: 'block', fontSize: 12.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none', marginBottom: 5 }}>{label}</Link>
                 ))}
               </div>

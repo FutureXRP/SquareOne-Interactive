@@ -3,11 +3,11 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { PLANS } from '@/lib/store-data'
 
-export const metadata = { title: 'Memberships — SquareOne Interactive' }
+export const metadata = { title: 'Fitness Memberships — SquareOne Interactive' }
 
 const faqs = [
   ['How do I get in the door?', 'Your profile includes a member code — scan it at any entrance during open hours. Family plans give every household member their own code.'],
-  ['Can I cancel anytime?', 'Yes. Cancel from your account and your membership stays active through the end of the paid period. No cancellation fees.'],
+  ['Can I cancel anytime?', 'Yes. Cancel from your account and your fitness membership stays active through the end of the paid period. No cancellation fees.'],
   ['Do members get discounts?', 'Members get member pricing on room rentals, birthday parties, and programs like Speed & Agility.'],
   ['Is there a joining fee?', 'No joining fee. Your first payment is your first month.'],
 ]
@@ -16,7 +16,7 @@ export default function MembershipsPage() {
   return (
     <div className="sq-page" style={{ padding: '34px 20px 10px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ textAlign: 'center', maxWidth: 560, margin: '0 auto 32px' }}>
-        <h1 style={{ fontSize: 30, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.03em' }}>Simple memberships, no surprises</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.03em' }}>Simple fitness memberships, no surprises</h1>
         <p style={{ fontSize: 14, color: SUB, margin: 0, lineHeight: 1.6 }}>
           Month to month, cancel anytime, and every dollar supports SquareOne
           Compassion&apos;s work in Tulsa.

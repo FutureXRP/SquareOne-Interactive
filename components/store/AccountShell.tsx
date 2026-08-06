@@ -7,7 +7,7 @@ import { getProfile, signOut, type DemoProfile } from '@/lib/demo-session'
 
 const tabs = [
   { href: '/account', label: 'Overview' },
-  { href: '/account/card', label: 'Membership card' },
+  { href: '/account/card', label: 'Member card' },
   { href: '/account/bookings', label: 'My bookings' },
   { href: '/account/billing', label: 'Billing' },
   { href: '/account/settings', label: 'Settings' },

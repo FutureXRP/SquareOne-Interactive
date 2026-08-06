@@ -6,9 +6,9 @@ import { getCart, getProfile } from '@/lib/demo-session'
 
 const links = [
   { href: '/facilities', label: 'Rent a room' },
-  { href: '/memberships', label: 'Memberships' },
+  { href: '/packages', label: 'Event Packages' },
+  { href: '/memberships', label: 'Fitness Memberships' },
   { href: '/shop', label: 'Shop' },
-  { href: '/waiver', label: 'Waiver' },
 ]
 
 function SquareMark({ size = 30 }: { size?: number }) {

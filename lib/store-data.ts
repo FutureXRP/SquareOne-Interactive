@@ -14,7 +14,7 @@ export interface FacilityListing {
 
 const FACILITY_META: Record<string, Omit<FacilityListing, 'zone'>> = {
   gym: {
-    blurb: 'Full-court gymnasium for basketball, volleyball, leagues, and large group events.',
+    blurb: 'Full-court gymnasium for basketball, volleyball, and leagues — plus parties, banquets, receptions, and meetings.',
     capacity: 'Up to 120',
     pricing: [
       { label: 'Per hour', cents: 6000 },
@@ -24,7 +24,7 @@ const FACILITY_META: Record<string, Omit<FacilityListing, 'zone'>> = {
     minHours: 1,
   },
   gaming: {
-    blurb: 'Console and PC gaming floor — tournaments, parties, and open play.',
+    blurb: 'Console and VR gaming floor — tournaments, parties, and open play.',
     capacity: 'Up to 30',
     pricing: [
       { label: '2-hour block', cents: 8000 },
@@ -34,7 +34,7 @@ const FACILITY_META: Record<string, Omit<FacilityListing, 'zone'>> = {
     minHours: 2,
   },
   dining: {
-    blurb: 'Dining hall with kitchen access for banquets, receptions, and meetings.',
+    blurb: 'Dining hall for parties, banquets, receptions, and meetings.',
     capacity: 'Up to 150',
     pricing: [
       { label: 'Per hour', cents: 7500 },
