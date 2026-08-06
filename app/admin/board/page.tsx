@@ -1,6 +1,6 @@
-import Link from 'next/link'
 import { Board } from '@/components/board/Board'
-import { card, INK, FAINT, LINE, BLUE } from '@/lib/theme'
+import { PageHero, HeroStat } from '@/components/admin/PageHero'
+import { card, FAINT, LINE } from '@/lib/theme'
 import { bookings, kpis } from '@/lib/demo-data'
 
 export default function BoardPage() {
@@ -9,15 +9,9 @@ export default function BoardPage() {
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 48px', maxWidth: 1180, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, marginBottom: 22, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>The Board</h1>
-          <p style={{ fontSize: 13, color: FAINT, margin: 0 }}>
-            {today}&nbsp;&nbsp;·&nbsp;&nbsp;{kpis.bookingsToday} bookings&nbsp;&nbsp;·&nbsp;&nbsp;{holds} unpaid holds
-          </p>
-        </div>
-        <Link href="/admin" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>← Back to Today</Link>
-      </div>
+      <PageHero title="The Board" sub={`${today} · one lane per zone, 6 AM–11 PM`} chip={`${holds} unpaid holds`}>
+        <HeroStat label="Bookings today" value={String(kpis.bookingsToday)} sub="striped blocks are unpaid holds" />
+      </PageHero>
 
       <div className="sq-card" style={{ ...card, padding: '4px 14px 14px' }}>
         <Board />

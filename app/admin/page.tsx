@@ -198,23 +198,6 @@ export default function TodayPage() {
         </div>
       </div>
 
-      {/* Ecosystem strip + footer */}
-      <div style={{ background: NAVY, borderRadius: 14, padding: '16px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px 18px', flexWrap: 'wrap' }}>
-          {['Early Learning Center', 'Interactive', 'Medical Center', 'Event Rooms', 'Donate'].map((s, i) => (
-            <span key={s} style={{ fontSize: 11.5, fontWeight: s === 'Interactive' ? 700 : 500, color: s === 'Interactive' ? '#fff' : 'rgba(255,255,255,0.62)', display: 'inline-flex', alignItems: 'center', gap: 18 }}>
-              {i > 0 && <span style={{ width: 4, height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 1, transform: 'rotate(45deg)' }} />}
-              {s}
-            </span>
-          ))}
-        </div>
-        <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)' }}>part of SquareOne Compassion</span>
-      </div>
-
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 18, lineHeight: 1.5 }}>
-        Placeholder data — figures on this screen are demo values until real bookings, payments, and door
-        events flow from the live system.
-      </p>
     </div>
   )
 }

@@ -1,0 +1,67 @@
+import { PageHero } from '@/components/admin/PageHero'
+import { card, INK, SUB, FAINT, LINE, ZONES } from '@/lib/theme'
+import { formatCents } from '@/lib/format'
+import { FACILITIES } from '@/lib/store-data'
+import { staff } from '@/lib/admin-data'
+import { HOURS, ADDRESS } from '@/lib/store-data'
+
+export default function SettingsPage() {
+  return (
+    <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
+      <PageHero title="Settings" sub="Facilities, price schedules, staff roles, and house rules — the knobs behind everything else." chip={`${ZONES.length} zones`} />
+
+      <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
+        {/* Facilities & pricing */}
+        <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Facilities &amp; price schedules</span>
+          </div>
+          {FACILITIES.map((f, i) => (
+            <div key={f.zone.id} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: i < FACILITIES.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: f.zone.color, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{f.zone.name}</p>
+                <p style={{ fontSize: 11.5, color: SUB, margin: 0 }}>{f.capacity}</p>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {f.pricing.map((p) => (
+                  <span key={p.label} style={{ fontSize: 10.5, fontWeight: 600, color: SUB, background: '#eef2f8', padding: '2px 9px', borderRadius: 999, fontVariantNumeric: 'tabular-nums' }}>
+                    {p.label} {formatCents(p.cents)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Staff */}
+          <div className="sq-card" style={card}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Staff &amp; roles</span>
+            </div>
+            {staff.map((s, i) => (
+              <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 20px', borderBottom: i < staff.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#eef4fb', color: '#2f6db8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{s.name.charAt(0)}</div>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: INK, margin: 0 }}>{s.name} · <span style={{ fontWeight: 500, color: SUB }}>{s.role}</span></p>
+                  <p style={{ fontSize: 11.5, color: FAINT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.access}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Hours & location */}
+          <div className="sq-card" style={{ ...card, padding: '16px 20px' }}>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 8px' }}>Hours &amp; location</p>
+            {HOURS.map((h) => (
+              <p key={h.days} style={{ fontSize: 12.5, color: SUB, margin: '0 0 3px' }}>{h.days}: {h.open} – {h.close}</p>
+            ))}
+            <p style={{ fontSize: 12, color: FAINT, margin: '8px 0 0' }}>{ADDRESS}</p>
+          </div>
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Editing arrives with Phase 1 admin tools — these read from the same catalog the store uses.</p>
+    </div>
+  )
+}
