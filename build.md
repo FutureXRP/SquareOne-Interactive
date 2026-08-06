@@ -108,8 +108,11 @@ Domain rules:
 specified; implement ONLY the active one. Never mix styles unless told.**
 
 ```
-ACTIVE_STYLE: <to be set — one of: arcade-night | broadcast | clubhouse |
-              flight-ops | squareone-brand>
+ACTIVE_STYLE: squareone-brand
+  (palette + square motifs from Style 5 below; layout language — sidebar,
+  cards, section labels, KPI strip, hero gradient stat — adapted from the
+  CodeCompanion reference dashboard at github.com/FutureXRP/CodeCompanion,
+  per owner request. Type follows the reference: Inter + DM Mono.)
 ```
 
 Shared rules regardless of style:
