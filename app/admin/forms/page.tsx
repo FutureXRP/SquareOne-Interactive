@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState } from 'react'
+import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 
 type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph'
@@ -96,13 +97,9 @@ export default function FormsPage() {
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 48px', maxWidth: 1180, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>Forms &amp; Waivers</h1>
-          <p style={{ fontSize: 13, color: FAINT, margin: 0 }}>Build the forms guests sign — waivers, agreements, releases — and link them to bookings and programs.</p>
-        </div>
-        <button className="sq-btn sq-btn-primary" onClick={newForm}>+ New form</button>
-      </div>
+      <PageHero title="Forms & Waivers" sub="Build the forms guests sign — waivers, agreements, releases — and link them to bookings and programs." chip={`${forms.filter((f) => f.status === 'active').length} active`}>
+        <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={newForm}>+ New form</button>
+      </PageHero>
 
       <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(300px, 1.4fr)', gap: 16 }}>
         {/* Form list */}
