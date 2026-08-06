@@ -5,10 +5,14 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { productById } from '@/lib/store-data'
 import { clearCart, getCart, setCartQty, type CartItem } from '@/lib/demo-session'
+import { findCoupon, couponDiscountCents, type Coupon } from '@/lib/coupons-store'
 
 export default function CartPage() {
   const [items, setItems] = useState<CartItem[]>([])
   const [placed, setPlaced] = useState(false)
+  const [code, setCode] = useState('')
+  const [coupon, setCoupon] = useState<Coupon | null>(null)
+  const [couponError, setCouponError] = useState(false)
 
   useEffect(() => {
     const sync = () => setItems(getCart())
@@ -19,6 +23,14 @@ export default function CartPage() {
 
   const rows = items.map((c) => ({ ...c, product: productById[c.productId] })).filter((r) => r.product)
   const subtotalCents = rows.reduce((n, r) => n + r.product.priceCents * r.qty, 0)
+  const discountCents = coupon ? couponDiscountCents(coupon, subtotalCents) : 0
+  const totalCents = subtotalCents - discountCents
+
+  const applyCoupon = () => {
+    const found = findCoupon(code)
+    setCoupon(found)
+    setCouponError(!found && code.trim() !== '')
+  }
 
   const placeOrder = () => {
     clearCart()
@@ -75,10 +87,27 @@ export default function CartPage() {
               <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 64, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(r.product.priceCents * r.qty)}</span>
             </div>
           ))}
+          {/* Coupon */}
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input className="sq-input" style={{ width: 160 }} placeholder="Coupon code" value={code}
+                onChange={(e) => { setCode(e.target.value); setCouponError(false) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') applyCoupon() }} />
+              <button className="sq-btn sq-btn-ghost" style={{ padding: '8px 14px' }} onClick={applyCoupon}>Apply</button>
+              {coupon && <span style={{ fontSize: 12, fontWeight: 700, color: GREEN }}>{coupon.code} applied — {coupon.note}</span>}
+              {couponError && <span style={{ fontSize: 12, fontWeight: 600, color: '#cf4436' }}>That code isn&apos;t valid.</span>}
+            </div>
+          </div>
+
           <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
             <div>
-              <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>Subtotal · pay at pickup</p>
-              <p style={{ fontSize: 20, fontWeight: 800, color: INK, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatCents(subtotalCents)}</p>
+              {coupon && discountCents > 0 && (
+                <p style={{ fontSize: 12, color: GREEN, margin: '0 0 2px', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatCents(subtotalCents)} − {formatCents(discountCents)} coupon
+                </p>
+              )}
+              <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>Total · pay at pickup</p>
+              <p style={{ fontSize: 20, fontWeight: 800, color: INK, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatCents(totalCents)}</p>
             </div>
             <button className="sq-btn sq-btn-primary" onClick={placeOrder}>Place pickup order</button>
           </div>

@@ -3,13 +3,13 @@ import Link from 'next/link'
 import { AccountShell } from '@/components/store/AccountShell'
 import { Barcode } from '@/components/store/Barcode'
 import { card, INK, SUB, FAINT, BLUE, HERO_GRADIENT } from '@/lib/theme'
-import { planById } from '@/lib/store-data'
+import { getPlan } from '@/lib/plans-store'
 
 export default function MembershipCardPage() {
   return (
     <AccountShell>
       {(profile) => {
-        const plan = profile.planId ? planById[profile.planId] : null
+        const plan = profile.planId ? getPlan(profile.planId) : null
         return (
           <div style={{ maxWidth: 460, margin: '0 auto' }}>
             {/* The card */}

@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { card, HERO_GRADIENT, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { PLANS, PRODUCTS, HOURS } from '@/lib/store-data'
+import { PRODUCTS } from '@/lib/store-data'
 import { FacilityGrid } from '@/components/store/FacilityGrid'
+import { PlanCards } from '@/components/store/PlanCards'
 
 function SectionLabel({ children, meta }: { children: string; meta?: React.ReactNode }) {
   return (
@@ -56,19 +57,7 @@ export default function StoreHome() {
       {/* Memberships */}
       <div style={{ marginBottom: 40 }}>
         <SectionLabel meta={<Link href="/memberships" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Compare plans →</Link>}>Fitness memberships</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 14 }}>
-          {PLANS.map((p) => (
-            <div key={p.id} className="sq-card" style={{ ...card, padding: '22px 24px', position: 'relative', border: p.featured ? `2px solid ${BLUE}` : undefined }}>
-              {p.featured && <span style={{ position: 'absolute', top: -11, left: 22, fontSize: 10.5, fontWeight: 700, color: '#fff', background: BLUE, padding: '2px 10px', borderRadius: 999 }}>Most popular</span>}
-              <p style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 2px' }}>{p.name}</p>
-              <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 12px' }}>{p.tagline}</p>
-              <p style={{ fontSize: 30, fontWeight: 800, color: INK, margin: '0 0 14px', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-                {formatCents(p.priceCents)}<span style={{ fontSize: 13, fontWeight: 500, color: FAINT }}>/{p.period}</span>
-              </p>
-              <Link href={`/signup?plan=${p.id}`} className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%' }}>Choose {p.name}</Link>
-            </div>
-          ))}
-        </div>
+        <PlanCards showFeatures={false} />
       </div>
 
       {/* Facilities */}
@@ -99,9 +88,9 @@ export default function StoreHome() {
         </div>
       </div>
 
-      {/* Hours note */}
+      {/* Hours live in the footer, which reads the admin-editable site config */}
       <p style={{ fontSize: 12, color: FAINT, margin: '26px 0 0' }}>
-        Open {HOURS[0].days} {HOURS[0].open}–{HOURS[0].close} · {HOURS[1].days} {HOURS[1].open}–{HOURS[1].close} · Members enter with their member code.
+        Members enter any time we&apos;re open with their member code — hours are below.
       </p>
     </div>
   )

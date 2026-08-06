@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, RED, GREEN } from '@/lib/theme'
-import { planById } from '@/lib/store-data'
+import { getPlan } from '@/lib/plans-store'
 import { cancelMembership, resumeMembership, updateProfile } from '@/lib/demo-session'
 
 export default function SettingsPage() {
@@ -14,7 +14,7 @@ export default function SettingsPage() {
   return (
     <AccountShell>
       {(profile) => {
-        const plan = profile.planId ? planById[profile.planId] : null
+        const plan = profile.planId ? getPlan(profile.planId) : null
         const displayName = name ?? profile.name
 
         const saveName = () => {

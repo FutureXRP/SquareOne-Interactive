@@ -5,7 +5,7 @@ import { Suspense, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { planById } from '@/lib/store-data'
+import { getPlan } from '@/lib/plans-store'
 import { setCard } from '@/lib/demo-session'
 
 function BillingContent() {
@@ -31,7 +31,7 @@ function BillingContent() {
   return (
     <AccountShell>
       {(profile) => {
-        const plan = profile.planId ? planById[profile.planId] : null
+        const plan = profile.planId ? getPlan(profile.planId) : null
         return (
           <div style={{ maxWidth: 640 }}>
             {welcome && plan && (

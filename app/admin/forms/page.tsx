@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
+import { createLocalStore } from '@/lib/local-store'
 
 type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph'
 
@@ -84,24 +85,35 @@ const seedForms: FormDef[] = [
   },
 ]
 
+const formsStore = createLocalStore<FormDef[]>('sq-forms-v1', () => seedForms)
+
 export default function FormsPage() {
-  const [forms, setForms] = useState<FormDef[]>(seedForms)
+  const [forms, setForms] = useState<FormDef[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setForms(formsStore.get())
+  }, [])
 
   const editing = forms.find((f) => f.id === editingId) ?? null
 
+  const persist = (next: FormDef[]) => {
+    setForms(next)
+    formsStore.save(next)
+  }
+
   const newForm = () => {
-    const id = `form-${forms.length + 1}`
-    setForms([...forms, { id, name: 'Untitled form', status: 'draft', submissions: 0, linkedTo: 'Not linked yet', fields: [{ label: 'Full name', type: 'text', required: true }] }])
+    const id = `form-${Date.now().toString(36)}`
+    persist([...forms, { id, name: 'Untitled form', status: 'draft', submissions: 0, linkedTo: 'Not linked yet', fields: [{ label: 'Full name', type: 'text', required: true }] }])
     setEditingId(id)
   }
 
   const patchForm = (id: string, patch: Partial<FormDef>) => {
-    setForms((cur) => cur.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+    persist(forms.map((f) => (f.id === id ? { ...f, ...patch } : f)))
   }
 
   const patchField = (id: string, idx: number, patch: Partial<FormField>) => {
-    setForms((cur) => cur.map((f) => f.id === id
+    persist(forms.map((f) => f.id === id
       ? { ...f, fields: f.fields.map((fl, i) => (i === idx ? { ...fl, ...patch } : fl)) }
       : f))
   }
@@ -166,7 +178,7 @@ export default function FormsPage() {
               <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.6 }}>
                 Guests sign these inside the store flows — the <strong>fitness waiver</strong> during membership
                 signup, the <strong>rental waiver</strong> when booking a room. Signed PDFs to secure storage and
-                booking-linked requirements arrive with the forms engine (Phase 3). Edits here are a demo and reset on reload.
+                booking-linked requirements arrive with the forms engine (Phase 3). Edits save on this device.
               </p>
             </div>
           </div>

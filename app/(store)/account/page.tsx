@@ -5,7 +5,7 @@ import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
 import { roomLabel } from '@/lib/facilities-store'
 import { formatCents, formatHour } from '@/lib/format'
-import { planById } from '@/lib/store-data'
+import { getPlan } from '@/lib/plans-store'
 import { getBookings, getWaivers, type DemoBooking, type DemoWaiver } from '@/lib/demo-session'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
@@ -25,7 +25,7 @@ export default function AccountOverview() {
   return (
     <AccountShell>
       {(profile) => {
-        const plan = profile.planId ? planById[profile.planId] : null
+        const plan = profile.planId ? getPlan(profile.planId) : null
         return (
           <div>
             {/* Membership status */}
