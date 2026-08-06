@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2c42;
+  background:
+    radial-gradient(1100px 560px at 82% -12%, #e3edf9 0%, transparent 55%),
+    radial-gradient(820px 460px at -8% 8%, #eef4fb 0%, transparent 48%),
+    #f8fafd;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c9d6ea; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a8bcd9; }
+
+table { border-collapse: collapse; width: 100%; }
+
+/* Shared card/row hover treatment (CodeCompanion reference language). */
+.sq-card { transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+.sq-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(24,39,64,.10); border-color: #c9d6ea; }
+.sq-row { transition: background .12s ease; }
+.sq-row:hover { background: #f3f7fc; }
+
+/* Grid items must be allowed to shrink below content min-width, or a
+   collapsed 1fr track sizes to min-content and overflows the viewport. */
+.sq-grid-2 > * { min-width: 0; }
+
+/* 380px rule (build.md): sidebar collapses to a horizontal nav bar and
+   multi-column grids stack. Inline styles set the desktop values, so the
+   narrow-width overrides need !important. */
+@media (max-width: 900px) {
+  .sq-shell { flex-direction: column; }
+  .sq-sidebar { width: 100% !important; min-height: 0 !important; border-right: none !important; border-bottom: 1px solid #dbe4f0; }
+  .sq-sidebar-head { border-bottom: none !important; padding: 12px 16px 6px !important; }
+  .sq-nav { display: flex; overflow-x: auto; padding: 6px 10px 10px !important; gap: 2px; }
+  .sq-nav a { flex-shrink: 0; margin-bottom: 0 !important; white-space: nowrap; }
+  .sq-sidebar-foot { display: none !important; }
+  .sq-page { padding: 22px 16px 40px !important; }
+  .sq-grid-2 { grid-template-columns: 1fr !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .sq-card:hover { transform: none; }
+}
