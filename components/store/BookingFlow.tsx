@@ -3,8 +3,8 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { HOURS } from '@/lib/store-data'
 import { getRoom, type RoomConfig } from '@/lib/facilities-store'
+import { getSiteConfig, type SiteConfig } from '@/lib/site-config-store'
 import { addBooking, getProfile, hasWaiver, hashString, mulberry32, type DemoBooking } from '@/lib/demo-session'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { RENTAL_WAIVER } from '@/lib/waiver-defs'
@@ -18,6 +18,7 @@ interface DayOption {
 
 export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [f, setF] = useState<RoomConfig | null>(null)
+  const [cfg, setCfg] = useState<SiteConfig | null>(null)
   const [days, setDays] = useState<DayOption[]>([])
   const [dayIdx, setDayIdx] = useState(0)
   const [hours, setHours] = useState(1)
@@ -42,6 +43,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     }
     setDays(out)
     setSignedIn(!!getProfile())
+    setCfg(getSiteConfig())
     const room = getRoom(facilityId)
     setF(room)
     if (room) setHours((h) => Math.max(h, room.minHours))
@@ -51,7 +53,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   }, [facilityId])
 
   const day = days[dayIdx]
-  const dayHours = day?.isSunday ? HOURS[1] : HOURS[0]
+  const dayHours = !cfg
+    ? { openH: 6, closeH: 22 }
+    : day?.isSunday
+      ? { openH: cfg.sundayOpenH, closeH: cfg.sundayCloseH }
+      : { openH: cfg.weekdayOpenH, closeH: cfg.weekdayCloseH }
 
   // Deterministic availability per zone+date (seeded RNG, house rules).
   const slots = useMemo(() => {

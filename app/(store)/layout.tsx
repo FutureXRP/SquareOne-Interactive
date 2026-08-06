@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { StoreHeader } from '@/components/store/StoreHeader'
+import { FooterInfo } from '@/components/store/FooterInfo'
 import { NAVY, FAINT } from '@/lib/theme'
-import { ADDRESS, HOURS } from '@/lib/store-data'
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,10 +14,7 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
           <div style={{ display: 'flex', gap: '20px 40px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 22 }}>
             <div style={{ maxWidth: 320 }}>
               <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 6px' }}>SquareOne Interactive</p>
-              <p style={{ fontSize: 12, margin: 0, lineHeight: 1.6 }}>{ADDRESS}</p>
-              {HOURS.map((h) => (
-                <p key={h.days} style={{ fontSize: 12, margin: '2px 0 0', lineHeight: 1.6 }}>{h.days}: {h.open} – {h.close}</p>
-              ))}
+              <FooterInfo />
             </div>
             <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap' }}>
               <div>

@@ -14,7 +14,7 @@ export interface DemoProfile {
   name: string
   email: string
   memberId: string
-  planId: 'individual' | 'family' | null
+  planId: string | null
   status: 'active' | 'canceling' | 'none'
   since: string
   renewsOn: string
@@ -142,7 +142,7 @@ export function updateProfile(patch: Partial<DemoProfile>) {
   write({ ...s, profile: { ...s.profile, ...patch } })
 }
 
-export function choosePlan(planId: 'individual' | 'family') {
+export function choosePlan(planId: string) {
   updateProfile({ planId, status: 'active' })
 }
 

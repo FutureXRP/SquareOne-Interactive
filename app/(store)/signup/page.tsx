@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { planById } from '@/lib/store-data'
+import { getPlan } from '@/lib/plans-store'
 import { choosePlan, signUp } from '@/lib/demo-session'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { FITNESS_WAIVER } from '@/lib/waiver-defs'
@@ -13,7 +13,7 @@ function SignupForm() {
   const router = useRouter()
   const params = useSearchParams()
   const planParam = params.get('plan')
-  const plan = planParam ? planById[planParam] : null
+  const plan = planParam ? getPlan(planParam) : null
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -35,7 +35,7 @@ function SignupForm() {
   }
 
   const finishJoin = () => {
-    if (plan) choosePlan(plan.id as 'individual' | 'family')
+    if (plan) choosePlan(plan.id)
     router.push('/account/billing?welcome=1')
   }
 
