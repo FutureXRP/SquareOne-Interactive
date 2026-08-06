@@ -181,6 +181,10 @@ export function getWaivers(): DemoWaiver[] {
   return read().waivers
 }
 
+export function hasWaiver(formId: string): boolean {
+  return read().waivers.some((w) => w.formId === formId)
+}
+
 // ── Cart ──────────────────────────────────────────────────────────
 export function getCart(): CartItem[] {
   return read().cart

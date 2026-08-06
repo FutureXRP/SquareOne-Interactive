@@ -1,5 +1,4 @@
 'use client'
-import Link from 'next/link'
 import { useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
@@ -32,15 +31,27 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
 
 const seedForms: FormDef[] = [
   {
-    id: 'liability-v1',
-    name: 'Liability Waiver & Release',
+    id: 'fitness-v1',
+    name: 'Fitness Center Waiver',
     status: 'active',
     submissions: 214,
-    linkedTo: 'Required for gym, climbing & multiball',
+    linkedTo: 'Signed during fitness membership signup',
     fields: [
       { label: 'Waiver terms', type: 'paragraph', required: false },
       { label: 'Full legal name', type: 'text', required: true },
-      { label: 'Minors covered', type: 'text', required: false },
+      { label: 'I agree to the terms', type: 'checkbox', required: true },
+      { label: 'Signature', type: 'signature', required: true },
+    ],
+  },
+  {
+    id: 'rental-v1',
+    name: 'Facility Rental Waiver',
+    status: 'active',
+    submissions: 96,
+    linkedTo: 'Signed with room & facility rentals',
+    fields: [
+      { label: 'Waiver terms', type: 'paragraph', required: false },
+      { label: 'Renter full legal name', type: 'text', required: true },
       { label: 'I agree to the terms', type: 'checkbox', required: true },
       { label: 'Signature', type: 'signature', required: true },
     ],
@@ -50,7 +61,7 @@ const seedForms: FormDef[] = [
     name: 'Party Booking Agreement',
     status: 'active',
     submissions: 38,
-    linkedTo: 'Attached to Party Arcade bookings',
+    linkedTo: 'Attached to Party Arcade Zone bookings',
     fields: [
       { label: 'Host name', type: 'text', required: true },
       { label: 'Contact email', type: 'email', required: true },
@@ -153,9 +164,9 @@ export default function FormsPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14 }}>
               <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.6 }}>
-                Guests sign the published waiver in the store at <Link href="/waiver" style={{ color: BLUE, fontWeight: 600 }}>/waiver</Link>.
-                Signed PDFs to secure storage and booking-linked requirements arrive with the forms engine (Phase 3).
-                Edits here are a demo and reset on reload.
+                Guests sign these inside the store flows — the <strong>fitness waiver</strong> during membership
+                signup, the <strong>rental waiver</strong> when booking a room. Signed PDFs to secure storage and
+                booking-linked requirements arrive with the forms engine (Phase 3). Edits here are a demo and reset on reload.
               </p>
             </div>
           </div>

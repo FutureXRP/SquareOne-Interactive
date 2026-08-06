@@ -36,8 +36,8 @@ function BillingContent() {
           <div style={{ maxWidth: 640 }}>
             {welcome && plan && (
               <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 12, padding: '13px 16px', marginBottom: 18 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Welcome to SquareOne! Your {plan.name} membership is set up.</p>
-                <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Add a payment method below so your membership stays active.</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Welcome to SquareOne! Your {plan.name} fitness membership is set up.</p>
+                <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Add a payment method below so your fitness membership stays active.</p>
               </div>
             )}
 
@@ -56,7 +56,7 @@ function BillingContent() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>No membership on this profile.</p>
+                  <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>No fitness membership on this profile.</p>
                   <Link href="/memberships" className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }}>See plans</Link>
                 </div>
               )}
@@ -124,7 +124,7 @@ function BillingContent() {
               {plan ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px' }}>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{plan.name} membership</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{plan.name} fitness membership</p>
                     <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>{profile.since}</p>
                   </div>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Paid</span>

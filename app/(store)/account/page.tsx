@@ -2,14 +2,18 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
-import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, zoneById } from '@/lib/theme'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
+import { roomLabel } from '@/lib/facilities-store'
 import { formatCents, formatHour } from '@/lib/format'
 import { planById } from '@/lib/store-data'
 import { getBookings, getWaivers, type DemoBooking, type DemoWaiver } from '@/lib/demo-session'
+import { WaiverPanel } from '@/components/store/WaiverPanel'
+import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
 
 export default function AccountOverview() {
   const [bookings, setBookings] = useState<DemoBooking[]>([])
   const [waivers, setWaivers] = useState<DemoWaiver[]>([])
+  const [signingFitness, setSigningFitness] = useState(false)
 
   useEffect(() => {
     const sync = () => { setBookings(getBookings()); setWaivers(getWaivers()) }
@@ -27,7 +31,7 @@ export default function AccountOverview() {
             {/* Membership status */}
             <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
               <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Membership</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Fitness membership</p>
                 {plan ? (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -47,7 +51,7 @@ export default function AccountOverview() {
                   </>
                 ) : (
                   <>
-                    <p style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 6px' }}>No membership yet</p>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 6px' }}>No fitness membership yet</p>
                     <p style={{ fontSize: 13, color: SUB, margin: '0 0 14px' }}>Join to unlock door access, member pricing, and unlimited open play.</p>
                     <Link href="/memberships" className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }}>See plans</Link>
                   </>
@@ -58,7 +62,7 @@ export default function AccountOverview() {
                 <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>Quick actions</p>
                 {[
                   ['Rent a room', '/facilities'],
-                  ['Sign a waiver', '/waiver'],
+                  ['Book a party', '/facilities/party'],
                   ['Shop gear', '/shop'],
                   ['Update payment method', '/account/billing'],
                 ].map(([label, href]) => (
@@ -79,7 +83,7 @@ export default function AccountOverview() {
                 <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Nothing booked yet — grab a room for your next get-together.</p>
               ) : (
                 bookings.slice(0, 3).map((b, i) => {
-                  const zone = zoneById[b.zoneId]
+                  const zone = roomLabel(b.zoneId)
                   return (
                     <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
                       <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
@@ -97,26 +101,43 @@ export default function AccountOverview() {
               )}
             </div>
 
-            {/* Waivers */}
+            {/* Waivers — one for the fitness center, one for rentals */}
             <div className="sq-card" style={card}>
-              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Waivers on file</span>
-                <Link href="/waiver" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Sign a waiver →</Link>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Waivers</span>
+                <span style={{ fontSize: 11.5, color: FAINT, marginLeft: 10 }}>signed as part of joining or booking</span>
               </div>
-              {waivers.length === 0 ? (
-                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No waivers yet — sign one before your first visit and skip the desk.</p>
-              ) : (
-                waivers.map((w, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < waivers.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: GREEN }}><rect x="1.5" y="1.5" width="13" height="13" rx="4" fill="#e5f2ea"/><path d="M4.8 8.3l2.2 2.2 4.2-4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{w.formName}</p>
-                      <p style={{ fontSize: 12, color: SUB, margin: 0 }}>covers {w.participant}</p>
+              {WAIVERS.map((def, i) => {
+                const signed = waivers.find((w) => w.formId === def.id)
+                const fitnessNeeded = def.id === FITNESS_WAIVER.id && !signed && !!profile.planId
+                return (
+                  <div key={def.id} style={{ borderBottom: i < WAIVERS.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px' }}>
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: signed ? GREEN : '#c3cede' }}><rect x="1.5" y="1.5" width="13" height="13" rx="4" fill={signed ? '#e5f2ea' : '#eef2f8'}/><path d="M4.8 8.3l2.2 2.2 4.2-4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{def.name}</p>
+                        <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{def.context}</p>
+                      </div>
+                      {signed ? (
+                        <span style={{ fontSize: 12, color: FAINT }}>{signed.signedOn}</span>
+                      ) : fitnessNeeded ? (
+                        <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 12 }} onClick={() => setSigningFitness((v) => !v)}>
+                          {signingFitness ? 'Hide' : 'Sign now'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>
+                          {def.id === FITNESS_WAIVER.id ? 'signed at signup' : 'signed when booking'}
+                        </span>
+                      )}
                     </div>
-                    <span style={{ fontSize: 12, color: FAINT }}>{w.signedOn}</span>
+                    {fitnessNeeded && signingFitness && (
+                      <div style={{ padding: '0 20px 16px' }}>
+                        <WaiverPanel def={FITNESS_WAIVER} compact onSigned={() => setSigningFitness(false)} />
+                      </div>
+                    )}
                   </div>
-                ))
-              )}
+                )
+              })}
             </div>
           </div>
         )

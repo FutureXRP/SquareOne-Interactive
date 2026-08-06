@@ -8,7 +8,7 @@ export default function AdminMembershipsPage() {
   const m = membershipStats
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Memberships" sub="Family $75 and Individual $25 ongoing plans — mirrored from Stripe subscriptions when billing goes live." chip={`${m.active} active`}>
+      <PageHero title="Fitness Memberships" sub="Family $75 and Individual $25 ongoing plans — mirrored from Stripe subscriptions when billing goes live." chip={`${m.active} active`}>
         <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub={`+${m.newThisMonth} new this month`} />
       </PageHero>
 

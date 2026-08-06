@@ -3,8 +3,11 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { facilityById, HOURS } from '@/lib/store-data'
-import { addBooking, getProfile, hashString, mulberry32, type DemoBooking } from '@/lib/demo-session'
+import { HOURS } from '@/lib/store-data'
+import { getRoom, type RoomConfig } from '@/lib/facilities-store'
+import { addBooking, getProfile, hasWaiver, hashString, mulberry32, type DemoBooking } from '@/lib/demo-session'
+import { WaiverPanel } from '@/components/store/WaiverPanel'
+import { RENTAL_WAIVER } from '@/lib/waiver-defs'
 
 interface DayOption {
   iso: string
@@ -14,12 +17,13 @@ interface DayOption {
 }
 
 export function BookingFlow({ facilityId }: { facilityId: string }) {
-  const f = facilityById[facilityId]
+  const [f, setF] = useState<RoomConfig | null>(null)
   const [days, setDays] = useState<DayOption[]>([])
   const [dayIdx, setDayIdx] = useState(0)
-  const [hours, setHours] = useState(f.minHours)
+  const [hours, setHours] = useState(1)
   const [startH, setStartH] = useState<number | null>(null)
   const [signedIn, setSignedIn] = useState(false)
+  const [needsWaiver, setNeedsWaiver] = useState(false)
   const [confirmed, setConfirmed] = useState<DemoBooking | null>(null)
 
   // Dates come from the real clock, so they render client-side only.
@@ -38,10 +42,13 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     }
     setDays(out)
     setSignedIn(!!getProfile())
+    const room = getRoom(facilityId)
+    setF(room)
+    if (room) setHours((h) => Math.max(h, room.minHours))
     const sync = () => setSignedIn(!!getProfile())
     window.addEventListener('sq-session', sync)
     return () => window.removeEventListener('sq-session', sync)
-  }, [])
+  }, [facilityId])
 
   const day = days[dayIdx]
   const dayHours = day?.isSunday ? HOURS[1] : HOURS[0]
@@ -60,20 +67,31 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   if (!f) return null
 
-  const priceCents = f.zone.id === 'party'
+  const priceCents = f.id === 'party'
     ? 27900 + Math.max(0, hours - 2) * 9900
     : f.perHourCents * hours
 
   const requestHold = () => {
     if (!day || startH == null) return
+    // The facility rental waiver is part of booking — sign once, then book.
+    if (!hasWaiver(RENTAL_WAIVER.id)) {
+      setNeedsWaiver(true)
+      return
+    }
+    placeHold()
+  }
+
+  const placeHold = () => {
+    if (!day || startH == null) return
     const booking = addBooking({
-      zoneId: f.zone.id,
+      zoneId: f.id,
       date: day.iso,
       startH,
       hours,
       priceCents,
       status: 'hold',
     })
+    setNeedsWaiver(false)
     setConfirmed(booking)
   }
 
@@ -85,7 +103,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </div>
         <h2 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.02em' }}>Your slot is on hold</h2>
         <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 16px', lineHeight: 1.6 }}>
-          <strong style={{ color: INK }}>{f.zone.name}</strong> · {day.weekday}, {day.label} ·{' '}
+          <strong style={{ color: INK }}>{f.name}</strong> · {day.weekday}, {day.label} ·{' '}
           {formatHour(confirmed.startH)}–{formatHour(confirmed.startH + confirmed.hours)} · {formatCents(confirmed.priceCents)}
         </p>
         <div style={{ background: '#faf0dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
@@ -120,10 +138,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           ))}
         </div>
 
-        {/* Duration */}
+        {/* Duration — rentals run up to 8 hours */}
         <p className="sq-label">How long?</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          {[1, 2, 3, 4].filter((h) => h >= f.minHours).map((h) => (
+          {[1, 2, 3, 4, 5, 6, 7, 8].filter((h) => h >= f.minHours).map((h) => (
             <button key={h} onClick={() => { setHours(h); setStartH(null) }} style={{
               font: 'inherit', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
               color: h === hours ? '#fff' : SUB, background: h === hours ? BLUE : '#fff',
@@ -154,12 +172,20 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary / waiver step */}
       <div>
+        {needsWaiver ? (
+          <div style={{ position: 'sticky', top: 78 }}>
+            <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 10px', lineHeight: 1.5 }}>
+              One more step — rentals need a signed <strong style={{ color: INK }}>facility rental waiver</strong> on your profile. Sign once and your booking goes right through.
+            </p>
+            <WaiverPanel def={RENTAL_WAIVER} compact onSigned={placeHold} />
+          </div>
+        ) : (
         <div className="sq-card" style={{ ...card, padding: '18px 20px', position: 'sticky', top: 78 }}>
           <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 12px' }}>Booking summary</p>
           {[
-            ['Room', f.zone.name],
+            ['Room', f.name],
             ['Date', day ? `${day.weekday}, ${day.label}` : '—'],
             ['Time', startH != null ? `${formatHour(startH)}–${formatHour(startH + hours)}` : 'pick a start time'],
             ['Duration', `${hours} hour${hours > 1 ? 's' : ''}`],
@@ -188,6 +214,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             teardown time is included in your window.
           </p>
         </div>
+        )}
       </div>
     </div>
   )

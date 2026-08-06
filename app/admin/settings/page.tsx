@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, ZONES } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
@@ -13,8 +14,9 @@ export default function SettingsPage() {
       <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
         {/* Facilities & pricing */}
         <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Facilities &amp; price schedules</span>
+            <Link href="/admin/rooms" style={{ fontSize: 12.5, color: '#2f6db8', fontWeight: 600, textDecoration: 'none' }}>Edit in Rooms &amp; Pricing →</Link>
           </div>
           {FACILITIES.map((f, i) => (
             <div key={f.zone.id} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: i < FACILITIES.length - 1 ? `1px solid ${LINE}` : 'none' }}>

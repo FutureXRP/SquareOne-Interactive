@@ -79,7 +79,7 @@ export default function TodayPage() {
         <Kpi label="People inside" value={String(kpis.playersInside)} sub={`${kpis.checkInsToday} check-ins today`} />
         <Kpi label="Bookings today" value={String(kpis.bookingsToday)} sub={`${kpis.holdsOpen} unpaid holds`} />
         <Kpi label="Revenue today" value={formatCents(kpis.revenueTodayCents)} accent={GREEN} sub="payments posted" />
-        <Kpi label="Active memberships" value={String(kpis.activeMemberships)} sub="family + individual" />
+        <Kpi label="Fitness memberships" value={String(kpis.activeMemberships)} sub="family + individual" />
         <Kpi label="Past due" value={formatCents(kpis.pastDueCents)} accent={RED} sub={`${kpis.pastDueAccounts} accounts flagged`} />
       </div>
 

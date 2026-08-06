@@ -39,11 +39,11 @@ export const ZONES: Zone[] = [
   { id: 'gym', name: 'Gym', color: '#b8860b' },
   { id: 'gaming', name: 'Gaming Zone', color: '#cf4436' },
   { id: 'dining', name: 'Dining Hall', color: '#2e8b57' },
-  { id: 'multiball', name: 'Multiball', color: '#2f6db8' },
+  { id: 'multiball', name: 'Multiball Zone', color: '#2f6db8' },
   { id: 'adventure', name: 'Adventure Zone', color: '#1d9a8f' },
-  { id: 'multisport', name: 'Multisport', color: '#8a4bbf' },
-  { id: 'party', name: 'Party Arcade', color: '#e07020' },
-  { id: 'billiards', name: 'Billiards', color: '#c2478f' },
+  { id: 'multisport', name: 'Multisport Zone', color: '#8a4bbf' },
+  { id: 'party', name: 'Party Arcade Zone', color: '#e07020' },
+  { id: 'billiards', name: 'Billiards Zone', color: '#c2478f' },
 ]
 
 export const zoneById = Object.fromEntries(ZONES.map((z) => [z.id, z])) as Record<string, Zone>

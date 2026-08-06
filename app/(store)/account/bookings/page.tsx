@@ -2,7 +2,8 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
-import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, zoneById } from '@/lib/theme'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
+import { roomLabel } from '@/lib/facilities-store'
 import { formatCents, formatHour } from '@/lib/format'
 import { getBookings, type DemoBooking } from '@/lib/demo-session'
 
@@ -33,7 +34,7 @@ export default function MyBookingsPage() {
           ) : (
             <div className="sq-card" style={card}>
               {bookings.map((b, i) => {
-                const zone = zoneById[b.zoneId]
+                const zone = roomLabel(b.zoneId)
                 return (
                   <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: i < bookings.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: `${zone.color}1f`, borderLeft: `3px solid ${zone.color}`, flexShrink: 0 }} />

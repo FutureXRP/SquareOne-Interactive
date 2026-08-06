@@ -47,11 +47,11 @@ export default function SettingsPage() {
 
             {/* Membership management */}
             <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>Membership</p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>Fitness membership</p>
 
               {!plan && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>You don&apos;t have a membership yet.</p>
+                  <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>You don&apos;t have a fitness membership yet.</p>
                   <Link href="/memberships" className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }}>See plans</Link>
                 </div>
               )}
@@ -62,20 +62,20 @@ export default function SettingsPage() {
                     <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 2px' }}>{plan.name} plan — active</p>
                     <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Renews {profile.renewsOn}. Cancel anytime — access continues to the end of the paid period.</p>
                   </div>
-                  <button className="sq-btn sq-btn-danger" style={{ padding: '8px 14px' }} onClick={() => setConfirmingCancel(true)}>Cancel membership</button>
+                  <button className="sq-btn sq-btn-danger" style={{ padding: '8px 14px' }} onClick={() => setConfirmingCancel(true)}>Cancel fitness membership</button>
                 </div>
               )}
 
               {plan && profile.status === 'active' && confirmingCancel && (
                 <div style={{ background: '#fdf2f0', border: '1px solid #eed3cf', borderRadius: 12, padding: '16px 18px' }}>
-                  <p style={{ fontSize: 13.5, fontWeight: 700, color: RED, margin: '0 0 4px' }}>Cancel your {plan.name} membership?</p>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: RED, margin: '0 0 4px' }}>Cancel your {plan.name} fitness membership?</p>
                   <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 14px', lineHeight: 1.55 }}>
                     You&apos;ll keep full access through <strong style={{ color: INK }}>{profile.renewsOn}</strong>, then your
-                    membership and door access end. No further charges. You can rejoin anytime.
+                    fitness membership and door access end. No further charges. You can rejoin anytime.
                   </p>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <button className="sq-btn sq-btn-danger" onClick={() => { cancelMembership(); setConfirmingCancel(false) }}>Yes, cancel at period end</button>
-                    <button className="sq-btn sq-btn-ghost" onClick={() => setConfirmingCancel(false)}>Keep my membership</button>
+                    <button className="sq-btn sq-btn-ghost" onClick={() => setConfirmingCancel(false)}>Keep my fitness membership</button>
                   </div>
                 </div>
               )}
@@ -86,7 +86,7 @@ export default function SettingsPage() {
                     <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 2px' }}>{plan.name} plan — canceling</p>
                     <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Access ends {profile.renewsOn}. Changed your mind?</p>
                   </div>
-                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} onClick={resumeMembership}>Resume membership</button>
+                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} onClick={resumeMembership}>Resume fitness membership</button>
                 </div>
               )}
             </div>

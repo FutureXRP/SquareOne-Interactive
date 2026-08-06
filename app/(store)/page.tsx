@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { card, HERO_GRADIENT, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { FACILITIES, PLANS, PRODUCTS, HOURS } from '@/lib/store-data'
+import { PLANS, PRODUCTS, HOURS } from '@/lib/store-data'
+import { FacilityGrid } from '@/components/store/FacilityGrid'
 
 function SectionLabel({ children, meta }: { children: string; meta?: React.ReactNode }) {
   return (
@@ -27,11 +28,7 @@ export default function StoreHome() {
           <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.12, margin: '0 0 14px' }}>
             One place for your family to move, play, and celebrate.
           </h1>
-          <p style={{ fontSize: 15, opacity: 0.88, lineHeight: 1.6, margin: '0 0 22px' }}>
-            Gym, gaming, climbing, parties, and more — open to everyone,
-            with memberships from {formatCents(2500)}/month.
-          </p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 22 }}>
             <Link href="/memberships" className="sq-btn" style={{ background: '#fff', color: '#182740' }}>Become a member</Link>
             <Link href="/facilities" className="sq-btn" style={{ background: 'rgba(255,255,255,0.14)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)' }}>Rent a room</Link>
           </div>
@@ -44,7 +41,7 @@ export default function StoreHome() {
           { href: '/facilities', title: 'Rent a room', sub: 'Gym, party rooms & more — book online', icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
           { href: '/memberships', title: 'Join the gym', sub: `From ${formatCents(2500)}/mo · cancel anytime`, icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3.5" width="13" height="9" rx="1.8" stroke="currentColor" strokeWidth="1.5"/><circle cx="5" cy="7.2" r="1.4" stroke="currentColor" strokeWidth="1.2"/><path d="M8.5 6.4h4.2M8.5 8.8h4.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg> },
           { href: '/shop', title: 'Shop merch', sub: 'Tees, hoodies & more', icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M5.5 1.5h5l3 3-2 2-1-1v9h-7v-9l-1 1-2-2 3-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> },
-          { href: '/waiver', title: 'Sign a waiver', sub: 'Save time before your visit', icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="3" y="1.5" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M5.5 5h5M5.5 8h5M5.5 11h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
+          { href: '/facilities/party', title: 'Book a party', sub: 'Arcade party packages with a host', icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4.5 6.5L8 2l3.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 6.5h11l-1.2 7a1.5 1.5 0 01-1.5 1.2H5.2a1.5 1.5 0 01-1.5-1.2l-1.2-7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><circle cx="8" cy="10.5" r="1.1" fill="currentColor"/></svg> },
         ].map((t) => (
           <Link key={t.href} href={t.href} style={{ textDecoration: 'none' }}>
             <div className="sq-card" style={{ ...card, padding: '18px 20px', height: '100%' }}>
@@ -58,7 +55,7 @@ export default function StoreHome() {
 
       {/* Memberships */}
       <div style={{ marginBottom: 40 }}>
-        <SectionLabel meta={<Link href="/memberships" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Compare plans →</Link>}>Memberships</SectionLabel>
+        <SectionLabel meta={<Link href="/memberships" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Compare plans →</Link>}>Fitness memberships</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 14 }}>
           {PLANS.map((p) => (
             <div key={p.id} className="sq-card" style={{ ...card, padding: '22px 24px', position: 'relative', border: p.featured ? `2px solid ${BLUE}` : undefined }}>
@@ -77,23 +74,7 @@ export default function StoreHome() {
       {/* Facilities */}
       <div style={{ marginBottom: 40 }}>
         <SectionLabel meta={<Link href="/facilities" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>See all &amp; book →</Link>}>Rooms &amp; facilities</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-          {FACILITIES.slice(0, 4).map((f) => (
-            <Link key={f.zone.id} href={`/facilities/${f.zone.id}`} style={{ textDecoration: 'none' }}>
-              <div className="sq-card" style={{ ...card, overflow: 'hidden', height: '100%' }}>
-                <div style={{ height: 74, background: `linear-gradient(135deg, ${f.zone.color}2a, ${f.zone.color}0d)`, position: 'relative' }}>
-                  <div style={{ position: 'absolute', right: 14, top: 14, width: 34, height: 34, border: `2px solid ${f.zone.color}55`, borderRadius: 9, transform: 'rotate(18deg)' }} />
-                  <span style={{ position: 'absolute', left: 16, bottom: 10, fontSize: 10.5, fontWeight: 700, color: f.zone.color, background: '#fff', padding: '2px 9px', borderRadius: 999 }}>{f.capacity}</span>
-                </div>
-                <div style={{ padding: '13px 16px 15px' }}>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: INK, margin: '0 0 3px' }}>{f.zone.name}</p>
-                  <p style={{ fontSize: 12, color: SUB, margin: '0 0 8px', lineHeight: 1.5, minHeight: 36 }}>{f.blurb}</p>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: BLUE, margin: 0, fontVariantNumeric: 'tabular-nums' }}>from {formatCents(f.pricing[f.pricing.length - 1].cents)} <span style={{ fontWeight: 500, color: FAINT }}>· {f.pricing[f.pricing.length - 1].label.toLowerCase()}</span></p>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <FacilityGrid limit={4} compact />
       </div>
 
       {/* Shop teaser */}

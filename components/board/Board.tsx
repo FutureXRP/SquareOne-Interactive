@@ -1,11 +1,18 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { ZONES, LINE, INK, SUB, FAINT, RED } from '@/lib/theme'
+import { getActiveRooms } from '@/lib/facilities-store'
 import { BOARD_START, BOARD_END, bookings, type Booking } from '@/lib/demo-data'
 import { formatHour } from '@/lib/format'
 
+interface Lane {
+  id: string
+  name: string
+  color: string
+}
+
 const SPAN = BOARD_END - BOARD_START
-const LANE_LABEL_W = 132
+const LANE_LABEL_W = 150
 const LANE_H = 44
 
 function pct(hour: number) {
@@ -72,6 +79,15 @@ function NowLine() {
 }
 
 export function Board() {
+  // Lanes come from the admin-editable room catalog (defaults to the zones).
+  const [lanes, setLanes] = useState<Lane[]>(ZONES)
+  useEffect(() => {
+    const sync = () => setLanes(getActiveRooms().map((r) => ({ id: r.id, name: r.name, color: r.color })))
+    sync()
+    window.addEventListener('sq-rooms', sync)
+    return () => window.removeEventListener('sq-rooms', sync)
+  }, [])
+
   const hours = []
   for (let h = BOARD_START; h <= BOARD_END; h += 2) hours.push(h)
 
@@ -92,7 +108,7 @@ export function Board() {
 
         {/* Lanes */}
         <div style={{ position: 'relative' }}>
-          {ZONES.map((zone, zi) => {
+          {lanes.map((zone, zi) => {
             const laneBookings = bookings.filter((b) => b.zoneId === zone.id)
             return (
               <div key={zone.id} style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -106,7 +122,7 @@ export function Board() {
                   height: LANE_H,
                   background: zi % 2 === 0 ? '#fbfdff' : 'transparent',
                   borderTop: `1px solid ${zi === 0 ? LINE : '#eaf0f8'}`,
-                  borderBottom: zi === ZONES.length - 1 ? `1px solid ${LINE}` : 'none',
+                  borderBottom: zi === lanes.length - 1 ? `1px solid ${LINE}` : 'none',
                   backgroundImage: `repeating-linear-gradient(90deg, transparent, transparent calc(${100 / SPAN}% - 1px), #edf2f9 calc(${100 / SPAN}% - 1px), #edf2f9 ${100 / SPAN}%)`,
                 }}>
                   {laneBookings.map((b) => <Block key={b.id} b={b} color={zone.color} />)}
@@ -124,7 +140,7 @@ export function Board() {
 
         {/* Legend */}
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 16px', marginTop: 14, paddingLeft: 2 }}>
-          {ZONES.map((z) => (
+          {lanes.map((z) => (
             <span key={z.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: SUB }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: z.color }} />
               {z.name}

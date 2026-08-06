@@ -91,11 +91,11 @@ export interface PaymentRow {
 }
 
 export const payments: PaymentRow[] = [
-  { id: 'PM-8841', who: 'Castillo family', what: 'Party Arcade package', method: 'card', amountCents: 27900, when: 'Today 11:52 AM', status: 'paid' },
+  { id: 'PM-8841', who: 'Castillo family', what: 'Party Arcade Zone package', method: 'card', amountCents: 27900, when: 'Today 11:52 AM', status: 'paid' },
   { id: 'PM-8840', who: 'Tulsa SW Rotary', what: 'Dining Hall rental (invoice)', method: 'check', amountCents: 32500, when: 'Today 10:15 AM', status: 'paid' },
   { id: 'PM-8839', who: 'Ramos family', what: 'Family membership', method: 'card', amountCents: 7500, when: 'Today 6:01 AM', status: 'paid' },
   { id: 'PM-8838', who: 'T. Osei', what: 'Individual membership', method: 'ach', amountCents: 2500, when: 'Yesterday', status: 'pending' },
-  { id: 'PM-8837', who: 'Clark Elementary', what: 'Multiball PE group', method: 'check', amountCents: 15000, when: 'Yesterday', status: 'paid' },
+  { id: 'PM-8837', who: 'Clark Elementary', what: 'Multiball Zone PE group', method: 'check', amountCents: 15000, when: 'Yesterday', status: 'paid' },
   { id: 'PM-8836', who: 'Alvarez family', what: 'Family membership (retry 2 of 3)', method: 'card', amountCents: 7500, when: 'Yesterday', status: 'failed' },
   { id: 'PM-8835', who: 'Front desk', what: 'Day passes ×3 + gear', method: 'cash', amountCents: 8600, when: 'Yesterday', status: 'paid' },
 ]
