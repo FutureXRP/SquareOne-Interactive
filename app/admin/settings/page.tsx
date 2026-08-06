@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { PageHero } from '@/components/admin/PageHero'
+import { StaffManager } from '@/components/admin/StaffManager'
 import { card, INK, SUB, FAINT, LINE, ZONES } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { FACILITIES } from '@/lib/store-data'
-import { staff } from '@/lib/admin-data'
 import { HOURS, ADDRESS } from '@/lib/store-data'
 
 export default function SettingsPage() {
@@ -37,21 +37,8 @@ export default function SettingsPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Staff */}
-          <div className="sq-card" style={card}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Staff &amp; roles</span>
-            </div>
-            {staff.map((s, i) => (
-              <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 20px', borderBottom: i < staff.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#eef4fb', color: '#2f6db8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{s.name.charAt(0)}</div>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: INK, margin: 0 }}>{s.name} · <span style={{ fontWeight: 500, color: SUB }}>{s.role}</span></p>
-                  <p style={{ fontSize: 11.5, color: FAINT, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.access}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* Staff — editable roles drive booking & payment permissions */}
+          <StaffManager />
 
           {/* Hours & location */}
           <div className="sq-card" style={{ ...card, padding: '16px 20px' }}>

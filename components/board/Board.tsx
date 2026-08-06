@@ -2,13 +2,25 @@
 import { useEffect, useState } from 'react'
 import { ZONES, LINE, INK, SUB, FAINT, RED } from '@/lib/theme'
 import { getActiveRooms } from '@/lib/facilities-store'
-import { BOARD_START, BOARD_END, bookings, type Booking } from '@/lib/demo-data'
+import { bookingsForDate, isoDate } from '@/lib/staff-bookings-store'
+import { BOARD_START, BOARD_END } from '@/lib/demo-data'
 import { formatHour } from '@/lib/format'
 
 interface Lane {
   id: string
   name: string
   color: string
+}
+
+interface BoardBooking {
+  id: string
+  roomId: string
+  title: string
+  client: string
+  start: number
+  end: number
+  isHold: boolean
+  note?: string
 }
 
 const SPAN = BOARD_END - BOARD_START
@@ -19,10 +31,9 @@ function pct(hour: number) {
   return ((hour - BOARD_START) / SPAN) * 100
 }
 
-function Block({ b, color }: { b: Booking; color: string }) {
-  const isHold = b.status === 'hold'
-  const label = isHold ? `${b.title} · HOLD → ${b.holdExpires}` : b.title
-  const detail = `${formatHour(b.start)}–${formatHour(b.end)} · ${b.who}${isHold ? ` · hold expires ${b.holdExpires}, missing ${b.missing}` : ''}`
+function Block({ b, color }: { b: BoardBooking; color: string }) {
+  const label = b.isHold ? `${b.title} · HOLD` : b.title
+  const detail = `${formatHour(b.start)}–${formatHour(b.end)} · ${b.client}${b.note ? ` · ${b.note}` : ''}`
   return (
     <div
       title={detail}
@@ -33,11 +44,11 @@ function Block({ b, color }: { b: Booking; color: string }) {
         top: 5,
         height: LANE_H - 10,
         borderRadius: 6,
-        background: isHold
+        background: b.isHold
           ? `repeating-linear-gradient(45deg, ${color}2e, ${color}2e 6px, ${color}0f 6px, ${color}0f 12px)`
           : `${color}1f`,
-        border: isHold ? `1.5px dashed ${color}` : 'none',
-        borderLeft: isHold ? `3px solid ${color}` : `3px solid ${color}`,
+        border: b.isHold ? `1.5px dashed ${color}` : 'none',
+        borderLeft: `3px solid ${color}`,
         padding: '3px 8px',
         overflow: 'hidden',
         display: 'flex',
@@ -47,7 +58,7 @@ function Block({ b, color }: { b: Booking; color: string }) {
     >
       <p style={{ fontSize: 11, fontWeight: 600, color: INK, margin: 0, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</p>
       <p style={{ fontSize: 9.5, color: SUB, margin: 0, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>
-        {formatHour(b.start)}–{formatHour(b.end)} · {b.who}
+        {formatHour(b.start)}–{formatHour(b.end)} · {b.client}
       </p>
     </div>
   )
@@ -79,13 +90,32 @@ function NowLine() {
 }
 
 export function Board() {
-  // Lanes come from the admin-editable room catalog (defaults to the zones).
+  // Lanes come from the admin-editable room catalog; blocks come from the
+  // live booking book (staff-created bookings included).
   const [lanes, setLanes] = useState<Lane[]>(ZONES)
+  const [blocks, setBlocks] = useState<BoardBooking[]>([])
+
   useEffect(() => {
-    const sync = () => setLanes(getActiveRooms().map((r) => ({ id: r.id, name: r.name, color: r.color })))
+    const sync = () => {
+      setLanes(getActiveRooms().map((r) => ({ id: r.id, name: r.name, color: r.color })))
+      setBlocks(bookingsForDate(isoDate(0)).map((b) => ({
+        id: b.id,
+        roomId: b.roomId,
+        title: b.title,
+        client: b.client,
+        start: b.startH,
+        end: b.startH + b.hours,
+        isHold: b.status === 'hold',
+        note: b.note,
+      })))
+    }
     sync()
     window.addEventListener('sq-rooms', sync)
-    return () => window.removeEventListener('sq-rooms', sync)
+    window.addEventListener('sq-staff-bookings', sync)
+    return () => {
+      window.removeEventListener('sq-rooms', sync)
+      window.removeEventListener('sq-staff-bookings', sync)
+    }
   }, [])
 
   const hours = []
@@ -109,7 +139,7 @@ export function Board() {
         {/* Lanes */}
         <div style={{ position: 'relative' }}>
           {lanes.map((zone, zi) => {
-            const laneBookings = bookings.filter((b) => b.zoneId === zone.id)
+            const laneBookings = blocks.filter((b) => b.roomId === zone.id)
             return (
               <div key={zone.id} style={{ display: 'flex', alignItems: 'stretch' }}>
                 <div style={{ width: LANE_LABEL_W, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, padding: '0 10px 0 2px' }}>
