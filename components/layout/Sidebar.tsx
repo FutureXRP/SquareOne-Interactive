@@ -21,6 +21,8 @@ const nav = [
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1.5" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="10" cy="8" r="1" fill="currentColor"/><path d="M3 14.5h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href: '/admin/queue', label: 'Front Desk', badge: { count: 2, color: '#cf4436', bg: '#fae7e4' },
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4"/><path d="M5 6.2l1.3 1.3L9 4.8M5 10.4l1.3 1.3L9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+  { href: '/admin/forms', label: 'Forms & Waivers', badge: null,
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M9.5 11l1.2 1.2L13 9.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { href: '/admin/reports', label: 'Reports', badge: null,
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 12l3.5-4 3 3 3-6L15 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   { href: '/admin/messages', label: 'Messages', badge: null,
@@ -84,6 +86,7 @@ export function Sidebar() {
             <p style={{ fontSize: 11, color: '#94a6bd', margin: 0 }}>placeholder data</p>
           </div>
         </div>
+        <Link href="/" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#2f6db8', textDecoration: 'none', marginBottom: 8 }}>View public store →</Link>
         <p style={{ fontSize: 10.5, color: '#94a6bd', margin: 0, lineHeight: 1.5 }}>part of SquareOne Compassion</p>
       </div>
     </aside>
