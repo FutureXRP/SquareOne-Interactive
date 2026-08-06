@@ -36,6 +36,45 @@ table { border-collapse: collapse; width: 100%; }
    collapsed 1fr track sizes to min-content and overflows the viewport. */
 .sq-grid-2 > * { min-width: 0; }
 
+/* Buttons & inputs (store + portal) */
+.sq-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font: inherit; font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em;
+  border-radius: 10px; padding: 10px 18px; cursor: pointer; text-decoration: none;
+  border: 1px solid transparent; transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.sq-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(24,39,64,.14); }
+.sq-btn-primary { background: #2f6db8; color: #fff; }
+.sq-btn-primary:hover { background: #275d9f; }
+.sq-btn-navy { background: #182740; color: #fff; }
+.sq-btn-ghost { background: #fff; color: #2f6db8; border-color: #dbe4f0; }
+.sq-btn-ghost:hover { border-color: #2f6db8; }
+.sq-btn-danger { background: #fff; color: #cf4436; border-color: #eed3cf; }
+.sq-btn-danger:hover { border-color: #cf4436; }
+.sq-btn[disabled] { opacity: .5; pointer-events: none; }
+
+.sq-input, .sq-select, .sq-textarea {
+  font: inherit; font-size: 13.5px; color: #1f2c42;
+  width: 100%; border: 1px solid #dbe4f0; border-radius: 10px;
+  padding: 10px 12px; background: #fff; outline: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.sq-input:focus, .sq-select:focus, .sq-textarea:focus {
+  border-color: #2f6db8; box-shadow: 0 0 0 3px rgba(47,109,184,.12);
+}
+.sq-label { display: block; font-size: 11.5px; font-weight: 600; color: #64748c; margin: 0 0 5px; text-transform: uppercase; letter-spacing: .05em; }
+
+/* Store header */
+.sq-store-nav { display: flex; align-items: center; gap: 4px; }
+.sq-store-nav a { font-size: 13.5px; font-weight: 500; color: #64748c; text-decoration: none; padding: 7px 12px; border-radius: 8px; transition: background .12s ease, color .12s ease; }
+.sq-store-nav a:hover { background: #eef4fb; color: #2f6db8; }
+.sq-store-nav a.active { background: #eef4fb; color: #2f6db8; font-weight: 600; }
+@media (max-width: 900px) {
+  .sq-store-header { flex-wrap: wrap; }
+  .sq-store-nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 4px; }
+  .sq-store-nav a { white-space: nowrap; }
+}
+
 /* 380px rule (build.md): sidebar collapses to a horizontal nav bar and
    multi-column grids stack. Inline styles set the desktop values, so the
    narrow-width overrides need !important. */

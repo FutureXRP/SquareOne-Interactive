@@ -1,0 +1,126 @@
+'use client'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { AccountShell } from '@/components/store/AccountShell'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, zoneById } from '@/lib/theme'
+import { formatCents, formatHour } from '@/lib/format'
+import { planById } from '@/lib/store-data'
+import { getBookings, getWaivers, type DemoBooking, type DemoWaiver } from '@/lib/demo-session'
+
+export default function AccountOverview() {
+  const [bookings, setBookings] = useState<DemoBooking[]>([])
+  const [waivers, setWaivers] = useState<DemoWaiver[]>([])
+
+  useEffect(() => {
+    const sync = () => { setBookings(getBookings()); setWaivers(getWaivers()) }
+    sync()
+    window.addEventListener('sq-session', sync)
+    return () => window.removeEventListener('sq-session', sync)
+  }, [])
+
+  return (
+    <AccountShell>
+      {(profile) => {
+        const plan = profile.planId ? planById[profile.planId] : null
+        return (
+          <div>
+            {/* Membership status */}
+            <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
+              <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Membership</p>
+                {plan ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <p style={{ fontSize: 20, fontWeight: 800, color: INK, margin: 0 }}>{plan.name}</p>
+                      {profile.status === 'active'
+                        ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Active</span>
+                        : <span style={{ fontSize: 10.5, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Ends {profile.renewsOn}</span>}
+                    </div>
+                    <p style={{ fontSize: 13, color: SUB, margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatCents(plan.priceCents)}/{plan.period}
+                      {profile.status === 'active' ? ` · renews ${profile.renewsOn}` : ' · will not renew'}
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Link href="/account/card" className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }}>Show my card</Link>
+                      <Link href="/account/billing" className="sq-btn sq-btn-ghost" style={{ padding: '8px 16px' }}>Manage billing</Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 6px' }}>No membership yet</p>
+                    <p style={{ fontSize: 13, color: SUB, margin: '0 0 14px' }}>Join to unlock door access, member pricing, and unlimited open play.</p>
+                    <Link href="/memberships" className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }}>See plans</Link>
+                  </>
+                )}
+              </div>
+
+              <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>Quick actions</p>
+                {[
+                  ['Rent a room', '/facilities'],
+                  ['Sign a waiver', '/waiver'],
+                  ['Shop gear', '/shop'],
+                  ['Update payment method', '/account/billing'],
+                ].map(([label, href]) => (
+                  <Link key={href} href={href} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: BLUE, textDecoration: 'none', padding: '8px 0', borderBottom: `1px solid ${LINE}` }}>
+                    {label} <span aria-hidden>→</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Upcoming bookings */}
+            <div className="sq-card" style={{ ...card, marginBottom: 24 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>My bookings</span>
+                <Link href="/facilities" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Book a room →</Link>
+              </div>
+              {bookings.length === 0 ? (
+                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Nothing booked yet — grab a room for your next get-together.</p>
+              ) : (
+                bookings.slice(0, 3).map((b, i) => {
+                  const zone = zoneById[b.zoneId]
+                  return (
+                    <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{zone.name}</p>
+                        <p style={{ fontSize: 12, color: SUB, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}</p>
+                      </div>
+                      {b.status === 'hold'
+                        ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — pay deposit</span>
+                        : <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Confirmed</span>}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Waivers */}
+            <div className="sq-card" style={card}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Waivers on file</span>
+                <Link href="/waiver" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Sign a waiver →</Link>
+              </div>
+              {waivers.length === 0 ? (
+                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No waivers yet — sign one before your first visit and skip the desk.</p>
+              ) : (
+                waivers.map((w, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < waivers.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: GREEN }}><rect x="1.5" y="1.5" width="13" height="13" rx="4" fill="#e5f2ea"/><path d="M4.8 8.3l2.2 2.2 4.2-4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{w.formName}</p>
+                      <p style={{ fontSize: 12, color: SUB, margin: 0 }}>covers {w.participant}</p>
+                    </div>
+                    <span style={{ fontSize: 12, color: FAINT }}>{w.signedOn}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )
+      }}
+    </AccountShell>
+  )
+}
