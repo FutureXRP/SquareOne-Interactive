@@ -26,6 +26,9 @@ export interface RoomConfig {
   sort: number
   // undefined = photo column not migrated yet; null = no photo set
   photoUrl?: string | null
+  // Rate for hour one; perHourCents covers each additional hour.
+  // undefined = rate column not migrated yet (flat perHourCents pricing).
+  firstHourCents?: number
 }
 
 export const ROOM_COLORS = [
@@ -43,10 +46,11 @@ interface FacilityRow {
   active: boolean
   sort: number
   photo_url?: string | null
+  first_hour_cents?: number | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
-function fromRow(r: FacilityRow, hasPhoto: boolean): RoomConfig {
+function fromRow(r: FacilityRow): RoomConfig {
   return {
     id: r.id,
     name: r.name,
@@ -58,26 +62,27 @@ function fromRow(r: FacilityRow, hasPhoto: boolean): RoomConfig {
     pricing: [...r.facility_prices].sort((a, b) => a.sort - b.sort).map((p) => ({ label: p.label, cents: p.cents })),
     active: r.active,
     sort: r.sort,
-    photoUrl: hasPhoto ? (r.photo_url ?? null) : undefined,
+    photoUrl: 'photo_url' in r ? (r.photo_url ?? null) : undefined,
+    firstHourCents: 'first_hour_cents' in r ? (r.first_hour_cents ?? r.per_hour_cents) : undefined,
   }
 }
 
 const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)'
+// Columns added by later migrations, newest first — we retry without them
+// until the matching migration has been run, so rooms never disappear.
+const COL_SETS = [`photo_url, first_hour_cents, ${BASE_COLS}`, `photo_url, ${BASE_COLS}`, BASE_COLS]
 
 let cache: RoomConfig[] = []
 
 export async function getRooms(): Promise<RoomConfig[]> {
-  // photo_url arrives with migration 0005 — fall back to the old column set
-  // until it's run so rooms never disappear.
-  const withPhoto = await supabase().from('facilities').select(`photo_url, ${BASE_COLS}`).order('sort')
-  if (!withPhoto.error) {
-    cache = (withPhoto.data as unknown as FacilityRow[]).map((r) => fromRow(r, true))
-    return cache
+  for (const cols of COL_SETS) {
+    const { data, error } = await supabase().from('facilities').select(cols).order('sort')
+    if (!error) {
+      cache = (data as unknown as FacilityRow[]).map(fromRow)
+      return cache
+    }
   }
-  const { data, error } = await supabase().from('facilities').select(BASE_COLS).order('sort')
-  if (error) throw error
-  cache = (data as unknown as FacilityRow[]).map((r) => fromRow(r, false))
-  return cache
+  throw new Error('facilities query failed')
 }
 
 export async function getActiveRooms(): Promise<RoomConfig[]> {
@@ -85,11 +90,11 @@ export async function getActiveRooms(): Promise<RoomConfig[]> {
 }
 
 export async function getRoom(id: string): Promise<RoomConfig | null> {
-  const withPhoto = await supabase().from('facilities').select(`photo_url, ${BASE_COLS}`).eq('id', id).maybeSingle()
-  if (!withPhoto.error) return withPhoto.data ? fromRow(withPhoto.data as unknown as FacilityRow, true) : null
-  const { data, error } = await supabase().from('facilities').select(BASE_COLS).eq('id', id).maybeSingle()
-  if (error) throw error
-  return data ? fromRow(data as unknown as FacilityRow, false) : null
+  for (const cols of COL_SETS) {
+    const { data, error } = await supabase().from('facilities').select(cols).eq('id', id).maybeSingle()
+    if (!error) return data ? fromRow(data as unknown as FacilityRow) : null
+  }
+  throw new Error('facilities query failed')
 }
 
 async function orgId(): Promise<string> {
@@ -109,8 +114,9 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     per_hour_cents: room.perHourCents,
     active: room.active,
     sort: room.sort,
-    // Only write the photo column once migration 0005 has run (photoUrl defined)
+    // Only write migration-added columns once they exist (values defined)
     ...(room.photoUrl !== undefined ? { photo_url: room.photoUrl } : {}),
+    ...(room.firstHourCents !== undefined ? { first_hour_cents: room.firstHourCents } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.
@@ -138,6 +144,7 @@ export async function addRoom(room: Omit<RoomConfig, 'sort'>): Promise<boolean> 
     per_hour_cents: room.perHourCents,
     active: room.active,
     sort,
+    ...(room.firstHourCents !== undefined ? { first_hour_cents: room.firstHourCents } : {}),
   }))
   if (ok && room.pricing.length > 0) {
     await tryWrite(() => supabase().from('facility_prices').insert(
@@ -184,6 +191,14 @@ export function roomLabel(id: string): { name: string; color: string } {
 
 export function roomsConfigured(): boolean {
   return isSupabaseConfigured()
+}
+
+// What a rental costs: the first hour at its own rate, every additional
+// hour at the per-hour rate. Before migration 0006, both rates are equal.
+export function rentalPriceCents(room: Pick<RoomConfig, 'perHourCents' | 'firstHourCents'>, hours: number): number {
+  if (hours <= 0) return 0
+  const first = room.firstHourCents ?? room.perHourCents
+  return first + (hours - 1) * room.perHourCents
 }
 
 // Upload a room photo to the public room-photos bucket and return its URL.
