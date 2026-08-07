@@ -55,6 +55,7 @@ export default function AdminBookingsPage() {
   const [nbStart, setNbStart] = useState(17)
   const [nbHours, setNbHours] = useState(2)
   const [nbPrice, setNbPrice] = useState('')
+  const [nbDeposit, setNbDeposit] = useState('') // '' = room default
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
 
   useEffect(() => {
@@ -67,6 +68,8 @@ export default function AdminBookingsPage() {
     }
     sync()
     setNbDate(isoDate(0))
+    // Front Desk deep-link: /admin/bookings?new=1 opens the booking form
+    if (new URLSearchParams(window.location.search).get('new') === '1') setShowNew(true)
     window.addEventListener(BOOKINGS_EVENT, sync)
     return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync) }
   }, [])
@@ -74,6 +77,11 @@ export default function AdminBookingsPage() {
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
   const autoPriceCents = room ? rentalPriceCents(room, nbHours) : 0
   const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
+  // Deposit defaults from the room; adjustable per booking (0009 required)
+  const roomDepositCents = room?.depositRequired ? (room.depositCents ?? 0) : 0
+  const depositCents = room?.depositCents === undefined
+    ? undefined
+    : nbDeposit.trim() === '' ? (roomDepositCents > 0 ? roomDepositCents : null) : (dollarsToCents(nbDeposit) || null)
   const canBook = me ? CAN_BOOK.includes(me.role) : false
 
   const createBooking = async () => {
@@ -90,6 +98,7 @@ export default function AdminBookingsPage() {
       priceCents,
       hold: nbPay === 'hold',
       createdBy: me.id,
+      depositCents,
     })
     if (res.ok && nbPay !== 'hold') {
       // Collect immediately: find the row we just made and record the payment.
@@ -100,7 +109,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbPay('hold')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold')
     } else if (res.conflict) {
       setConflictMsg(true)
     }
@@ -189,6 +198,13 @@ export default function AdminBookingsPage() {
               <label className="sq-label" htmlFor="nb-price">Price ($)</label>
               <input id="nb-price" className="sq-input" inputMode="decimal" value={nbPrice} placeholder={(autoPriceCents / 100).toFixed(2)} onChange={(e) => setNbPrice(e.target.value)} />
             </div>
+            {room?.depositCents !== undefined && (
+              <div>
+                <label className="sq-label" htmlFor="nb-dep">Deposit ($)</label>
+                <input id="nb-dep" className="sq-input" inputMode="decimal" value={nbDeposit}
+                  placeholder={(roomDepositCents / 100).toFixed(2)} onChange={(e) => setNbDeposit(e.target.value)} />
+              </div>
+            )}
           </div>
 
           <span className="sq-label">Payment</span>

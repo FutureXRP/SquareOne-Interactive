@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
-import { formatCents } from '@/lib/format'
-import { getRooms, saveRoom, addRoom, deleteRoom, uploadRoomPhoto, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
+import { formatCents, formatHour } from '@/lib/format'
+import { getRooms, saveRoom, addRoom, deleteRoom, uploadRoomPhoto, slugify, ROOM_COLORS, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -13,6 +13,9 @@ function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
 }
+
+// Half-hour steps from 5:00 AM to 11:00 PM for the schedule pickers.
+const HOUR_OPTIONS = Array.from({ length: 37 }, (_, i) => 5 + i * 0.5)
 
 export default function RoomsAdminPage() {
   const [rooms, setRooms] = useState<RoomConfig[]>([])
@@ -205,6 +208,81 @@ export default function RoomsAdminPage() {
                 ? 'The booking calculator charges the first-hour rate for hour one and the additional-hour rate for every hour after — set them equal for flat pricing. The advertised prices below are the chips shown on the room’s store card — keep them in sync.'
                 : 'The booking rate is what the online booking calculator charges per hour. Run the 0006_room_rates.sql migration in Supabase to unlock separate first-hour and additional-hour rates. The advertised prices below are the chips shown on the room’s store card.'}
             </p>
+            {/* Deposit — locks a booking in; adjustable per booking when staff book */}
+            {editing.depositCents !== undefined && (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <label className="sq-label" htmlFor="r-dep">Default deposit ($)</label>
+                  <input id="r-dep" className="sq-input" style={{ width: 120 }} inputMode="decimal" defaultValue={((editing.depositCents ?? 0) / 100).toFixed(2)} key={`dep-${editing.id}`}
+                    onBlur={(e) => patch(editing.id, { depositCents: dollarsToCents(e.target.value) })} />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: SUB, cursor: 'pointer', paddingBottom: 9 }}>
+                  <input type="checkbox" checked={!!editing.depositRequired} onChange={(e) => patch(editing.id, { depositRequired: e.target.checked })} style={{ accentColor: BLUE }} />
+                  Deposit required to lock a booking
+                </label>
+                <p style={{ fontSize: 11, color: FAINT, margin: '0 0 9px', flexBasis: '100%', lineHeight: 1.5 }}>
+                  New bookings start with this deposit — staff can adjust the amount on each booking.
+                </p>
+              </div>
+            )}
+
+            {/* Booking schedule — which days/hours this room takes bookings */}
+            <div style={{ marginBottom: 16 }}>
+              <span className="sq-label">Booking schedule</span>
+              {editing.bookingHours === undefined ? (
+                <p style={{ fontSize: 11.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+                  Run the <strong>0008_room_schedules.sql</strong> migration in Supabase to set which days
+                  and hours this room can be booked — until then it follows your business hours.
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: editing.bookingHours ? 10 : 0, flexWrap: 'wrap' }}>
+                    <select className="sq-select" style={{ width: 'auto', minWidth: 210 }}
+                      value={editing.bookingHours ? 'custom' : 'business'}
+                      onChange={(e) => patch(editing.id, {
+                        bookingHours: e.target.value === 'business'
+                          ? null
+                          : DAY_NAMES.map(() => ({ closed: false, openH: 8, closeH: 22 })),
+                      })}>
+                      <option value="business">Follows business hours</option>
+                      <option value="custom">Custom schedule for this room</option>
+                    </select>
+                  </div>
+                  {editing.bookingHours && (
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {editing.bookingHours.map((d, dow) => (
+                        <div key={dow} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: d.closed ? FAINT : INK, width: 110, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!d.closed} style={{ accentColor: BLUE }}
+                              onChange={(e) => patch(editing.id, { bookingHours: editing.bookingHours!.map((x, j) => (j === dow ? { ...x, closed: !e.target.checked } : x)) })} />
+                            {DAY_NAMES[dow]}
+                          </label>
+                          {d.closed ? (
+                            <span style={{ fontSize: 11.5, color: FAINT }}>no bookings</span>
+                          ) : (
+                            <>
+                              <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={d.openH}
+                                onChange={(e) => patch(editing.id, { bookingHours: editing.bookingHours!.map((x, j) => (j === dow ? { ...x, openH: Number(e.target.value) } : x)) })}>
+                                {HOUR_OPTIONS.filter((h) => h < d.closeH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                              </select>
+                              <span style={{ fontSize: 11.5, color: FAINT }}>to</span>
+                              <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={d.closeH}
+                                onChange={(e) => patch(editing.id, { bookingHours: editing.bookingHours!.map((x, j) => (j === dow ? { ...x, closeH: Number(e.target.value) } : x)) })}>
+                                {HOUR_OPTIONS.filter((h) => h > d.openH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                              </select>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
+                        Unchecked days show as unavailable in the store; open hours limit the start times shoppers can pick.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <span className="sq-label">Advertised prices (shown as chips in the store)</span>
             {editing.pricing.map((p, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getRoom, rentalPriceCents, type RoomConfig } from '@/lib/facilities-store'
+import { getRoom, rentalPriceCents, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, type SiteConfig } from '@/lib/site-config-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy } from '@/lib/staff-bookings-store'
@@ -16,6 +16,7 @@ interface DayOption {
   label: string
   weekday: string
   isSunday: boolean
+  dow: number // JS getDay(): 0=Sunday … 6=Saturday
 }
 
 export function BookingFlow({ facilityId }: { facilityId: string }) {
@@ -48,6 +49,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         weekday: i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' }),
         isSunday: d.getDay() === 0,
+        dow: d.getDay(),
       })
     }
     setDays(out)
@@ -73,14 +75,20 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   useEffect(() => { loadBusy() }, [loadBusy])
 
-  const dayHours = !cfg
+  const siteHours = !cfg
     ? { openH: 6, closeH: 22 }
     : day?.isSunday
       ? { openH: cfg.sundayOpenH, closeH: cfg.sundayCloseH }
       : { openH: cfg.weekdayOpenH, closeH: cfg.weekdayCloseH }
+  const roomHours = day && f ? roomDayHours(f, day.dow, siteHours) : { closed: false, ...siteHours }
+  const closedToday = roomHours.closed
+  const dayHours = { openH: roomHours.openH, closeH: roomHours.closeH }
+
+  // Which upcoming days this room takes bookings at all (for graying the picker).
+  const dayClosed = (d: DayOption) => !!f?.bookingHours?.[d.dow]?.closed
 
   const slots = useMemo(() => {
-    if (!day) return []
+    if (!day || closedToday) return []
     const now = new Date()
     const isToday = dayIdx === 0
     const nowH = now.getHours() + now.getMinutes() / 60
@@ -92,19 +100,22 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
       out.push({ startH: h, available: !overlaps && !past })
     }
     return out
-  }, [day, dayIdx, dayHours.openH, dayHours.closeH, hours, busy])
+  }, [day, dayIdx, closedToday, dayHours.openH, dayHours.closeH, hours, busy])
 
   if (!f) return <div style={{ minHeight: 200 }} />
 
   const priceCents = rentalPriceCents(f, hours)
   const firstHourCents = f.firstHourCents ?? f.perHourCents
   const splitRate = firstHourCents !== f.perHourCents
+  // Deposit that locks the booking in (undefined until migration 0009 runs)
+  const depositCents = f.depositRequired && (f.depositCents ?? 0) > 0 ? Math.min(f.depositCents as number, priceCents) : null
 
   const placeHold = async () => {
     if (!day || startH == null || requesting) return
     setRequesting(true)
     setConflict(false)
-    const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents)
+    const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
+      f.depositCents === undefined ? undefined : depositCents)
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {
@@ -146,8 +157,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </p>
         <div style={{ background: '#faf0dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
-            <strong>Hold {confirmed.code}</strong> — the room is yours for 24 hours. Pay the deposit at the
-            front desk (or when we call to confirm) and it locks in. Unpaid holds release automatically.
+            <strong>Hold {confirmed.code}</strong> — the room is yours for 24 hours.
+            {depositCents
+              ? ` Pay the ${formatCents(depositCents)} deposit at the front desk (or when we call to confirm) and it locks in.`
+              : ' Pay at the front desk (or when we call to confirm) and it locks in.'}
+            {' '}Unpaid holds release automatically.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -164,16 +178,19 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         {/* Date picker */}
         <p className="sq-label">Pick a date</p>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 18 }}>
-          {days.map((d, i) => (
-            <button key={d.iso} onClick={() => { setDayIdx(i); setStartH(null); setConflict(false) }} style={{
-              font: 'inherit', cursor: 'pointer', flexShrink: 0, textAlign: 'center',
-              border: `1.5px solid ${i === dayIdx ? BLUE : LINE}`, borderRadius: 10,
-              background: i === dayIdx ? '#eef4fb' : '#fff', padding: '8px 13px',
-            }}>
-              <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: i === dayIdx ? BLUE : FAINT }}>{d.weekday}</span>
-              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: i === dayIdx ? BLUE : INK, fontVariantNumeric: 'tabular-nums' }}>{d.label}</span>
-            </button>
-          ))}
+          {days.map((d, i) => {
+            const off = dayClosed(d)
+            return (
+              <button key={d.iso} disabled={off} onClick={() => { setDayIdx(i); setStartH(null); setConflict(false) }} style={{
+                font: 'inherit', cursor: off ? 'default' : 'pointer', flexShrink: 0, textAlign: 'center',
+                border: `1.5px solid ${i === dayIdx ? BLUE : LINE}`, borderRadius: 10,
+                background: off ? '#f3f6fb' : i === dayIdx ? '#eef4fb' : '#fff', padding: '8px 13px', opacity: off ? 0.6 : 1,
+              }}>
+                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: i === dayIdx ? BLUE : FAINT }}>{d.weekday}</span>
+                <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: off ? '#c3cede' : i === dayIdx ? BLUE : INK, fontVariantNumeric: 'tabular-nums', textDecoration: off ? 'line-through' : 'none' }}>{d.label}</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Duration — rentals run up to 8 hours */}
@@ -211,7 +228,13 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
               {formatHour(s.startH)}
             </button>
           ))}
-          {day && slots.length === 0 && <p style={{ fontSize: 13, color: SUB, gridColumn: '1/-1' }}>No slots fit that duration — try a shorter rental.</p>}
+          {day && slots.length === 0 && (
+            <p style={{ fontSize: 13, color: SUB, gridColumn: '1/-1' }}>
+              {closedToday
+                ? `${f.name} isn't bookable on ${DAY_NAMES[day.dow]}s — pick another day.`
+                : 'No slots fit that duration — try a shorter rental.'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -245,7 +268,12 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 14px' }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Total</span>
-            <span style={{ fontSize: 17, fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(priceCents)}</span>
+            <span style={{ textAlign: 'right' }}>
+              <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(priceCents)}</span>
+              {depositCents != null && (
+                <span style={{ display: 'block', fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>{formatCents(depositCents)} deposit locks it in</span>
+              )}
+            </span>
           </div>
           {signedIn ? (
             <button className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={startH == null || requesting} onClick={requestHold}>

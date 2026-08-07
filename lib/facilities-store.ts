@@ -29,6 +29,36 @@ export interface RoomConfig {
   // Rate for hour one; perHourCents covers each additional hour.
   // undefined = rate column not migrated yet (flat perHourCents pricing).
   firstHourCents?: number
+  // When this room can be booked. undefined = column not migrated yet;
+  // null = follows the business hours in Settings; otherwise a 7-entry
+  // array indexed Sunday(0)–Saturday(6).
+  bookingHours?: DaySchedule[] | null
+  // Deposit that locks a booking in. undefined = column not migrated yet.
+  depositCents?: number
+  depositRequired?: boolean
+}
+
+export interface DaySchedule {
+  closed: boolean
+  openH: number  // decimal hours: 8.5 = 8:30 AM
+  closeH: number
+}
+
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function normalizeSchedule(v: unknown): DaySchedule[] | null {
+  if (!Array.isArray(v) || v.length !== 7) return null
+  const out: DaySchedule[] = []
+  for (const d of v) {
+    const day = d as Partial<DaySchedule> | null
+    if (!day || typeof day !== 'object') return null
+    out.push({
+      closed: !!day.closed,
+      openH: typeof day.openH === 'number' ? day.openH : 8,
+      closeH: typeof day.closeH === 'number' ? day.closeH : 22,
+    })
+  }
+  return out
 }
 
 export const ROOM_COLORS = [
@@ -47,6 +77,9 @@ interface FacilityRow {
   sort: number
   photo_url?: string | null
   first_hour_cents?: number | null
+  booking_hours?: unknown
+  deposit_cents?: number | null
+  deposit_required?: boolean | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -64,13 +97,22 @@ function fromRow(r: FacilityRow): RoomConfig {
     sort: r.sort,
     photoUrl: 'photo_url' in r ? (r.photo_url ?? null) : undefined,
     firstHourCents: 'first_hour_cents' in r ? (r.first_hour_cents ?? r.per_hour_cents) : undefined,
+    bookingHours: 'booking_hours' in r ? normalizeSchedule(r.booking_hours) : undefined,
+    depositCents: 'deposit_cents' in r ? (r.deposit_cents ?? 0) : undefined,
+    depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
   }
 }
 
 const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)'
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
-const COL_SETS = [`photo_url, first_hour_cents, ${BASE_COLS}`, `photo_url, ${BASE_COLS}`, BASE_COLS]
+const COL_SETS = [
+  `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, ${BASE_COLS}`,
+  `photo_url, first_hour_cents, booking_hours, ${BASE_COLS}`,
+  `photo_url, first_hour_cents, ${BASE_COLS}`,
+  `photo_url, ${BASE_COLS}`,
+  BASE_COLS,
+]
 
 let cache: RoomConfig[] = []
 
@@ -117,6 +159,9 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     // Only write migration-added columns once they exist (values defined)
     ...(room.photoUrl !== undefined ? { photo_url: room.photoUrl } : {}),
     ...(room.firstHourCents !== undefined ? { first_hour_cents: room.firstHourCents } : {}),
+    ...(room.bookingHours !== undefined ? { booking_hours: room.bookingHours } : {}),
+    ...(room.depositCents !== undefined ? { deposit_cents: room.depositCents } : {}),
+    ...(room.depositRequired !== undefined ? { deposit_required: room.depositRequired } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.
@@ -191,6 +236,19 @@ export function roomLabel(id: string): { name: string; color: string } {
 
 export function roomsConfigured(): boolean {
   return isSupabaseConfigured()
+}
+
+// The hours a room takes bookings on a given weekday (0=Sunday), after
+// applying its custom schedule over the site-wide business hours.
+// closed: true means no bookings that day.
+export function roomDayHours(
+  room: Pick<RoomConfig, 'bookingHours'>,
+  weekday: number,
+  site: { openH: number; closeH: number },
+): { closed: boolean; openH: number; closeH: number } {
+  const sched = room.bookingHours?.[weekday]
+  if (!sched) return { closed: false, ...site }
+  return { closed: sched.closed, openH: sched.openH, closeH: sched.closeH }
 }
 
 // What a rental costs: the first hour at its own rate, every additional

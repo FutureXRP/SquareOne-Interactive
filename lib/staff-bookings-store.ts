@@ -32,6 +32,8 @@ export interface StaffBooking {
   payMethod: string | null
   takenBy: string
   note?: string
+  // Deposit that locks this booking in. null = none due; undefined = column not migrated.
+  depositCents?: number | null
 }
 
 export function isoDate(offset = 0): string {
@@ -67,11 +69,14 @@ interface Row {
   status: StaffBooking['status']
   price_cents: number
   note: string | null
+  deposit_cents?: number | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
 
 const SELECT = 'id, code, facility_id, account_id, title, client_name, during, status, price_cents, note, staff:created_by(name), payments(amount_cents, method, status)'
+// deposit_cents arrives with migration 0009 — fall back until it's run.
+const SELECT_SETS = [`deposit_cents, ${SELECT}`, SELECT]
 
 function fromRow(r: Row): StaffBooking | null {
   const range = parseRange(r.during)
@@ -95,24 +100,29 @@ function fromRow(r: Row): StaffBooking | null {
     payMethod: paid.length > 0 ? paid[paid.length - 1].method : null,
     takenBy: r.staff?.name ?? 'member',
     note: r.note ?? undefined,
+    depositCents: 'deposit_cents' in r ? r.deposit_cents ?? null : undefined,
   }
 }
 
 export async function getStaffBookings(): Promise<StaffBooking[]> {
-  const { data, error } = await supabase().from('bookings').select(SELECT).order('during')
-  if (error) throw error
-  return (data as unknown as Row[]).map(fromRow).filter((b): b is StaffBooking => b !== null)
+  for (const cols of SELECT_SETS) {
+    const { data, error } = await supabase().from('bookings').select(cols).order('during')
+    if (!error) return (data as unknown as Row[]).map(fromRow).filter((b): b is StaffBooking => b !== null)
+  }
+  throw new Error('bookings query failed')
 }
 
 export async function bookingsForDate(date: string): Promise<StaffBooking[]> {
   const { fromIso, toIso } = localRange(date, 0, 24)
-  const { data, error } = await supabase()
-    .from('bookings')
-    .select(SELECT)
-    .overlaps('during', `[${fromIso},${toIso})`)
-    .in('status', ['hold', 'confirmed'])
-  if (error) throw error
-  return (data as unknown as Row[]).map(fromRow).filter((b): b is StaffBooking => b !== null)
+  for (const cols of SELECT_SETS) {
+    const { data, error } = await supabase()
+      .from('bookings')
+      .select(cols)
+      .overlaps('during', `[${fromIso},${toIso})`)
+      .in('status', ['hold', 'confirmed'])
+    if (!error) return (data as unknown as Row[]).map(fromRow).filter((b): b is StaffBooking => b !== null)
+  }
+  throw new Error('bookings query failed')
 }
 
 export interface NewBooking {
@@ -126,6 +136,7 @@ export interface NewBooking {
   hold: boolean
   createdBy: string | null // staff uuid
   accountId?: string | null
+  depositCents?: number | null // omit before migration 0009
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -144,6 +155,7 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     price_cents: b.priceCents,
     hold_expires_at: b.hold ? new Date(Date.now() + 24 * 3600_000).toISOString() : null,
     created_by: b.createdBy,
+    ...(b.depositCents !== undefined ? { deposit_cents: b.depositCents } : {}),
   }).select('code').single()
   if (error) {
     const conflict = error.code === '23P01' // exclusion constraint: slot taken
@@ -166,7 +178,7 @@ export async function rescheduleBooking(id: string, date: string, startH: number
   return { ok: true, conflict: false }
 }
 
-export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string }): Promise<boolean> {
+export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null }): Promise<boolean> {
   const { error } = await supabase().from('bookings').update(patch).eq('id', id)
   if (error) {
     console.error('[bookings]', error.message)
@@ -176,9 +188,12 @@ export async function updateBookingFields(id: string, patch: { price_cents?: num
   return true
 }
 
-export async function recordPayment(booking: StaffBooking, method: PayMethod, staffId: string | null): Promise<boolean> {
+// Records a payment against a booking. amountCents defaults to the full
+// remaining balance; pass a smaller figure for a partial payment/deposit.
+export async function recordPayment(booking: StaffBooking, method: PayMethod, staffId: string | null, amountCents?: number): Promise<boolean> {
   const sb = supabase()
-  const amount = booking.priceCents - booking.paidCents
+  const remaining = booking.priceCents - booking.paidCents
+  const amount = Math.min(amountCents ?? remaining, remaining)
   if (amount <= 0) return false
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
   const { error } = await sb.from('payments').insert({
