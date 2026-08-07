@@ -1,7 +1,9 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { card, INK, SUB, FAINT } from '@/lib/theme'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { Logo } from '@/components/Logo'
+import { card, INK, SUB, FAINT, NAVY } from '@/lib/theme'
 import { getMyStaff, STAFF_EVENT, type StaffMember } from '@/lib/staff-store'
 import { isSignedIn, signInAuth, signOut, SESSION_EVENT } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -14,8 +16,28 @@ type GateState =
   | { kind: 'not-staff' }
   | { kind: 'staff'; me: StaffMember }
 
-// Gates the whole admin behind a staff login. RLS is the real enforcement —
-// this gate is the honest UI for it.
+function SquareMark() {
+  return (
+    <div style={{ margin: '0 auto 12px', width: 40 }}>
+      <Logo size={40} radius={10} />
+    </div>
+  )
+}
+
+// A bare, centered screen — nothing about the dashboard (no nav, no module
+// names) renders until a staff-linked login is verified. RLS in the database
+// is the real enforcement; this is the honest UI for it.
+function LockScreen({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+      <div style={{ width: '100%', maxWidth: 400 }}>{children}</div>
+      <p style={{ fontSize: 11, color: FAINT, marginTop: 26 }}>SquareOne Interactive · part of SquareOne Compassion</p>
+    </div>
+  )
+}
+
+// Wraps the ENTIRE admin shell: sidebar, content, and footer only exist for
+// verified staff. Everyone else gets a sign-in screen and nothing more.
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GateState>({ kind: 'loading' })
   const [email, setEmail] = useState('')
@@ -45,35 +67,60 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  if (state.kind === 'loading') return <div style={{ minHeight: '60vh' }} />
-  if (state.kind === 'staff') return <>{children}</>
+  if (state.kind === 'loading') return <div style={{ minHeight: '100vh' }} />
+
+  if (state.kind === 'staff') {
+    return (
+      <div className="sq-shell" style={{ display: 'flex', minHeight: '100vh' }}>
+        <Sidebar staffName={state.me.name} onSignOut={() => signOut()} />
+        <main style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1 }}>{children}</div>
+          <footer style={{ background: NAVY, color: 'rgba(255,255,255,0.62)', marginTop: 30 }}>
+            <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px 18px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px 18px', flexWrap: 'wrap' }}>
+                {['Early Learning Center', 'Interactive', 'Medical Center', 'Event Rooms', 'Donate'].map((s, i) => (
+                  <span key={s} style={{ fontSize: 11.5, fontWeight: s === 'Interactive' ? 700 : 500, color: s === 'Interactive' ? '#fff' : 'rgba(255,255,255,0.62)', display: 'inline-flex', alignItems: 'center', gap: 18 }}>
+                    {i > 0 && <span style={{ width: 4, height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 1, transform: 'rotate(45deg)' }} />}
+                    {s}
+                  </span>
+                ))}
+              </div>
+              <span style={{ fontSize: 11.5 }}>part of SquareOne Compassion</span>
+            </div>
+          </footer>
+        </main>
+      </div>
+    )
+  }
 
   if (state.kind === 'unconfigured') {
     return (
-      <div className="sq-page" style={{ padding: '48px 40px', maxWidth: 560, margin: '0 auto' }}>
-        <div className="sq-card" style={{ ...card, padding: '28px 30px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Connect Supabase to open the dashboard</h1>
-          <p style={{ fontSize: 13.5, color: SUB, margin: 0, lineHeight: 1.6 }}>{NOT_CONFIGURED_MSG}</p>
+      <LockScreen>
+        <div className="sq-card" style={{ ...card, padding: '28px 30px', textAlign: 'center' }}>
+          <SquareMark />
+          <h1 style={{ fontSize: 19, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Dashboard not connected</h1>
+          <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>{NOT_CONFIGURED_MSG}</p>
         </div>
-      </div>
+      </LockScreen>
     )
   }
 
   if (state.kind === 'not-staff') {
     return (
-      <div className="sq-page" style={{ padding: '48px 40px', maxWidth: 560, margin: '0 auto' }}>
-        <div className="sq-card" style={{ ...card, padding: '28px 30px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px' }}>This account isn&apos;t staff</h1>
-          <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 16px', lineHeight: 1.6 }}>
-            You&apos;re signed in, but this login isn&apos;t linked to a staff role. An owner or manager can link it
-            in Settings → Staff &amp; roles, or run the owner-link SQL from the setup notes.
+      <LockScreen>
+        <div className="sq-card" style={{ ...card, padding: '28px 30px', textAlign: 'center' }}>
+          <SquareMark />
+          <h1 style={{ fontSize: 19, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Staff only</h1>
+          <p style={{ fontSize: 13, color: SUB, margin: '0 0 16px', lineHeight: 1.6 }}>
+            You&apos;re signed in, but this login isn&apos;t linked to a staff role.
+            An owner or manager can link it in Settings → Staff &amp; roles.
           </p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="sq-btn sq-btn-ghost" onClick={() => signOut()}>Sign out</button>
             <Link href="/" className="sq-btn sq-btn-primary">Go to the store</Link>
           </div>
         </div>
-      </div>
+      </LockScreen>
     )
   }
 
@@ -87,10 +134,11 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="sq-page" style={{ padding: '48px 40px', maxWidth: 440, margin: '0 auto' }}>
-      <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.02em' }}>Staff sign in</h1>
-        <p style={{ fontSize: 13, color: SUB, margin: 0 }}>The dashboard is for SquareOne staff.</p>
+    <LockScreen>
+      <div style={{ textAlign: 'center', marginBottom: 18 }}>
+        <SquareMark />
+        <h1 style={{ fontSize: 21, fontWeight: 800, color: INK, margin: '0 0 4px', letterSpacing: '-0.02em' }}>Staff sign in</h1>
+        <p style={{ fontSize: 13, color: SUB, margin: 0 }}>This area is for SquareOne staff only.</p>
       </div>
       <form onSubmit={submit} className="sq-card" style={{ ...card, padding: '24px 26px' }}>
         <div style={{ marginBottom: 14 }}>
@@ -106,9 +154,9 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
         </button>
         {error && <p style={{ fontSize: 12, color: '#cf4436', fontWeight: 600, margin: '10px 0 0', textAlign: 'center' }}>{error}</p>}
       </form>
-      <p style={{ fontSize: 11, color: FAINT, margin: '14px 0 0', textAlign: 'center' }}>
-        No staff account? Members use the <Link href="/" style={{ color: '#2f6db8', fontWeight: 600 }}>store</Link>.
+      <p style={{ fontSize: 11.5, color: FAINT, margin: '14px 0 0', textAlign: 'center' }}>
+        Looking for the gym? <Link href="/" style={{ color: '#2f6db8', fontWeight: 600 }}>Visit the store</Link>
       </p>
-    </div>
+    </LockScreen>
   )
 }

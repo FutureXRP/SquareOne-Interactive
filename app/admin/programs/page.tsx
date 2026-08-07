@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getPrograms, saveProgram, addProgram as addProgramLive, type EditableProgram } from '@/lib/programs-store'
+import { getPrograms, saveProgram, addProgram as addProgramLive, deleteProgram, type EditableProgram } from '@/lib/programs-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -32,6 +32,15 @@ export default function ProgramsPage() {
       if (program) debouncedSave(program)
       return next
     })
+  }
+
+  const removeProgram = async (id: string, name: string) => {
+    if (!window.confirm(`Delete "${name}"? Its registrations are deleted with it.`)) return
+    const ok = await deleteProgram(id)
+    if (ok) {
+      setPrograms((cur) => cur.filter((x) => x.id !== id))
+      if (editingId === id) setEditingId(null)
+    }
   }
 
   const addProgram = async () => {
@@ -97,7 +106,10 @@ export default function ProgramsPage() {
                       <input type="checkbox" checked={p.active} onChange={(e) => patch(p.id, { active: e.target.checked })} style={{ accentColor: BLUE }} />
                       Active
                     </label>
-                    <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => setEditingId(null)}>Done</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="sq-btn sq-btn-danger" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => removeProgram(p.id, p.name)}>Delete</button>
+                      <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => setEditingId(null)}>Done</button>
+                    </div>
                   </div>
                 </div>
               ) : (

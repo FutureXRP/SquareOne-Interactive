@@ -106,3 +106,20 @@ export async function addPlan(p: Omit<EditablePlan, 'sort'>): Promise<boolean> {
   if (ok) emit(PLANS_EVENT)
   return ok
 }
+
+// Delete a plan. If members are subscribed to it, the database blocks the
+// delete — we hide it from the store instead.
+export async function deletePlan(id: string): Promise<'deleted' | 'hidden' | 'failed'> {
+  const { error } = await supabase().from('membership_plans').delete().eq('id', id)
+  if (!error) {
+    emit(PLANS_EVENT)
+    return 'deleted'
+  }
+  if (error.code === '23503') {
+    const { error: e2 } = await supabase().from('membership_plans').update({ active: false }).eq('id', id)
+    if (!e2) emit(PLANS_EVENT)
+    return e2 ? 'failed' : 'hidden'
+  }
+  console.error('[plans]', error.message)
+  return 'failed'
+}

@@ -86,3 +86,10 @@ export async function addProgram(id: string, name: string): Promise<boolean> {
   if (ok) emit(PROGRAMS_EVENT)
   return ok
 }
+
+// Deleting a program also deletes its registrations (cascade) — confirm first.
+export async function deleteProgram(id: string): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('programs').delete().eq('id', id))
+  if (ok) emit(PROGRAMS_EVENT)
+  return ok
+}

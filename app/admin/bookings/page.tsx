@@ -7,7 +7,7 @@ import { formatCents, formatHour } from '@/lib/format'
 import { getActiveRooms, roomLabel, type RoomConfig } from '@/lib/facilities-store'
 import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import {
-  getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, isoDate,
+  getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -252,7 +252,13 @@ export default function AdminBookingsPage() {
                       </p>
                     </div>
                     {b.status === 'canceled' ? (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
+                        {canBook && (
+                          <button className="sq-btn sq-btn-danger" style={{ padding: '4px 10px', fontSize: 10.5 }}
+                            onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
+                        )}
+                      </span>
                     ) : b.status === 'hold' ? (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
                     ) : (

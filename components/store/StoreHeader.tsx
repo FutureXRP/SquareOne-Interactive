@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { getCart, getProfile, SESSION_EVENT } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { Logo } from '@/components/Logo'
 
 const links = [
   { href: '/facilities', label: 'Rent a room' },
@@ -12,15 +13,7 @@ const links = [
   { href: '/shop', label: 'Shop' },
 ]
 
-function SquareMark({ size = 30 }: { size?: number }) {
-  return (
-    <div style={{ width: size, height: size, borderRadius: 8, background: 'linear-gradient(135deg, #2f6db8 0%, #182740 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <div style={{ width: size / 2, height: size / 2, border: '2px solid #fff', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: size / 7, height: size / 7, background: '#fff', borderRadius: 1 }} />
-      </div>
-    </div>
-  )
-}
+
 
 export function StoreHeader() {
   const pathname = usePathname()
@@ -44,7 +37,7 @@ export function StoreHeader() {
     <header style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)', borderBottom: '1px solid #dbe4f0' }}>
       <div className="sq-store-header" style={{ maxWidth: 1180, margin: '0 auto', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', marginRight: 6 }}>
-          <SquareMark />
+          <Logo size={30} />
           <span>
             <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, color: '#1f2c42', letterSpacing: '-0.02em', lineHeight: 1.15 }}>SquareOne</span>
             <span style={{ display: 'block', fontSize: 10, color: '#94a6bd', lineHeight: 1.15 }}>Interactive · Tulsa</span>

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
+import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, deleteClientAccount, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
 import { useLive } from '@/lib/use-live'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 
@@ -41,6 +41,12 @@ export default function ClientsPage() {
     if (cents === 0 || !adjReason.trim()) return
     const ok = await recordLedgerEntry(id, cents * sign, adjReason.trim())
     if (ok) { setAdjAmount(''); setAdjReason('') }
+  }
+
+  const removeAccount = async (id: string, name: string) => {
+    if (!window.confirm(`Delete the ${name} account? Its members, ledger, and waivers are removed. This can't be undone.`)) return
+    const ok = await deleteClientAccount(id)
+    if (ok) setEditingId(null)
   }
 
   const owingCents = clients.reduce((n, c) => n + Math.max(c.balanceCents, 0), 0)
@@ -101,6 +107,7 @@ export default function ClientsPage() {
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, 1)}>Charge</button>
                     <button className="sq-btn sq-btn-primary" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, -1)}>Credit / payment</button>
                   </div>
+                  <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5, marginBottom: 10 }} onClick={() => removeAccount(c.id, draft.name)}>Delete account</button>
                   {c.recent.length > 0 && (
                     <div style={{ fontSize: 11.5, color: SUB }}>
                       {c.recent.map((e, j) => (

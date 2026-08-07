@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPlanLive, type EditablePlan } from '@/lib/plans-store'
-import { signUpAuth, choosePlan } from '@/lib/session'
+import { signUpAuth, choosePlan, isSignedIn, getProfile, hasWaiver } from '@/lib/session'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { FITNESS_WAIVER } from '@/lib/waiver-defs'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -20,7 +20,7 @@ function SignupForm() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [step, setStep] = useState<'form' | 'waiver' | 'confirm-email'>('form')
+  const [step, setStep] = useState<'checking' | 'form' | 'waiver' | 'confirm-email'>('checking')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,6 +29,26 @@ function SignupForm() {
       getPlanLive(planParam).then(setPlan).catch(() => {})
     }
   }, [planParam])
+
+  // Already signed in? Skip profile creation — go straight to the waiver,
+  // or straight to the plan if the fitness waiver is already on file.
+  useEffect(() => {
+    let on = true
+    const route = async () => {
+      if (!isSupabaseConfigured() || !(await isSignedIn())) { if (on) setStep('form'); return }
+      if (!planParam) { router.replace('/account'); return }
+      const profile = await getProfile()
+      if (profile?.name && on) setName(profile.name)
+      if (await hasWaiver(FITNESS_WAIVER.id)) {
+        await choosePlan(planParam)
+        router.replace('/account/billing?welcome=1')
+        return
+      }
+      if (on) setStep('waiver')
+    }
+    route()
+    return () => { on = false }
+  }, [planParam, router])
 
   const canSubmit = name.trim() && /.+@.+\..+/.test(email) && password.length >= 8 && !submitting
 
@@ -48,6 +68,14 @@ function SignupForm() {
   const finishJoin = async () => {
     if (plan) await choosePlan(plan.id)
     router.push('/account/billing?welcome=1')
+  }
+
+  if (step === 'checking' || (step === 'waiver' && planParam && !plan)) {
+    return (
+      <div className="sq-page" style={{ padding: '64px 20px', textAlign: 'center' }}>
+        <p style={{ fontSize: 13, color: FAINT, margin: 0 }}>One moment…</p>
+      </div>
+    )
   }
 
   if (step === 'confirm-email') {

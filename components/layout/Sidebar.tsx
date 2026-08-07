@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { Logo } from '@/components/Logo'
 
 const nav = [
   { href: '/admin', label: 'Today',
@@ -36,24 +37,15 @@ const nav = [
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1M12.7 12.7l-1.1-1.1M4.4 4.4L3.3 3.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
 ]
 
-// CSS-drawn nested-square mark — the square as design system (build.md).
-function SquareMark() {
-  return (
-    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #2f6db8 0%, #182740 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <div style={{ width: 14, height: 14, border: '2px solid #fff', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 4, height: 4, background: '#fff', borderRadius: 1 }} />
-      </div>
-    </div>
-  )
-}
 
-export function Sidebar() {
+
+export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOut?: () => void }) {
   const pathname = usePathname()
   return (
     <aside className="sq-sidebar" style={{ width: 220, flexShrink: 0, background: '#fff', borderRight: '1px solid #dbe4f0', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div className="sq-sidebar-head" style={{ padding: '20px 20px 16px', borderBottom: '1px solid #eaf0f8' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-          <SquareMark />
+          <Logo size={28} />
           <span style={{ fontSize: 14, fontWeight: 700, color: '#1f2c42', letterSpacing: '-0.01em' }}>SquareOne</span>
         </div>
         <p style={{ fontSize: 11, color: '#94a6bd', marginLeft: 36, marginTop: 0, marginBottom: 0 }}>Interactive · Facility platform</p>
@@ -78,14 +70,19 @@ export function Sidebar() {
       </nav>
       <div className="sq-sidebar-foot" style={{ padding: '14px 16px', borderTop: '1px solid #eaf0f8' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#eef4fb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ width: 7, height: 7, borderRadius: 999, background: isSupabaseConfigured() ? '#2e8b57' : '#e8a13a', display: 'block' }} />
+          <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#eef4fb', color: '#2f6db8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>
+            {staffName ? staffName.charAt(0) : <span style={{ width: 7, height: 7, borderRadius: 999, background: isSupabaseConfigured() ? '#2e8b57' : '#e8a13a', display: 'block' }} />}
           </div>
-          <div>
-            <p style={{ fontSize: 12.5, fontWeight: 500, color: '#33415e', margin: 0 }}>{isSupabaseConfigured() ? 'Live' : 'Not connected'}</p>
-            <p style={{ fontSize: 11, color: '#94a6bd', margin: 0 }}>{isSupabaseConfigured() ? 'Supabase connected' : 'env vars missing'}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#33415e', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{staffName ?? (isSupabaseConfigured() ? 'Live' : 'Not connected')}</p>
+            <p style={{ fontSize: 11, color: '#94a6bd', margin: 0 }}>{staffName ? 'signed in · staff' : isSupabaseConfigured() ? 'Supabase connected' : 'env vars missing'}</p>
           </div>
         </div>
+        {onSignOut && (
+          <button onClick={onSignOut} style={{ font: 'inherit', cursor: 'pointer', width: '100%', fontSize: 12, fontWeight: 600, color: '#64748c', background: '#f3f6fb', border: '1px solid #dbe4f0', borderRadius: 8, padding: '7px 0', marginBottom: 10 }}>
+            Sign out
+          </button>
+        )}
         <Link href="/" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#2f6db8', textDecoration: 'none', marginBottom: 8 }}>View public store →</Link>
         <p style={{ fontSize: 10.5, color: '#94a6bd', margin: 0, lineHeight: 1.5 }}>part of SquareOne Compassion</p>
       </div>
