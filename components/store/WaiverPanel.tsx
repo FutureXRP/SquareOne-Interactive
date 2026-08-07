@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { signWaiver } from '@/lib/session'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type { WaiverDef } from '@/lib/waiver-defs'
 
 // Inline waiver signing step, embedded in the flows that require it
@@ -18,6 +19,25 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
   const [signature, setSignature] = useState('')
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [terms, setTerms] = useState<string[]>(def.terms)
+  const [title, setTitle] = useState(def.name)
+
+  // The signed terms come from the live form (editable in the dashboard);
+  // the built-in text is only the fallback.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    let on = true
+    supabase().from('forms').select('name, fields').eq('id', def.id).maybeSingle().then(({ data }) => {
+      if (!on || !data) return
+      const row = data as { name: string; fields: { type: string; content?: string; label: string }[] }
+      setTitle(row.name || def.name)
+      const paras = (Array.isArray(row.fields) ? row.fields : [])
+        .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
+        .map((f) => (f.content as string).trim())
+      if (paras.length > 0) setTerms(paras)
+    })
+    return () => { on = false }
+  }, [def.id, def.name])
 
   const canSign = signer.trim().length > 0 && agreed && signature.trim().toLowerCase() === signer.trim().toLowerCase()
 
@@ -32,11 +52,11 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
 
   return (
     <div className="sq-card" style={{ ...card, padding: compact ? '18px 20px' : '22px 26px' }}>
-      <p style={{ fontSize: 14.5, fontWeight: 800, color: INK, margin: '0 0 2px' }}>{def.name}</p>
+      <p style={{ fontSize: 14.5, fontWeight: 800, color: INK, margin: '0 0 2px' }}>{title}</p>
       <p style={{ fontSize: 12, color: FAINT, margin: '0 0 12px' }}>{def.context} · takes about a minute</p>
 
       <div style={{ maxHeight: compact ? 150 : undefined, overflowY: compact ? 'auto' : undefined, paddingRight: compact ? 6 : 0, marginBottom: 14 }}>
-        {def.terms.map((t, i) => (
+        {terms.map((t, i) => (
           <p key={i} style={{ fontSize: 12.5, color: SUB, lineHeight: 1.6, margin: '0 0 10px', paddingLeft: 16, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 0, top: 6, width: 6, height: 6, background: `${BLUE}30`, border: `1.5px solid ${BLUE}`, borderRadius: 2, transform: 'rotate(45deg)' }} />
             {t}

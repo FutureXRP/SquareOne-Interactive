@@ -138,6 +138,23 @@ export async function addRoom(room: Omit<RoomConfig, 'sort'>): Promise<boolean> 
   return ok
 }
 
+// Delete a room. If bookings reference it, the delete is blocked by the
+// database — we hide it from the store instead and say so.
+export async function deleteRoom(id: string): Promise<'deleted' | 'hidden' | 'failed'> {
+  const { error } = await supabase().from('facilities').delete().eq('id', id)
+  if (!error) {
+    emit(ROOMS_EVENT)
+    return 'deleted'
+  }
+  if (error.code === '23503') { // has bookings — hide instead
+    const ok = await tryWrite(() => supabase().from('facilities').update({ active: false }).eq('id', id))
+    if (ok) emit(ROOMS_EVENT)
+    return ok ? 'hidden' : 'failed'
+  }
+  console.error('[rooms]', error.message)
+  return 'failed'
+}
+
 export function slugify(name: string, taken: Set<string>): string {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'room'
   let slug = base

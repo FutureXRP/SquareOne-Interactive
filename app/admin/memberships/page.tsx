@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { membershipStats, recentSignups } from '@/lib/admin-data'
-import { getPlans, savePlan, addPlan as addPlanLive, type EditablePlan } from '@/lib/plans-store'
+import { getMembershipStats, type MembershipStats } from '@/lib/membership-stats'
+import { getPlans, savePlan, addPlan as addPlanLive, deletePlan, type EditablePlan } from '@/lib/plans-store'
 import { slugify } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -15,8 +15,10 @@ function dollarsToCents(v: string): number {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
 }
 
+const EMPTY_STATS: MembershipStats = { active: 0, canceling: 0, pastDue: 0, mrrCents: 0, byPlan: [], recent: [] }
+
 export default function AdminMembershipsPage() {
-  const m = membershipStats
+  const [m, setStats] = useState<MembershipStats>(EMPTY_STATS)
   const [plans, setPlans] = useState<EditablePlan[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
@@ -30,7 +32,18 @@ export default function AdminMembershipsPage() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     getPlans().then(setPlans).catch(() => {})
+    getMembershipStats().then(setStats).catch(() => {})
   }, [])
+
+  const removePlan = async (id: string, name: string) => {
+    if (!window.confirm(`Delete the ${name} plan? If members are subscribed it will be hidden from the store instead.`)) return
+    const result = await deletePlan(id)
+    if (result !== 'failed') {
+      setPlans(await getPlans())
+      if (editingId === id) setEditingId(null)
+      if (result === 'hidden') window.alert('Members are subscribed to this plan, so it was hidden from the store instead of deleted.')
+    }
+  }
 
   const editing = plans.find((p) => p.id === editingId) ?? null
 
@@ -54,9 +67,9 @@ export default function AdminMembershipsPage() {
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Fitness Memberships" sub="Edit the plans the store sells — prices, names, features — and watch the subscriber base. Mirrored from Stripe when billing goes live." chip="plans live in store">
+      <PageHero title="Fitness Memberships" sub="Edit the plans the store sells and watch the live subscriber base. Automatic billing arrives with Stripe." chip={`${m.active} active`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub="subscriber sync arrives with Stripe" />
+          <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub={`${m.active} active member${m.active === 1 ? '' : 's'}`} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {savedNote && <span style={{ fontSize: 12, fontWeight: 700 }}>Saved ✓</span>}
             <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={addPlan}>+ New plan</button>
@@ -64,14 +77,13 @@ export default function AdminMembershipsPage() {
         </div>
       </PageHero>
 
-      {/* KPI strip */}
+      {/* KPI strip — live subscription counts (zeros are honest zeros) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { label: 'Family plans', value: String(m.family), sub: 'active subscriptions' },
-          { label: 'Individual plans', value: String(m.individual), sub: 'active subscriptions' },
-          { label: 'New this month', value: `+${m.newThisMonth}`, accent: GREEN, sub: 'signups' },
-          { label: 'Canceling', value: String(m.canceling), accent: '#b07818', sub: 'end of period' },
-          { label: 'Past due', value: formatCents(m.pastDueCents), accent: RED, sub: 'dunning via Stripe' },
+          { label: 'Active members', value: String(m.active), accent: m.active > 0 ? GREEN : undefined, sub: 'live subscriptions' },
+          ...m.byPlan.map((bp) => ({ label: `${bp.name} plan`, value: String(bp.count), accent: undefined as string | undefined, sub: 'subscribed' })),
+          { label: 'Canceling', value: String(m.canceling), accent: m.canceling > 0 ? '#b07818' : undefined, sub: 'end of period' },
+          { label: 'Past due', value: String(m.pastDue), accent: m.pastDue > 0 ? RED : undefined, sub: 'needs follow-up' },
         ].map((k) => (
           <div key={k.label} className="sq-card" style={{ ...card, padding: '15px 17px' }}>
             <p style={{ fontSize: 11, color: FAINT, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{k.label}</p>
@@ -142,8 +154,9 @@ export default function AdminMembershipsPage() {
             <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', marginTop: 4 }} onClick={() => patch(editing.id, { features: [...editing.features, 'New feature'] })}>+ Add feature</button>
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href="/memberships" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
-              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Price changes apply to new signups; existing members keep their rate until Stripe migration.</p>
+              <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={() => removePlan(editing.id, editing.name)}>Delete plan</button>
             </div>
+            <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0' }}>Price changes apply to new signups; existing members keep their rate until Stripe migration.</p>
           </div>
         ) : (
           <div className="sq-card" style={{ ...card, padding: '30px 32px', alignSelf: 'start', textAlign: 'center' }}>
@@ -152,21 +165,25 @@ export default function AdminMembershipsPage() {
         )}
       </div>
 
-      {/* Recent signups */}
+      {/* Recent signups — live */}
       <div className="sq-card" style={card}>
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Recent signups</span>
-          <span style={{ fontSize: 11.5, color: FAINT }}>example data — Stripe sync coming</span>
+          <span style={{ fontSize: 11.5, color: FAINT }}>live</span>
         </div>
-        {recentSignups.map((s, i) => (
-          <div key={s.name} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < recentSignups.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{s.name}</p>
-              <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{s.plan} plan</p>
+        {m.recent.length === 0 ? (
+          <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No members yet — signups from the store appear here the moment they happen.</p>
+        ) : (
+          m.recent.map((r, i) => (
+            <div key={`${r.account}-${i}`} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < m.recent.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{r.account}</p>
+                <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{r.plan} plan{r.status === 'canceling' ? ' · canceling' : ''}</p>
+              </div>
+              <span style={{ fontSize: 12, color: FAINT }}>{r.when}</span>
             </div>
-            <span style={{ fontSize: 12, color: FAINT }}>{s.when}</span>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   )

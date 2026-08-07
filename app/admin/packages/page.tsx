@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getPackages, savePackage, addPackage as addPackageLive, type EventPackage } from '@/lib/packages-store'
+import { getPackages, savePackage, addPackage as addPackageLive, deletePackage, type EventPackage } from '@/lib/packages-store'
 import { getRooms, slugify, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -41,6 +41,15 @@ export default function PackagesAdminPage() {
       if (pkg) debouncedSave(pkg)
       return next
     })
+  }
+
+  const removePackage = async (id: string, name: string) => {
+    if (!window.confirm(`Delete "${name}"?`)) return
+    const ok = await deletePackage(id)
+    if (ok) {
+      setPackages((cur) => cur.filter((x) => x.id !== id))
+      if (editingId === id) setEditingId(null)
+    }
   }
 
   const addPackage = async () => {
@@ -162,8 +171,9 @@ export default function PackagesAdminPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href="/packages" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
-              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Saves automatically — live in the store for every visitor.</p>
+              <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={() => removePackage(editing.id, editing.name)}>Delete package</button>
             </div>
+            <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0' }}>Saves automatically — live in the store for every visitor.</p>
           </div>
         ) : (
           <div className="sq-card" style={{ ...card, padding: '30px 32px', alignSelf: 'start', textAlign: 'center' }}>

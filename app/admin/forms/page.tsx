@@ -11,6 +11,7 @@ interface FormField {
   label: string
   type: FieldType
   required: boolean
+  content?: string // paragraph body text shown to the signer
 }
 
 interface FormDef {
@@ -103,6 +104,15 @@ export default function FormsPage() {
     })
   }
 
+  const deleteForm = async (id: string, name: string) => {
+    if (!window.confirm(`Delete "${name}"? Signed copies on member accounts are deleted with it.`)) return
+    const ok = await tryWrite(() => supabase().from('forms').delete().eq('id', id))
+    if (ok) {
+      setForms((cur) => cur.filter((f) => f.id !== id))
+      if (editingId === id) setEditingId(null)
+    }
+  }
+
   const patchField = (id: string, idx: number, patch: Partial<FormField>) => {
     setForms((cur) => {
       const next = cur.map((f) => f.id === id
@@ -149,12 +159,14 @@ export default function FormsPage() {
                 {editing.status === 'draft'
                   ? <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} onClick={() => patchForm(editing.id, { status: 'active' })}>Publish</button>
                   : <button className="sq-btn sq-btn-ghost" style={{ padding: '8px 14px' }} onClick={() => patchForm(editing.id, { status: 'draft' })}>Unpublish</button>}
+                <button className="sq-btn sq-btn-danger" style={{ padding: '8px 14px' }} onClick={() => deleteForm(editing.id, editing.name)}>Delete</button>
               </div>
             </div>
 
             <p className="sq-label">Fields</p>
             {editing.fields.map((fl, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+              <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
                 <span style={{ width: 8, height: 8, background: `${BLUE}30`, border: `1.5px solid ${BLUE}`, borderRadius: 2, transform: 'rotate(45deg)', flexShrink: 0 }} />
                 <input className="sq-input" style={{ flex: 2, minWidth: 140 }} value={fl.label} onChange={(e) => patchField(editing.id, i, { label: e.target.value })} />
                 <select className="sq-select" style={{ flex: 1, minWidth: 110, width: 'auto' }} value={fl.type} onChange={(e) => patchField(editing.id, i, { type: e.target.value as FieldType })}>
@@ -165,6 +177,12 @@ export default function FormsPage() {
                 </label>
                 <button aria-label="Remove field" onClick={() => patchForm(editing.id, { fields: editing.fields.filter((_, j) => j !== i) })} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
               </div>
+              {fl.type === 'paragraph' && (
+                <textarea className="sq-textarea" rows={4} placeholder="Write the paragraph text people read and agree to — the full waiver terms go here."
+                  value={fl.content ?? ''} style={{ marginLeft: 16, width: 'calc(100% - 16px)' }}
+                  onChange={(e) => patchField(editing.id, i, { content: e.target.value })} />
+              )}
+              </div>
             ))}
             <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', marginTop: 6 }} onClick={() => patchForm(editing.id, { fields: [...editing.fields, { label: 'New field', type: 'text', required: false }] })}>
               + Add field
@@ -173,7 +191,8 @@ export default function FormsPage() {
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14 }}>
               <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.6 }}>
                 Guests sign these inside the store flows — the <strong>fitness waiver</strong> during membership
-                signup, the <strong>rental waiver</strong> when booking a room. Signatures are stored on members' accounts. Edits save live.
+                signup, the <strong>rental waiver</strong> when booking a room. The paragraph fields hold the
+                exact terms people read and agree to. Signatures are stored on members' accounts. Edits save live.
               </p>
             </div>
           </div>

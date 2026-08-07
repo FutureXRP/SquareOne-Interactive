@@ -107,3 +107,9 @@ export async function addPackage(p: Omit<EventPackage, 'sort'>): Promise<boolean
   if (ok) emit(PACKAGES_EVENT)
   return ok
 }
+
+export async function deletePackage(id: string): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('event_packages').delete().eq('id', id))
+  if (ok) emit(PACKAGES_EVENT)
+  return ok
+}

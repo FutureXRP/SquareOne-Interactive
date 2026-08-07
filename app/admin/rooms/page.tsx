@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getRooms, saveRoom, addRoom, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
+import { getRooms, saveRoom, addRoom, deleteRoom, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -38,6 +38,16 @@ export default function RoomsAdminPage() {
       if (room) debouncedSave(room)
       return next
     })
+  }
+
+  const removeRoom = async (id: string, name: string) => {
+    if (!window.confirm(`Delete ${name}? If it has bookings it will be hidden from the store instead.`)) return
+    const result = await deleteRoom(id)
+    if (result !== 'failed') {
+      setRooms(await getRooms())
+      if (editingId === id) setEditingId(null)
+      if (result === 'hidden') window.alert('This room has bookings, so it was hidden from the store instead of deleted.')
+    }
   }
 
   const createRoom = async () => {
@@ -164,8 +174,9 @@ export default function RoomsAdminPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href={`/facilities/${editing.id}`} style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
-              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Saves automatically as you type — live for every visitor.</p>
+              <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={() => removeRoom(editing.id, editing.name)}>Delete room</button>
             </div>
+            <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0' }}>Saves automatically as you type — live for every visitor.</p>
           </div>
         ) : (
           <div className="sq-card" style={{ ...card, padding: '30px 32px', alignSelf: 'start', textAlign: 'center' }}>

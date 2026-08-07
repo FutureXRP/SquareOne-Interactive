@@ -199,6 +199,17 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   return true
 }
 
+// Hard-delete a booking row (payments/ledger keep their records, unlinked).
+export async function deleteBooking(id: string): Promise<boolean> {
+  const { error } = await supabase().from('bookings').delete().eq('id', id)
+  if (error) {
+    console.error('[bookings]', error.message)
+    return false
+  }
+  emit(BOOKINGS_EVENT)
+  return true
+}
+
 export interface PaymentRow {
   code: string
   client: string

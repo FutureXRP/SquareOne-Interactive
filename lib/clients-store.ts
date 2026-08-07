@@ -77,3 +77,11 @@ export async function recordLedgerEntry(accountId: string, cents: number, reason
   if (ok) emit(CLIENTS_EVENT)
   return ok
 }
+
+// Deleting an account removes its members, ledger, and waiver links
+// (bookings keep the name but unlink). Confirm before calling.
+export async function deleteClientAccount(id: string): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('client_accounts').delete().eq('id', id))
+  if (ok) emit(CLIENTS_EVENT)
+  return ok
+}
