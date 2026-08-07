@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getActiveRooms, roomLabel, type RoomConfig } from '@/lib/facilities-store'
+import { getActiveRooms, roomLabel, rentalPriceCents, type RoomConfig } from '@/lib/facilities-store'
 import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
@@ -72,7 +72,7 @@ export default function AdminBookingsPage() {
   }, [])
 
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
-  const autoPriceCents = room ? room.perHourCents * nbHours : 0
+  const autoPriceCents = room ? rentalPriceCents(room, nbHours) : 0
   const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
   const canBook = me ? CAN_BOOK.includes(me.role) : false
 

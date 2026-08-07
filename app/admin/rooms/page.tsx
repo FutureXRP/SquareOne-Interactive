@@ -76,6 +76,8 @@ export default function RoomsAdminPage() {
       perHourCents: 5000,
       pricing: [{ label: 'Per hour', cents: 5000 }],
       active: false,
+      // Split rates only exist once migration 0006 has run (visible on loaded rooms)
+      ...(rooms.some((r) => r.firstHourCents !== undefined) ? { firstHourCents: 5000 } : {}),
     }
     const ok = await addRoom(room)
     if (ok) {
@@ -170,8 +172,15 @@ export default function RoomsAdminPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 14 }}>
+              {editing.firstHourCents !== undefined && (
+                <div>
+                  <label className="sq-label" htmlFor="r-first">First hour ($)</label>
+                  <input id="r-first" className="sq-input" inputMode="decimal" defaultValue={(editing.firstHourCents / 100).toFixed(2)} key={`first-${editing.id}`}
+                    onBlur={(e) => patch(editing.id, { firstHourCents: dollarsToCents(e.target.value) })} />
+                </div>
+              )}
               <div>
-                <label className="sq-label" htmlFor="r-rate">Booking rate ($/hr)</label>
+                <label className="sq-label" htmlFor="r-rate">{editing.firstHourCents !== undefined ? 'Each additional hour ($)' : 'Booking rate ($/hr)'}</label>
                 <input id="r-rate" className="sq-input" inputMode="decimal" defaultValue={(editing.perHourCents / 100).toFixed(2)} key={`rate-${editing.id}`}
                   onBlur={(e) => patch(editing.id, { perHourCents: dollarsToCents(e.target.value) })} />
               </div>
@@ -190,8 +199,9 @@ export default function RoomsAdminPage() {
             </div>
 
             <p style={{ fontSize: 11, color: FAINT, margin: '-6px 0 14px', lineHeight: 1.5 }}>
-              The booking rate is what the online booking calculator charges per hour. The advertised
-              prices below are the chips shown on the room&apos;s store card — keep them in sync.
+              {editing.firstHourCents !== undefined
+                ? 'The booking calculator charges the first-hour rate for hour one and the additional-hour rate for every hour after — set them equal for flat pricing. The advertised prices below are the chips shown on the room’s store card — keep them in sync.'
+                : 'The booking rate is what the online booking calculator charges per hour. Run the 0006_room_rates.sql migration in Supabase to unlock separate first-hour and additional-hour rates. The advertised prices below are the chips shown on the room’s store card.'}
             </p>
             <span className="sq-label">Advertised prices (shown as chips in the store)</span>
             {editing.pricing.map((p, i) => (
