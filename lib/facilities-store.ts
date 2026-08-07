@@ -24,6 +24,8 @@ export interface RoomConfig {
   pricing: RoomPrice[]
   active: boolean
   sort: number
+  // undefined = photo column not migrated yet; null = no photo set
+  photoUrl?: string | null
 }
 
 export const ROOM_COLORS = [
@@ -40,10 +42,11 @@ interface FacilityRow {
   per_hour_cents: number
   active: boolean
   sort: number
+  photo_url?: string | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
-function fromRow(r: FacilityRow): RoomConfig {
+function fromRow(r: FacilityRow, hasPhoto: boolean): RoomConfig {
   return {
     id: r.id,
     name: r.name,
@@ -55,18 +58,25 @@ function fromRow(r: FacilityRow): RoomConfig {
     pricing: [...r.facility_prices].sort((a, b) => a.sort - b.sort).map((p) => ({ label: p.label, cents: p.cents })),
     active: r.active,
     sort: r.sort,
+    photoUrl: hasPhoto ? (r.photo_url ?? null) : undefined,
   }
 }
+
+const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)'
 
 let cache: RoomConfig[] = []
 
 export async function getRooms(): Promise<RoomConfig[]> {
-  const { data, error } = await supabase()
-    .from('facilities')
-    .select('id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)')
-    .order('sort')
+  // photo_url arrives with migration 0005 — fall back to the old column set
+  // until it's run so rooms never disappear.
+  const withPhoto = await supabase().from('facilities').select(`photo_url, ${BASE_COLS}`).order('sort')
+  if (!withPhoto.error) {
+    cache = (withPhoto.data as unknown as FacilityRow[]).map((r) => fromRow(r, true))
+    return cache
+  }
+  const { data, error } = await supabase().from('facilities').select(BASE_COLS).order('sort')
   if (error) throw error
-  cache = (data as FacilityRow[]).map(fromRow)
+  cache = (data as unknown as FacilityRow[]).map((r) => fromRow(r, false))
   return cache
 }
 
@@ -75,13 +85,11 @@ export async function getActiveRooms(): Promise<RoomConfig[]> {
 }
 
 export async function getRoom(id: string): Promise<RoomConfig | null> {
-  const { data, error } = await supabase()
-    .from('facilities')
-    .select('id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)')
-    .eq('id', id)
-    .maybeSingle()
+  const withPhoto = await supabase().from('facilities').select(`photo_url, ${BASE_COLS}`).eq('id', id).maybeSingle()
+  if (!withPhoto.error) return withPhoto.data ? fromRow(withPhoto.data as unknown as FacilityRow, true) : null
+  const { data, error } = await supabase().from('facilities').select(BASE_COLS).eq('id', id).maybeSingle()
   if (error) throw error
-  return data ? fromRow(data as FacilityRow) : null
+  return data ? fromRow(data as unknown as FacilityRow, false) : null
 }
 
 async function orgId(): Promise<string> {
@@ -101,6 +109,8 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     per_hour_cents: room.perHourCents,
     active: room.active,
     sort: room.sort,
+    // Only write the photo column once migration 0005 has run (photoUrl defined)
+    ...(room.photoUrl !== undefined ? { photo_url: room.photoUrl } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.
@@ -174,4 +184,22 @@ export function roomLabel(id: string): { name: string; color: string } {
 
 export function roomsConfigured(): boolean {
   return isSupabaseConfigured()
+}
+
+// Upload a room photo to the public room-photos bucket and return its URL.
+// Returns null on failure (bucket missing, not staff, file too large).
+export async function uploadRoomPhoto(roomId: string, file: File): Promise<string | null> {
+  if (file.size > 5 * 1024 * 1024) return null
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  const path = `${roomId}/${Date.now()}.${ext}`
+  const { error } = await supabase().storage.from('room-photos').upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type || 'image/jpeg',
+    upsert: true,
+  })
+  if (error) {
+    console.error('[rooms]', error.message)
+    return null
+  }
+  return supabase().storage.from('room-photos').getPublicUrl(path).data.publicUrl
 }

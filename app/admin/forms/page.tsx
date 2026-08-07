@@ -4,8 +4,11 @@ import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { supabase, tryWrite, isSupabaseConfigured } from '@/lib/supabase'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { getRooms, type RoomConfig } from '@/lib/facilities-store'
+import type { WaiverFrequency } from '@/lib/waivers-live'
 
 type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph'
+type AssignTo = 'none' | 'fitness' | 'rentals'
 
 interface FormField {
   label: string
@@ -21,6 +24,25 @@ interface FormDef {
   submissions: number
   linkedTo: string
   fields: FormField[]
+  assignTo: AssignTo
+  assignRoomIds: string[]
+  frequency: WaiverFrequency
+}
+
+const FREQUENCIES: { value: WaiverFrequency; label: string }[] = [
+  { value: 'once', label: 'Once per person' },
+  { value: 'annual', label: 'Every 12 months' },
+  { value: 'every_time', label: 'Every booking' },
+]
+
+function linkedLabel(assignTo: AssignTo, roomIds: string[], rooms: RoomConfig[]): string {
+  if (assignTo === 'fitness') return 'Fitness membership signup'
+  if (assignTo === 'rentals') {
+    if (roomIds.length === 0) return 'Room rentals · all rooms'
+    const names = roomIds.map((id) => rooms.find((r) => r.id === id)?.name ?? id)
+    return `Room rentals · ${names.length <= 2 ? names.join(', ') : `${names.length} rooms`}`
+  }
+  return 'Not required automatically'
 }
 
 const FIELD_TYPES: { value: FieldType; label: string }[] = [
@@ -32,48 +54,74 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'paragraph', label: 'Info paragraph' },
 ]
 
-async function fetchForms(): Promise<FormDef[]> {
-  const { data, error } = await supabase()
-    .from('forms')
-    .select('id, name, status, linked_to, fields, form_submissions(count)')
-    .order('id')
-  if (error) throw error
-  interface Row {
-    id: string
-    name: string
-    status: 'active' | 'draft'
-    linked_to: string
-    fields: FormField[]
-    form_submissions: { count: number }[]
-  }
-  return (data as unknown as Row[]).map((r) => ({
+interface Row {
+  id: string
+  name: string
+  status: 'active' | 'draft'
+  linked_to: string
+  fields: FormField[]
+  assign_to?: AssignTo
+  assign_room_ids?: string[]
+  frequency?: WaiverFrequency
+  form_submissions: { count: number }[]
+}
+
+function fromRow(r: Row, hasAssign: boolean): FormDef {
+  return {
     id: r.id,
     name: r.name,
     status: r.status,
     linkedTo: r.linked_to,
     fields: Array.isArray(r.fields) ? r.fields : [],
     submissions: r.form_submissions[0]?.count ?? 0,
-  }))
+    assignTo: hasAssign ? (r.assign_to ?? 'none') : 'none',
+    assignRoomIds: hasAssign ? (r.assign_room_ids ?? []) : [],
+    frequency: hasAssign ? (r.frequency ?? 'once') : 'once',
+  }
 }
 
-async function persistForm(f: FormDef): Promise<boolean> {
+// hasAssignmentColumns flips false when migration 0004 hasn't been run yet,
+// so the page still works — assignment controls just explain what's missing.
+async function fetchForms(): Promise<{ forms: FormDef[]; hasAssign: boolean }> {
+  const withAssign = await supabase()
+    .from('forms')
+    .select('id, name, status, linked_to, fields, assign_to, assign_room_ids, frequency, form_submissions(count)')
+    .order('id')
+  if (!withAssign.error) {
+    return { forms: (withAssign.data as unknown as Row[]).map((r) => fromRow(r, true)), hasAssign: true }
+  }
+  const { data, error } = await supabase()
+    .from('forms')
+    .select('id, name, status, linked_to, fields, form_submissions(count)')
+    .order('id')
+  if (error) throw error
+  return { forms: (data as unknown as Row[]).map((r) => fromRow(r, false)), hasAssign: false }
+}
+
+async function persistForm(f: FormDef, hasAssign: boolean): Promise<boolean> {
   return tryWrite(() => supabase().from('forms').update({
     name: f.name,
     status: f.status,
     linked_to: f.linkedTo,
     fields: f.fields,
+    ...(hasAssign ? { assign_to: f.assignTo, assign_room_ids: f.assignRoomIds, frequency: f.frequency } : {}),
   }).eq('id', f.id))
 }
 
 export default function FormsPage() {
   const [forms, setForms] = useState<FormDef[]>([])
+  const [rooms, setRooms] = useState<RoomConfig[]>([])
+  const [hasAssign, setHasAssign] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  const debouncedSave = useDebouncedSave(async (f: FormDef) => { await persistForm(f) })
+  const debouncedSave = useDebouncedSave(async (payload: { form: FormDef; hasAssign: boolean }) => {
+    await persistForm(payload.form, payload.hasAssign)
+  })
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
-    fetchForms().then(setForms).catch(() => {})
+    fetchForms().then(({ forms: fetched, hasAssign: assign }) => { setForms(fetched); setHasAssign(assign) }).catch(() => {})
+    getRooms().then(setRooms).catch(() => {})
   }, [])
 
   const editing = forms.find((f) => f.id === editingId) ?? null
@@ -90,16 +138,24 @@ export default function FormsPage() {
       fields: [{ label: 'Full name', type: 'text', required: true }],
     }))
     if (ok) {
-      setForms(await fetchForms())
+      setForms((await fetchForms()).forms)
       setEditingId(id)
     }
   }
 
   const patchForm = (id: string, patch: Partial<FormDef>) => {
     setForms((cur) => {
-      const next = cur.map((f) => (f.id === id ? { ...f, ...patch } : f))
+      const next = cur.map((f) => {
+        if (f.id !== id) return f
+        const merged = { ...f, ...patch }
+        // Assignment changes rewrite the "linked to" label so the list stays honest.
+        if (patch.assignTo !== undefined || patch.assignRoomIds !== undefined) {
+          merged.linkedTo = linkedLabel(merged.assignTo, merged.assignRoomIds, rooms)
+        }
+        return merged
+      })
       const form = next.find((f) => f.id === id)
-      if (form) debouncedSave(form)
+      if (form) debouncedSave({ form, hasAssign })
       return next
     })
   }
@@ -119,7 +175,7 @@ export default function FormsPage() {
         ? { ...f, fields: f.fields.map((fl, i) => (i === idx ? { ...fl, ...patch } : fl)) }
         : f)
       const form = next.find((f) => f.id === id)
-      if (form) debouncedSave(form)
+      if (form) debouncedSave({ form, hasAssign })
       return next
     })
   }
@@ -163,6 +219,60 @@ export default function FormsPage() {
               </div>
             </div>
 
+            {/* Where & when this form is required */}
+            <div style={{ background: '#f6f9fd', border: `1px solid ${LINE}`, borderRadius: 12, padding: '14px 16px', marginBottom: 18 }}>
+              <p className="sq-label" style={{ marginBottom: 8 }}>Where it&apos;s required</p>
+              {!hasAssign ? (
+                <p style={{ fontSize: 12, color: SUB, margin: 0, lineHeight: 1.5 }}>
+                  Run the <strong>0004_form_assignments.sql</strong> migration in Supabase to choose where
+                  this form is required — until then the built-in waiver rules apply.
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: editing.assignTo === 'none' ? 0 : 12 }}>
+                    <select className="sq-select" style={{ width: 'auto', minWidth: 200 }} value={editing.assignTo}
+                      onChange={(e) => patchForm(editing.id, { assignTo: e.target.value as AssignTo, assignRoomIds: [] })}>
+                      <option value="none">Not required automatically</option>
+                      <option value="fitness">Fitness membership signup</option>
+                      <option value="rentals">Room rentals</option>
+                    </select>
+                    {editing.assignTo !== 'none' && (
+                      <select className="sq-select" style={{ width: 'auto', minWidth: 160 }} value={editing.frequency}
+                        onChange={(e) => patchForm(editing.id, { frequency: e.target.value as WaiverFrequency })}>
+                        {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  {editing.assignTo === 'rentals' && (
+                    <div>
+                      <p style={{ fontSize: 11.5, color: SUB, margin: '0 0 6px' }}>
+                        Which rooms need it — leave all unchecked to require it for <strong>every</strong> room.
+                      </p>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {rooms.map((r) => (
+                          <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK, cursor: 'pointer', background: '#fff', border: `1px solid ${LINE}`, borderRadius: 8, padding: '5px 10px' }}>
+                            <input type="checkbox" style={{ accentColor: BLUE }}
+                              checked={editing.assignRoomIds.includes(r.id)}
+                              onChange={(e) => patchForm(editing.id, {
+                                assignRoomIds: e.target.checked
+                                  ? [...editing.assignRoomIds, r.id]
+                                  : editing.assignRoomIds.filter((id) => id !== r.id),
+                              })} />
+                            {r.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {editing.assignTo !== 'none' && editing.status === 'draft' && (
+                    <p style={{ fontSize: 11.5, color: '#a15d0f', margin: '10px 0 0', fontWeight: 600 }}>
+                      This form is still a draft — publish it or it won&apos;t be collected.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
             <p className="sq-label">Fields</p>
             {editing.fields.map((fl, i) => (
               <div key={i} style={{ marginBottom: 10 }}>
@@ -190,9 +300,9 @@ export default function FormsPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14 }}>
               <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.6 }}>
-                Guests sign these inside the store flows — the <strong>fitness waiver</strong> during membership
-                signup, the <strong>rental waiver</strong> when booking a room. The paragraph fields hold the
-                exact terms people read and agree to. Signatures are stored on members' accounts. Edits save live.
+                Guests sign these inside the store flows wherever you assign them — membership signup, all
+                room rentals, or specific rooms — as often as the frequency says. The paragraph fields hold
+                the exact terms people read and agree to. Signatures are stored on members&apos; accounts. Edits save live.
               </p>
             </div>
           </div>

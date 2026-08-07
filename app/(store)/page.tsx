@@ -1,9 +1,8 @@
 import Link from 'next/link'
 import { card, HERO_GRADIENT, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
-import { formatCents } from '@/lib/format'
-import { PRODUCTS } from '@/lib/store-data'
 import { FacilityGrid } from '@/components/store/FacilityGrid'
 import { PlanCards } from '@/components/store/PlanCards'
+import { ProductTeaser } from '@/components/store/ProductTeaser'
 
 function SectionLabel({ children, meta }: { children: string; meta?: React.ReactNode }) {
   return (
@@ -69,23 +68,7 @@ export default function StoreHome() {
       {/* Shop teaser */}
       <div style={{ marginBottom: 8 }}>
         <SectionLabel meta={<Link href="/shop" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Shop all →</Link>}>SquareOne gear</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
-          {PRODUCTS.slice(0, 4).map((p) => (
-            <Link key={p.id} href="/shop" style={{ textDecoration: 'none' }}>
-              <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
-                <div style={{ height: 96, background: '#eef4fb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.85)', borderRadius: 4 }} />
-                  </div>
-                </div>
-                <div style={{ padding: '11px 14px 13px' }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: INK, margin: '0 0 2px' }}>{p.name}</p>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: SUB, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.priceCents)}</p>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <ProductTeaser />
       </div>
 
       {/* Hours live in the footer, which reads the admin-editable site config */}

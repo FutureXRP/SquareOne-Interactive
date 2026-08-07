@@ -16,8 +16,13 @@ export function FacilityGrid({ limit, compact = false }: { limit?: number; compa
       {shown.map((f) => (
         <Link key={f.id} href={`/facilities/${f.id}`} style={{ textDecoration: 'none' }}>
           <div className="sq-card" style={{ ...card, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ height: compact ? 74 : 92, background: `linear-gradient(135deg, ${f.color}2e, ${f.color}0d)`, position: 'relative' }}>
-              <div style={{ position: 'absolute', right: 16, top: 12, width: compact ? 34 : 44, height: compact ? 34 : 44, border: `2px solid ${f.color}55`, borderRadius: 11, transform: 'rotate(18deg)' }} />
+            <div style={{
+              height: compact ? 74 : 92, position: 'relative',
+              background: f.photoUrl
+                ? `linear-gradient(180deg, rgba(24,39,64,0) 40%, rgba(24,39,64,.28)), url(${f.photoUrl}) center/cover no-repeat`
+                : `linear-gradient(135deg, ${f.color}2e, ${f.color}0d)`,
+            }}>
+              {!f.photoUrl && <div style={{ position: 'absolute', right: 16, top: 12, width: compact ? 34 : 44, height: compact ? 34 : 44, border: `2px solid ${f.color}55`, borderRadius: 11, transform: 'rotate(18deg)' }} />}
               <span style={{ position: 'absolute', left: 16, bottom: 10, fontSize: 10.5, fontWeight: 700, color: f.color, background: '#fff', padding: '2px 9px', borderRadius: 999 }}>{f.capacity}</span>
             </div>
             <div style={{ padding: compact ? '13px 16px' : '14px 18px 16px', flex: 1, display: 'flex', flexDirection: 'column' }}>

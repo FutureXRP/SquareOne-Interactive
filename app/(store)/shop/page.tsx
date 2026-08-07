@@ -2,10 +2,12 @@
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { PRODUCTS } from '@/lib/store-data'
+import { getActiveProducts, PRODUCTS_EVENT, type ProductConfig } from '@/lib/products-store'
+import { useLive } from '@/lib/use-live'
 import { addToCart } from '@/lib/session'
 
 export default function ShopPage() {
+  const { data: products, loading } = useLive<ProductConfig[]>(getActiveProducts, [PRODUCTS_EVENT], [])
   const [added, setAdded] = useState<string | null>(null)
 
   const add = (id: string) => {
@@ -22,8 +24,14 @@ export default function ShopPage() {
         Pick up in person at the front desk — shipping comes later.
       </p>
 
+      {products.length === 0 && (
+        <div className="sq-card" style={{ ...card, padding: '28px 30px', textAlign: 'center' }}>
+          <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>{loading ? 'Loading the catalog…' : 'The shop is being restocked — check back soon.'}</p>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-        {PRODUCTS.map((p) => (
+        {products.map((p) => (
           <div key={p.id} className="sq-card" style={{ ...card, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ height: 140, background: '#eef4fb', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
               {p.tag && <span style={{ position: 'absolute', top: 10, left: 10, fontSize: 10, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '2px 9px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{p.tag}</span>}

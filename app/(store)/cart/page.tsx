@@ -3,11 +3,13 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { productById } from '@/lib/store-data'
+import { getProducts, productLookup, PRODUCTS_EVENT, type ProductConfig } from '@/lib/products-store'
+import { useLive } from '@/lib/use-live'
 import { clearCart, getCart, setCartQty, SESSION_EVENT, type CartItem } from '@/lib/session'
 import { findCoupon, couponDiscountCents, type Coupon } from '@/lib/coupons-store'
 
 export default function CartPage() {
+  const { data: products } = useLive<ProductConfig[]>(getProducts, [PRODUCTS_EVENT], [])
   const [items, setItems] = useState<CartItem[]>([])
   const [placed, setPlaced] = useState(false)
   const [code, setCode] = useState('')
@@ -21,7 +23,9 @@ export default function CartPage() {
     return () => window.removeEventListener(SESSION_EVENT, sync)
   }, [])
 
-  const rows = items.map((c) => ({ ...c, product: productById[c.productId] })).filter((r) => r.product)
+  const rows = items
+    .map((c) => ({ ...c, product: products.find((p) => p.id === c.productId) ?? productLookup(c.productId) }))
+    .filter((r): r is typeof r & { product: ProductConfig } => r.product != null)
   const subtotalCents = rows.reduce((n, r) => n + r.product.priceCents * r.qty, 0)
   const discountCents = coupon ? couponDiscountCents(coupon, subtotalCents) : 0
   const totalCents = subtotalCents - discountCents

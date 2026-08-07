@@ -13,6 +13,8 @@ const nav = [
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><path d="M11.75 9v5.5M9 11.75h5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg> },
   { href: '/admin/packages', label: 'Event Packages',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 5.5l6-3 6 3v5l-6 3-6-3v-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M2 5.5l6 3 6-3M8 8.5v6" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> },
+  { href: '/admin/shop', label: 'Shop',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5.5 1.5h5l3 3-2 2-1-1v9h-7v-9l-1 1-2-2 3-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> },
   { href: '/admin/bookings', label: 'Bookings',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href: '/admin/clients', label: 'Clients',

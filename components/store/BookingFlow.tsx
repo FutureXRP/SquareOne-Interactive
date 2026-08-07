@@ -5,11 +5,11 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, type SiteConfig } from '@/lib/site-config-store'
-import { isSignedIn, hasWaiver, requestMemberHold, SESSION_EVENT } from '@/lib/session'
+import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
-import { RENTAL_WAIVER } from '@/lib/waiver-defs'
+import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 
 interface DayOption {
   iso: string
@@ -28,6 +28,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [busy, setBusy] = useState<{ fromH: number; toH: number }[]>([])
   const [signedIn, setSignedIn] = useState(false)
   const [needsWaiver, setNeedsWaiver] = useState(false)
+  const [pendingWaivers, setPendingWaivers] = useState<RequiredWaiver[]>([])
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
@@ -117,11 +118,19 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   const requestHold = async () => {
     if (!day || startH == null) return
-    if (!(await hasWaiver(RENTAL_WAIVER.id))) {
+    const due = await unsignedRequiredWaivers({ roomId: f.id })
+    if (due.length > 0) {
+      setPendingWaivers(due)
       setNeedsWaiver(true)
       return
     }
     placeHold()
+  }
+
+  const onWaiverSigned = () => {
+    const rest = pendingWaivers.slice(1)
+    setPendingWaivers(rest)
+    if (rest.length === 0) placeHold()
   }
 
   if (confirmed && day) {
@@ -208,12 +217,14 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
       {/* Summary / waiver step */}
       <div>
-        {needsWaiver ? (
+        {needsWaiver && pendingWaivers.length > 0 ? (
           <div style={{ position: 'sticky', top: 78 }}>
             <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 10px', lineHeight: 1.5 }}>
-              One more step — rentals need a signed <strong style={{ color: INK }}>facility rental waiver</strong> on your profile. Sign once and your booking goes right through.
+              One more step — this rental needs a signed{' '}
+              <strong style={{ color: INK }}>{pendingWaivers[0].name.toLowerCase()}</strong> on your profile
+              {pendingWaivers.length > 1 ? ` (${pendingWaivers.length} to sign)` : ''}. Sign and your booking goes right through.
             </p>
-            <WaiverPanel def={RENTAL_WAIVER} compact onSigned={placeHold} />
+            <WaiverPanel key={pendingWaivers[0].id} def={pendingWaivers[0]} compact onSigned={onWaiverSigned} />
           </div>
         ) : (
         <div className="sq-card" style={{ ...card, padding: '18px 20px', position: 'sticky', top: 78 }}>
