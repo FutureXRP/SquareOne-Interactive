@@ -14,7 +14,7 @@ export default function FacilitiesPage() {
 
       <FacilityGrid />
 
-      <p style={{ fontSize: 11.5, color: FAINT, margin: '26px 0 0' }}>Placeholder pricing — final rates confirmed at checkout once the live system flows.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, margin: '26px 0 0' }}>Live pricing and availability — a hold keeps your slot for 24 hours while you pay the deposit.</p>
     </div>
   )
 }

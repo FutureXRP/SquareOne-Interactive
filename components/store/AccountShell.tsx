@@ -3,7 +3,10 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
-import { getProfile, signOut, type DemoProfile } from '@/lib/demo-session'
+import { getProfile, signOut, SESSION_EVENT, type Profile } from '@/lib/session'
+import { getPlans } from '@/lib/plans-store'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import { NOT_CONFIGURED_MSG } from '@/lib/use-live'
 
 const tabs = [
   { href: '/account', label: 'Overview' },
@@ -13,16 +16,26 @@ const tabs = [
   { href: '/account/settings', label: 'Settings' },
 ]
 
-export function AccountShell({ children }: { children: (profile: DemoProfile) => React.ReactNode }) {
+export function AccountShell({ children }: { children: (profile: Profile) => React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [profile, setProfile] = useState<DemoProfile | null | undefined>(undefined)
+  const [profile, setProfile] = useState<Profile | null | undefined>(undefined)
 
   useEffect(() => {
-    const sync = () => setProfile(getProfile())
+    let on = true
+    const sync = async () => {
+      if (!isSupabaseConfigured()) { if (on) setProfile(null); return }
+      try {
+        // Warm the plans cache so pages can resolve plan names synchronously.
+        const [p] = await Promise.all([getProfile(), getPlans().catch(() => [])])
+        if (on) setProfile(p)
+      } catch {
+        if (on) setProfile(null)
+      }
+    }
     sync()
-    window.addEventListener('sq-session', sync)
-    return () => window.removeEventListener('sq-session', sync)
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => { on = false; window.removeEventListener(SESSION_EVENT, sync) }
   }, [])
 
   if (profile === undefined) return <div style={{ minHeight: '50vh' }} />
@@ -32,7 +45,9 @@ export function AccountShell({ children }: { children: (profile: DemoProfile) =>
       <div className="sq-page" style={{ padding: '48px 20px 10px', maxWidth: 440, margin: '0 auto', textAlign: 'center' }}>
         <div className="sq-card" style={{ ...card, padding: '30px 32px' }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Sign in to see your account</h1>
-          <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 18px' }}>Your membership, card, bookings, and billing live here.</p>
+          <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 18px' }}>
+            {isSupabaseConfigured() ? 'Your membership, member card, bookings, and billing live here.' : NOT_CONFIGURED_MSG}
+          </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/login" className="sq-btn sq-btn-primary">Sign in</Link>
             <Link href="/signup" className="sq-btn sq-btn-ghost">Create a profile</Link>
@@ -52,7 +67,7 @@ export function AccountShell({ children }: { children: (profile: DemoProfile) =>
             <p style={{ fontSize: 12, color: FAINT, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{profile.memberId} · member since {profile.since}</p>
           </div>
         </div>
-        <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px' }} onClick={() => { signOut(); router.push('/') }}>Sign out</button>
+        <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px' }} onClick={async () => { await signOut(); router.push('/') }}>Sign out</button>
       </div>
 
       <div style={{ display: 'flex', gap: 4, overflowX: 'auto', borderBottom: '1px solid #dbe4f0', marginBottom: 24 }}>
@@ -69,8 +84,6 @@ export function AccountShell({ children }: { children: (profile: DemoProfile) =>
       </div>
 
       {children(profile)}
-
-      <p style={{ fontSize: 11, color: FAINT, margin: '30px 0 0' }}>Demo account — data stays on this device until real accounts (Supabase Auth + Stripe) go live.</p>
     </div>
   )
 }

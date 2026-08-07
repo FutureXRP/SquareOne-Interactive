@@ -49,7 +49,7 @@ export default function QueuePage() {
           </div>
         ))}
       </div>
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Placeholder queue — live items flow from bookings, doors, and payments once connected.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Example queue — the live version of this view is on the Today page (holds and balances are already real there); door and program items join when those integrations ship.</p>
     </div>
   )
 }

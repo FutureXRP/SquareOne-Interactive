@@ -5,17 +5,20 @@ import { useEffect, useState } from 'react'
 import { BookingFlow } from '@/components/store/BookingFlow'
 import { INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getRoom, type RoomConfig } from '@/lib/facilities-store'
+import { getRoom, ROOMS_EVENT, type RoomConfig } from '@/lib/facilities-store'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 export default function FacilityPage() {
   const params = useParams<{ id: string }>()
   const [room, setRoom] = useState<RoomConfig | null | undefined>(undefined)
 
   useEffect(() => {
-    const sync = () => setRoom(getRoom(params.id))
+    if (!isSupabaseConfigured()) { setRoom(null); return }
+    let on = true
+    const sync = () => { getRoom(params.id).then((r) => { if (on) setRoom(r) }).catch(() => { if (on) setRoom(null) }) }
     sync()
-    window.addEventListener('sq-rooms', sync)
-    return () => window.removeEventListener('sq-rooms', sync)
+    window.addEventListener(ROOMS_EVENT, sync)
+    return () => { on = false; window.removeEventListener(ROOMS_EVENT, sync) }
   }, [params.id])
 
   if (room === undefined) return <div style={{ minHeight: '50vh' }} />
@@ -51,7 +54,7 @@ export default function FacilityPage() {
       <BookingFlow facilityId={room.id} />
 
       <p style={{ fontSize: 11.5, color: FAINT, margin: '28px 0 0' }}>
-        Placeholder availability — live availability and payment arrive with the booking engine.
+        Availability is live — booked slots disappear as they&apos;re taken. Deposit payment online arrives with Stripe.
       </p>
     </div>
   )

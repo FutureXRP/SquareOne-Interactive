@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { ZONES, LINE, INK, SUB, FAINT, RED } from '@/lib/theme'
-import { getActiveRooms } from '@/lib/facilities-store'
-import { bookingsForDate, isoDate } from '@/lib/staff-bookings-store'
+import { getActiveRooms, ROOMS_EVENT } from '@/lib/facilities-store'
+import { bookingsForDate, isoDate, BOOKINGS_EVENT } from '@/lib/staff-bookings-store'
 import { BOARD_START, BOARD_END } from '@/lib/demo-data'
 import { formatHour } from '@/lib/format'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 interface Lane {
   id: string
@@ -96,25 +97,31 @@ export function Board() {
   const [blocks, setBlocks] = useState<BoardBooking[]>([])
 
   useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    let on = true
     const sync = () => {
-      setLanes(getActiveRooms().map((r) => ({ id: r.id, name: r.name, color: r.color })))
-      setBlocks(bookingsForDate(isoDate(0)).map((b) => ({
-        id: b.id,
-        roomId: b.roomId,
-        title: b.title,
-        client: b.client,
-        start: b.startH,
-        end: b.startH + b.hours,
-        isHold: b.status === 'hold',
-        note: b.note,
-      })))
+      Promise.all([getActiveRooms(), bookingsForDate(isoDate(0))]).then(([rooms, todays]) => {
+        if (!on) return
+        setLanes(rooms.map((r) => ({ id: r.id, name: r.name, color: r.color })))
+        setBlocks(todays.map((b) => ({
+          id: b.id,
+          roomId: b.roomId,
+          title: b.title,
+          client: b.client,
+          start: b.startH,
+          end: b.startH + b.hours,
+          isHold: b.status === 'hold',
+          note: b.note,
+        })))
+      }).catch(() => {})
     }
     sync()
-    window.addEventListener('sq-rooms', sync)
-    window.addEventListener('sq-staff-bookings', sync)
+    window.addEventListener(ROOMS_EVENT, sync)
+    window.addEventListener(BOOKINGS_EVENT, sync)
     return () => {
-      window.removeEventListener('sq-rooms', sync)
-      window.removeEventListener('sq-staff-bookings', sync)
+      on = false
+      window.removeEventListener(ROOMS_EVENT, sync)
+      window.removeEventListener(BOOKINGS_EVENT, sync)
     }
   }, [])
 

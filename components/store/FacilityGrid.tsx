@@ -1,20 +1,13 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getActiveRooms, type RoomConfig } from '@/lib/facilities-store'
+import { getActiveRooms, ROOMS_EVENT, type RoomConfig } from '@/lib/facilities-store'
+import { useLive } from '@/lib/use-live'
 
 // Room cards for the store — reads the admin-editable room catalog.
 export function FacilityGrid({ limit, compact = false }: { limit?: number; compact?: boolean }) {
-  const [rooms, setRooms] = useState<RoomConfig[]>([])
-
-  useEffect(() => {
-    const sync = () => setRooms(getActiveRooms())
-    sync()
-    window.addEventListener('sq-rooms', sync)
-    return () => window.removeEventListener('sq-rooms', sync)
-  }, [])
+  const { data: rooms } = useLive<RoomConfig[]>(getActiveRooms, [ROOMS_EVENT], [])
 
   const shown = limit ? rooms.slice(0, limit) : rooms
 

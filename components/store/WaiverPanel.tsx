@@ -1,32 +1,33 @@
 'use client'
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
-import { addWaiver, getProfile } from '@/lib/demo-session'
+import { signWaiver } from '@/lib/session'
 import type { WaiverDef } from '@/lib/waiver-defs'
 
 // Inline waiver signing step, embedded in the flows that require it
-// (fitness membership signup, facility rental booking).
-export function WaiverPanel({ def, onSigned, compact = false }: {
+// (fitness membership signup, facility rental booking). Writes a real
+// form_submissions row.
+export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }: {
   def: WaiverDef
   onSigned: () => void
   compact?: boolean
+  defaultName?: string
 }) {
-  const profileName = getProfile()?.name ?? ''
-  const [signer, setSigner] = useState(profileName)
+  const [signer, setSigner] = useState(defaultName)
   const [agreed, setAgreed] = useState(false)
   const [signature, setSignature] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   const canSign = signer.trim().length > 0 && agreed && signature.trim().toLowerCase() === signer.trim().toLowerCase()
 
-  const sign = () => {
-    addWaiver({
-      formId: def.id,
-      formName: def.name,
-      signedBy: signer.trim(),
-      participant: signer.trim(),
-      signedOn: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    })
-    onSigned()
+  const sign = async () => {
+    setSaving(true)
+    setFailed(false)
+    const ok = await signWaiver(def.id, signer.trim(), signer.trim())
+    setSaving(false)
+    if (ok) onSigned()
+    else setFailed(true)
   }
 
   return (
@@ -59,8 +60,11 @@ export function WaiverPanel({ def, onSigned, compact = false }: {
           style={{ fontStyle: 'italic', fontSize: 15, borderBottom: `2px solid ${signature && canSign ? GREEN : LINE}` }} />
       </div>
 
-      <button className="sq-btn sq-btn-primary" disabled={!canSign} onClick={sign} style={{ width: '100%' }}>Sign {def.name.toLowerCase()}</button>
-      <p style={{ fontSize: 10.5, color: FAINT, margin: '8px 0 0', textAlign: 'center' }}>Demo signature — signed PDFs to secure storage arrive with the forms engine.</p>
+      <button className="sq-btn sq-btn-primary" disabled={!canSign || saving} onClick={sign} style={{ width: '100%' }}>
+        {saving ? 'Signing…' : `Sign ${def.name.toLowerCase()}`}
+      </button>
+      {failed && <p style={{ fontSize: 11.5, color: '#cf4436', margin: '8px 0 0', textAlign: 'center', fontWeight: 600 }}>Couldn&apos;t save your signature — check your connection and try again.</p>}
+      <p style={{ fontSize: 10.5, color: FAINT, margin: '8px 0 0', textAlign: 'center' }}>Your signature is stored securely on your account.</p>
     </div>
   )
 }

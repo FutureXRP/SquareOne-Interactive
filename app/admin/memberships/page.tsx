@@ -5,8 +5,10 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { membershipStats, recentSignups } from '@/lib/admin-data'
-import { getPlans, savePlans, resetPlans, PLANS_EVENT, type EditablePlan } from '@/lib/plans-store'
+import { getPlans, savePlan, addPlan as addPlanLive, type EditablePlan } from '@/lib/plans-store'
 import { slugify } from '@/lib/facilities-store'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -19,35 +21,42 @@ export default function AdminMembershipsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
 
+  const debouncedSave = useDebouncedSave(async (plan: EditablePlan) => {
+    await savePlan(plan)
+    setSavedNote(true)
+    window.setTimeout(() => setSavedNote(false), 1800)
+  })
+
   useEffect(() => {
-    const sync = () => setPlans(getPlans())
-    sync()
-    window.addEventListener(PLANS_EVENT, sync)
-    return () => window.removeEventListener(PLANS_EVENT, sync)
+    if (!isSupabaseConfigured()) return
+    getPlans().then(setPlans).catch(() => {})
   }, [])
 
   const editing = plans.find((p) => p.id === editingId) ?? null
 
-  const persist = (next: EditablePlan[]) => {
-    setPlans(next)
-    savePlans(next)
-    setSavedNote(true)
-    window.setTimeout(() => setSavedNote(false), 1800)
+  const patch = (id: string, p: Partial<EditablePlan>) => {
+    setPlans((cur) => {
+      const next = cur.map((x) => (x.id === id ? { ...x, ...p } : x))
+      const plan = next.find((x) => x.id === id)
+      if (plan) debouncedSave(plan)
+      return next
+    })
   }
 
-  const patch = (id: string, p: Partial<EditablePlan>) => persist(plans.map((x) => (x.id === id ? { ...x, ...p } : x)))
-
-  const addPlan = () => {
+  const addPlan = async () => {
     const id = slugify('New Plan', new Set(plans.map((p) => p.id)))
-    persist([...plans, { id, name: 'New Plan', priceCents: 3500, period: 'month', tagline: 'Describe who this plan is for', features: ['Unlimited gym access', 'Door access with your member code'], featured: false, active: false }])
-    setEditingId(id)
+    const ok = await addPlanLive({ id, name: 'New Plan', priceCents: 3500, period: 'month', tagline: 'Describe who this plan is for', features: ['Unlimited gym access', 'Door access with your member code'], featured: false, active: false })
+    if (ok) {
+      setPlans(await getPlans())
+      setEditingId(id)
+    }
   }
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Fitness Memberships" sub="Edit the plans the store sells — prices, names, features — and watch the subscriber base. Mirrored from Stripe when billing goes live." chip={`${m.active} active members`}>
+      <PageHero title="Fitness Memberships" sub="Edit the plans the store sells — prices, names, features — and watch the subscriber base. Mirrored from Stripe when billing goes live." chip="plans live in store">
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub={`+${m.newThisMonth} new this month`} />
+          <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub="subscriber sync arrives with Stripe" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {savedNote && <span style={{ fontSize: 12, fontWeight: 700 }}>Saved ✓</span>}
             <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={addPlan}>+ New plan</button>
@@ -94,11 +103,6 @@ export default function AdminMembershipsPage() {
               <span style={{ fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.priceCents)}/{p.period}</span>
             </button>
           ))}
-          <div style={{ padding: '10px 18px' }}>
-            <button onClick={() => { resetPlans(); setPlans(getPlans()); setEditingId(null) }} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 11.5, color: FAINT, padding: 0 }}>
-              Reset to default plans
-            </button>
-          </div>
         </div>
 
         {editing ? (
@@ -152,7 +156,7 @@ export default function AdminMembershipsPage() {
       <div className="sq-card" style={card}>
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Recent signups</span>
-          <span style={{ fontSize: 11.5, color: FAINT }}>placeholder data</span>
+          <span style={{ fontSize: 11.5, color: FAINT }}>example data — Stripe sync coming</span>
         </div>
         {recentSignups.map((s, i) => (
           <div key={s.name} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < recentSignups.length - 1 ? `1px solid ${LINE}` : 'none' }}>

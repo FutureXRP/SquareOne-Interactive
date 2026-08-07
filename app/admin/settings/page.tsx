@@ -5,8 +5,10 @@ import { PageHero } from '@/components/admin/PageHero'
 import { StaffManager } from '@/components/admin/StaffManager'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getSiteConfig, saveSiteConfig, resetSiteConfig, SITE_CONFIG_EVENT, type SiteConfig } from '@/lib/site-config-store'
-import { getCoupons, saveCoupons, resetCoupons, COUPONS_EVENT, type Coupon } from '@/lib/coupons-store'
+import { getSiteConfig, saveSiteConfig, type SiteConfig } from '@/lib/site-config-store'
+import { getCoupons, upsertCoupon, deleteCoupon, type Coupon } from '@/lib/coupons-store'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -29,29 +31,48 @@ export default function SettingsPage() {
   const [cfg, setCfg] = useState<SiteConfig | null>(null)
   const [coupons, setCoupons] = useState<Coupon[]>([])
 
+  const debouncedCfgSave = useDebouncedSave(async (next: SiteConfig) => { await saveSiteConfig(next) })
+  const debouncedCouponSave = useDebouncedSave(async (c: Coupon) => { await upsertCoupon(c) })
+
   useEffect(() => {
-    const sync = () => { setCfg(getSiteConfig()); setCoupons(getCoupons()) }
-    sync()
-    window.addEventListener(SITE_CONFIG_EVENT, sync)
-    window.addEventListener(COUPONS_EVENT, sync)
-    return () => { window.removeEventListener(SITE_CONFIG_EVENT, sync); window.removeEventListener(COUPONS_EVENT, sync) }
+    if (!isSupabaseConfigured()) return
+    getSiteConfig().then(setCfg).catch(() => {})
+    getCoupons().then(setCoupons).catch(() => {})
   }, [])
 
   const patchCfg = (p: Partial<SiteConfig>) => {
-    if (!cfg) return
-    const next = { ...cfg, ...p }
-    setCfg(next)
-    saveSiteConfig(next)
+    setCfg((cur) => {
+      if (!cur) return cur
+      const next = { ...cur, ...p }
+      debouncedCfgSave(next)
+      return next
+    })
   }
 
-  const persistCoupons = (next: Coupon[]) => { setCoupons(next); saveCoupons(next) }
-  const patchCoupon = (code: string, p: Partial<Coupon>) => persistCoupons(coupons.map((c) => (c.code === code ? { ...c, ...p } : c)))
+  const patchCoupon = (code: string, p: Partial<Coupon>) => {
+    setCoupons((cur) => {
+      const next = cur.map((c) => (c.code === code ? { ...c, ...p } : c))
+      const coupon = next.find((c) => c.code === (p.code ?? code))
+      if (coupon) {
+        if (p.code && p.code !== code) upsertCoupon(coupon, code)
+        else debouncedCouponSave(coupon)
+      }
+      return next
+    })
+  }
 
-  const addCoupon = () => {
+  const addCoupon = async () => {
     let n = coupons.length + 1
     let code = `SQUARE${n}`
     while (coupons.some((c) => c.code === code)) code = `SQUARE${++n}`
-    persistCoupons([...coupons, { code, kind: 'percent', value: 10, note: 'Describe this coupon', active: false }])
+    const coupon: Coupon = { code, kind: 'percent', value: 10, note: 'Describe this coupon', active: false }
+    const ok = await upsertCoupon(coupon)
+    if (ok) setCoupons(await getCoupons())
+  }
+
+  const removeCoupon = async (code: string) => {
+    const ok = await deleteCoupon(code)
+    if (ok) setCoupons((cur) => cur.filter((c) => c.code !== code))
   }
 
   if (!cfg) return <div style={{ minHeight: '60vh' }} />
@@ -118,12 +139,12 @@ export default function SettingsPage() {
                   <input type="checkbox" checked={c.active} onChange={(e) => patchCoupon(c.code, { active: e.target.checked })} style={{ accentColor: BLUE }} />
                   live
                 </label>
-                <button aria-label={`Remove ${c.code}`} onClick={() => persistCoupons(coupons.filter((x) => x.code !== c.code))} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
+                <button aria-label={`Remove ${c.code}`} onClick={() => removeCoupon(c.code)} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
               </div>
             ))}
             <p style={{ fontSize: 11, color: FAINT, margin: 0, padding: '10px 20px' }}>
               Shoppers enter codes in the store cart — e.g. {coupons.filter((c) => c.active).map((c) => c.code).join(', ') || 'none live yet'}.
-              Coupon support at membership signup and booking checkout arrives with Stripe. Example: {formatCents(2500)} off with a $-off coupon.
+              Coupon support at membership signup and booking checkout arrives with Stripe.
             </p>
           </div>
 
@@ -143,14 +164,9 @@ export default function SettingsPage() {
             ))}
           </div>
 
-          <div className="sq-card" style={{ ...card, padding: '16px 20px' }}>
-            <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 8px' }}>Reset demo data</p>
-            <p style={{ fontSize: 12, color: SUB, margin: '0 0 10px', lineHeight: 1.55 }}>Put hours and coupons back to their defaults on this device.</p>
-            <button className="sq-btn sq-btn-danger" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => { resetSiteConfig(); resetCoupons() }}>Reset hours &amp; coupons</button>
-          </div>
         </div>
       </div>
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Edits save automatically on this device (demo) — shared config for all staff arrives with the backend.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Edits save automatically and are shared with all staff and the store.</p>
     </div>
   )
 }

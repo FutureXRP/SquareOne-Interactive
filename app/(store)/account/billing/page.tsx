@@ -6,7 +6,7 @@ import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPlan } from '@/lib/plans-store'
-import { setCard } from '@/lib/demo-session'
+import { setCard } from '@/lib/session'
 
 function BillingContent() {
   const params = useSearchParams()
@@ -109,8 +109,8 @@ function BillingContent() {
                     <button className="sq-btn sq-btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
                   </div>
                   <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0', lineHeight: 1.5 }}>
-                    Demo form — when Stripe goes live, card details go straight to Stripe and never
-                    touch SquareOne servers. Only the brand and last four digits are kept here.
+                    Stripe checkout is coming next — until then this stays on your device. When live, card
+                    details go straight to Stripe and never touch SquareOne servers.
                   </p>
                 </div>
               )}
@@ -134,7 +134,7 @@ function BillingContent() {
                 <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No charges yet.</p>
               )}
             </div>
-            <p style={{ fontSize: 11.5, color: FAINT, margin: '16px 0 0' }}>Placeholder billing — receipts and invoices arrive with Stripe in Phase 2.</p>
+            <p style={{ fontSize: 11.5, color: FAINT, margin: '16px 0 0' }}>Automatic charges, receipts, and invoices arrive with Stripe.</p>
           </div>
         )
       }}

@@ -1,9 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getClients, saveClients, resetClients, balanceCents, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
+import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
+import { useLive } from '@/lib/use-live'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -11,36 +13,37 @@ function dollarsToCents(v: string): number {
 }
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientAccount[]>([])
+  const { data: clients, reload, loading } = useLive<ClientAccount[]>(getClients, [CLIENTS_EVENT], [])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, { name?: string; flag?: string }>>({})
   const [adjAmount, setAdjAmount] = useState('')
   const [adjReason, setAdjReason] = useState('')
 
-  useEffect(() => {
-    const sync = () => setClients(getClients())
-    sync()
-    window.addEventListener(CLIENTS_EVENT, sync)
-    return () => window.removeEventListener(CLIENTS_EVENT, sync)
-  }, [])
+  const debouncedPatch = useDebouncedSave(async (p: { id: string; name?: string; flag?: string | null }) => {
+    await patchClientAccount(p.id, { name: p.name, flag: p.flag })
+  })
 
-  const persist = (next: ClientAccount[]) => { setClients(next); saveClients(next) }
-  const patch = (id: string, p: Partial<ClientAccount>) => persist(clients.map((c) => (c.id === id ? { ...c, ...p } : c)))
+  const draftFor = (c: ClientAccount) => ({ name: drafts[c.id]?.name ?? c.account, flag: drafts[c.id]?.flag ?? (c.flag ?? '') })
 
-  const addClient = () => {
-    const id = `cl-${Date.now().toString(36)}`
-    persist([{ id, account: 'New account', members: 1, plan: 'None', lastSeen: 'never', ledger: [] }, ...clients])
-    setEditingId(id)
+  const edit = (c: ClientAccount, p: { name?: string; flag?: string }) => {
+    const next = { ...draftFor(c), ...p }
+    setDrafts((d) => ({ ...d, [c.id]: next }))
+    debouncedPatch({ id: c.id, name: next.name, flag: next.flag || null })
   }
 
-  const recordAdjustment = (id: string, sign: 1 | -1) => {
+  const addClient = async () => {
+    const ok = await addClientAccount('New account')
+    if (ok) reload()
+  }
+
+  const recordAdjustment = async (id: string, sign: 1 | -1) => {
     const cents = dollarsToCents(adjAmount)
     if (cents === 0 || !adjReason.trim()) return
-    const when = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    persist(clients.map((c) => (c.id === id ? { ...c, ledger: [...c.ledger, { cents: cents * sign, reason: adjReason.trim(), when }] } : c)))
-    setAdjAmount(''); setAdjReason('')
+    const ok = await recordLedgerEntry(id, cents * sign, adjReason.trim())
+    if (ok) { setAdjAmount(''); setAdjReason('') }
   }
 
-  const owingCents = clients.reduce((n, c) => n + Math.max(balanceCents(c), 0), 0)
+  const owingCents = clients.reduce((n, c) => n + Math.max(c.balanceCents, 0), 0)
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
@@ -52,19 +55,25 @@ export default function ClientsPage() {
       </PageHero>
 
       <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
+        {clients.length === 0 && (
+          <p style={{ fontSize: 13, color: SUB, padding: '18px 20px', margin: 0 }}>
+            {loading ? 'Loading accounts…' : 'No client accounts yet — they appear here when people sign up in the store, or add one for a walk-in.'}
+          </p>
+        )}
         {clients.map((c, i) => {
-          const bal = balanceCents(c)
+          const bal = c.balanceCents
           const isEditing = editingId === c.id
+          const draft = draftFor(c)
           return (
             <div key={c.id} style={{ borderBottom: i < clients.length - 1 ? `1px solid ${LINE}` : 'none' }}>
               <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', flexWrap: 'wrap' }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef4fb', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{c.account.charAt(0)}</div>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef4fb', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{draft.name.charAt(0)}</div>
                 <div style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{c.account}</p>
-                    {c.flag && <span style={{ fontSize: 10, fontWeight: 700, color: RED, background: '#fae7e4', padding: '1px 8px', borderRadius: 999 }}>{c.flag}</span>}
+                    <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{draft.name}</p>
+                    {draft.flag && <span style={{ fontSize: 10, fontWeight: 700, color: RED, background: '#fae7e4', padding: '1px 8px', borderRadius: 999 }}>{draft.flag}</span>}
                   </div>
-                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{c.members} member{c.members > 1 ? 's' : ''} · {c.plan === 'None' ? 'no membership' : `${c.plan} plan`} · last seen {c.lastSeen}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{c.members} member{c.members > 1 ? 's' : ''} · {c.plan === 'None' ? 'no membership' : `${c.plan} plan`}</p>
                 </div>
                 <span style={{ fontSize: 13.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: bal > 0 ? RED : bal < 0 ? GREEN : FAINT, minWidth: 74, textAlign: 'right' }}>
                   {bal === 0 ? '—' : bal < 0 ? `+${formatCents(-bal)}` : formatCents(bal)}
@@ -74,24 +83,14 @@ export default function ClientsPage() {
 
               {isEditing && (
                 <div style={{ padding: '4px 20px 18px 64px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14, maxWidth: 700 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14, maxWidth: 560 }}>
                     <div>
                       <label className="sq-label">Account name</label>
-                      <input className="sq-input" value={c.account} onChange={(e) => patch(c.id, { account: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="sq-label">Members</label>
-                      <input className="sq-input" type="number" min={1} value={c.members} onChange={(e) => patch(c.id, { members: Math.max(1, Number(e.target.value) || 1) })} />
-                    </div>
-                    <div>
-                      <label className="sq-label">Plan</label>
-                      <select className="sq-select" value={c.plan} onChange={(e) => patch(c.id, { plan: e.target.value as ClientAccount['plan'] })}>
-                        {['Family', 'Individual', 'None'].map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
+                      <input className="sq-input" value={draft.name} onChange={(e) => edit(c, { name: e.target.value })} />
                     </div>
                     <div>
                       <label className="sq-label">Flag (optional)</label>
-                      <input className="sq-input" value={c.flag ?? ''} placeholder="past due" onChange={(e) => patch(c.id, { flag: e.target.value || undefined })} />
+                      <input className="sq-input" value={draft.flag} placeholder="past due" onChange={(e) => edit(c, { flag: e.target.value })} />
                     </div>
                   </div>
 
@@ -102,9 +101,9 @@ export default function ClientsPage() {
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, 1)}>Charge</button>
                     <button className="sq-btn sq-btn-primary" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, -1)}>Credit / payment</button>
                   </div>
-                  {c.ledger.length > 0 && (
+                  {c.recent.length > 0 && (
                     <div style={{ fontSize: 11.5, color: SUB }}>
-                      {c.ledger.slice(-4).reverse().map((e, j) => (
+                      {c.recent.map((e, j) => (
                         <p key={j} style={{ margin: '2px 0', fontVariantNumeric: 'tabular-nums' }}>
                           <span style={{ color: e.cents > 0 ? RED : GREEN, fontWeight: 700 }}>{e.cents > 0 ? '+' : '−'}{formatCents(Math.abs(e.cents))}</span> · {e.reason} · {e.when}
                         </p>
@@ -117,10 +116,7 @@ export default function ClientsPage() {
           )
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-        <p style={{ fontSize: 11.5, color: FAINT, margin: 0 }}>Credit shows green. Amilia import lands in the migration phase; edits here are demo records.</p>
-        <button onClick={() => { resetClients(); setClients(getClients()) }} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 11.5, color: FAINT, padding: 0 }}>Reset to defaults</button>
-      </div>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 14 }}>Live accounts — members who sign up in the store appear here automatically. Credit shows green.</p>
     </div>
   )
 }

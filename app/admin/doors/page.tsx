@@ -12,7 +12,7 @@ const OUTCOME: Record<string, { label: string; color: string; bg: string }> = {
 export default function DoorsPage() {
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Check-ins & Doors" sub="Every scan at every entrance — allow, deny, or flag with a reason. Synced with the facility door system." chip="live">
+      <PageHero title="Check-ins & Doors" sub="Every scan at every entrance — allow, deny, or flag with a reason. Shows example data until the door hardware integration ships." chip="integration pending">
         <HeroStat label="Inside now" value={String(kpis.playersInside)} sub={`${kpis.checkInsToday} check-ins today`} />
       </PageHero>
 
@@ -50,7 +50,7 @@ export default function DoorsPage() {
           )
         })}
       </div>
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Member barcodes from the store become live credentials when this integration ships (Phase 3).</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Example data — member codes become live credentials and this log goes live when the door hardware integration ships.</p>
     </div>
   )
 }

@@ -5,11 +5,12 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getActiveRooms, roomLabel, type RoomConfig } from '@/lib/facilities-store'
-import { getStaff, getCurrentStaff, setCurrentStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
+import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import {
-  getStaffBookings, addStaffBooking, updateStaffBooking, recordPayment, isoDate,
-  PAY_LABEL, type StaffBooking, type PayMethod,
+  getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, isoDate,
+  BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -17,17 +18,17 @@ function dollarsToCents(v: string): number {
 }
 
 const START_TIMES = Array.from({ length: 16 }, (_, i) => i + 6) // 6 AM – 9 PM
-
 const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp']
 
-function PayButtons({ onPick, picked }: { onPick: (m: PayMethod) => void; picked?: PayMethod | null }) {
+function PayButtons({ onPick, picked, disabled }: { onPick: (m: PayMethod) => void; picked?: PayMethod | null; disabled?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       {PAY_METHODS.map((m) => (
-        <button key={m} onClick={() => onPick(m)} style={{
+        <button key={m} disabled={disabled} onClick={() => onPick(m)} style={{
           font: 'inherit', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
           color: picked === m ? '#fff' : SUB, background: picked === m ? BLUE : '#fff',
           border: `1.5px solid ${picked === m ? BLUE : LINE}`, borderRadius: 999, padding: '6px 15px',
+          opacity: disabled ? 0.5 : 1,
         }}>
           {PAY_LABEL[m]}
         </button>
@@ -39,11 +40,12 @@ function PayButtons({ onPick, picked }: { onPick: (m: PayMethod) => void; picked
 export default function AdminBookingsPage() {
   const [bookings, setBookings] = useState<StaffBooking[]>([])
   const [rooms, setRooms] = useState<RoomConfig[]>([])
-  const [staff, setStaff] = useState<StaffMember[]>([])
   const [me, setMe] = useState<StaffMember | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [payingId, setPayingId] = useState<string | null>(null)
+  const [conflictMsg, setConflictMsg] = useState(false)
+  const [busyWrite, setBusyWrite] = useState(false)
 
   // New-booking form state
   const [nbClient, setNbClient] = useState('')
@@ -56,27 +58,29 @@ export default function AdminBookingsPage() {
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
 
   useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    let on = true
     const sync = () => {
-      setBookings(getStaffBookings())
-      setRooms(getActiveRooms())
-      setStaff(getStaff())
-      setMe(getCurrentStaff())
+      Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff()]).then(([b, r, m]) => {
+        if (on) { setBookings(b); setRooms(r); setMe(m) }
+      }).catch(() => {})
     }
     sync()
     setNbDate(isoDate(0))
-    for (const ev of ['sq-staff-bookings', 'sq-rooms', 'sq-staff']) window.addEventListener(ev, sync)
-    return () => { for (const ev of ['sq-staff-bookings', 'sq-rooms', 'sq-staff']) window.removeEventListener(ev, sync) }
+    window.addEventListener(BOOKINGS_EVENT, sync)
+    return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync) }
   }, [])
 
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
   const autoPriceCents = room ? room.perHourCents * nbHours : 0
   const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
+  const canBook = me ? CAN_BOOK.includes(me.role) : false
 
-  const canBook = me ? CAN_BOOK.includes(me.role) : true
-
-  const createBooking = () => {
-    if (!room || !nbClient.trim() || !me) return
-    addStaffBooking({
+  const createBooking = async () => {
+    if (!room || !nbClient.trim() || !me || busyWrite) return
+    setBusyWrite(true)
+    setConflictMsg(false)
+    const res = await addStaffBooking({
       roomId: room.id,
       title: nbTitle.trim() || `${room.name} rental`,
       client: nbClient.trim(),
@@ -84,17 +88,25 @@ export default function AdminBookingsPage() {
       startH: nbStart,
       hours: nbHours,
       priceCents,
-      status: nbPay === 'hold' ? 'hold' : 'confirmed',
-      paidCents: nbPay === 'hold' ? 0 : priceCents,
-      payMethod: nbPay === 'hold' ? null : nbPay,
-      takenBy: me.name,
-      note: nbPay === 'hold' ? 'hold — collect deposit' : undefined,
+      hold: nbPay === 'hold',
+      createdBy: me.id,
     })
-    setShowNew(false)
-    setNbClient(''); setNbTitle(''); setNbPrice(''); setNbPay('hold')
+    if (res.ok && nbPay !== 'hold') {
+      // Collect immediately: find the row we just made and record the payment.
+      const fresh = await getStaffBookings()
+      const mine = fresh.find((b) => b.code === res.code)
+      if (mine) await recordPayment(mine, nbPay, me.id)
+    }
+    setBusyWrite(false)
+    if (res.ok) {
+      setShowNew(false)
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbPay('hold')
+    } else if (res.conflict) {
+      setConflictMsg(true)
+    }
   }
 
-  const active = bookings.filter((b) => b.status !== 'canceled')
+  const active = bookings.filter((b) => b.status === 'hold' || b.status === 'confirmed')
   const onBooksCents = active.reduce((n, b) => n + b.priceCents, 0)
   const collectedCents = bookings.reduce((n, b) => n + b.paidCents, 0)
   const holds = active.filter((b) => b.status === 'hold')
@@ -123,18 +135,18 @@ export default function AdminBookingsPage() {
         </div>
       </PageHero>
 
-      {/* Acting-as strip */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: SUB }}>Working the desk:</span>
-        <select className="sq-select" style={{ width: 'auto', padding: '6px 10px', fontSize: 12.5 }} value={me?.id ?? ''} onChange={(e) => setCurrentStaff(e.target.value)}>
-          {staff.map((s) => <option key={s.id} value={s.id}>{s.name} · {ROLE_LABEL[s.role]}</option>)}
-        </select>
-        {!canBook && (
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: '#b07818', background: '#faf0dc', padding: '3px 11px', borderRadius: 999 }}>
-            {me && ROLE_LABEL[me.role]}s can&apos;t create bookings — switch to a front desk, manager, or owner
+      {me && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: SUB }}>
+            Signed in as <strong style={{ color: INK }}>{me.name}</strong> · {ROLE_LABEL[me.role]}
           </span>
-        )}
-      </div>
+          {!canBook && (
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: '#b07818', background: '#faf0dc', padding: '3px 11px', borderRadius: 999 }}>
+              {ROLE_LABEL[me.role]}s can&apos;t create bookings or take payments
+            </span>
+          )}
+        </div>
+      )}
 
       {/* New booking form */}
       {showNew && (
@@ -191,20 +203,31 @@ export default function AdminBookingsPage() {
             <PayButtons picked={nbPay === 'hold' ? null : nbPay} onPick={(m) => setNbPay(m)} />
           </div>
 
+          {conflictMsg && (
+            <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 12px' }}>
+              That room is already booked for that time — the database blocked the double-booking. Pick another slot.
+            </p>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>
               {nbPay === 'hold'
-                ? 'Books the slot as a striped hold on the Board until payment lands.'
-                : `Collects ${formatCents(priceCents)} by ${PAY_LABEL[nbPay as PayMethod]} and confirms the slot. (Demo — Stripe terminal & real receipts arrive in Phase 2.)`}
+                ? 'Books the slot as a striped hold on the Board until payment lands (24-hour expiry).'
+                : `Collects ${formatCents(priceCents)} by ${PAY_LABEL[nbPay]} and confirms the slot.`}
             </p>
-            <button className="sq-btn sq-btn-primary" disabled={!nbClient.trim() || !canBook} onClick={createBooking}>
-              {nbPay === 'hold' ? 'Book with hold' : `Book & take ${formatCents(priceCents)}`}
+            <button className="sq-btn sq-btn-primary" disabled={!nbClient.trim() || !canBook || busyWrite} onClick={createBooking}>
+              {busyWrite ? 'Booking…' : nbPay === 'hold' ? 'Book with hold' : `Book & take ${formatCents(priceCents)}`}
             </button>
           </div>
         </div>
       )}
 
       {/* Booking list */}
+      {byDate.length === 0 && (
+        <div className="sq-card" style={{ ...card, padding: '30px 32px', textAlign: 'center' }}>
+          <p style={{ fontSize: 14, color: SUB, margin: 0 }}>No bookings yet — create the first one, or wait for store requests to land here.</p>
+        </div>
+      )}
       {byDate.map(([date, list]) => (
         <div key={date} style={{ marginBottom: 22 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 10px' }}>
@@ -225,7 +248,7 @@ export default function AdminBookingsPage() {
                     <div style={{ flex: 1, minWidth: 170 }}>
                       <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {zone.name}</p>
                       <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
-                        {b.client} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {b.id} · by {b.takenBy}
+                        {b.client} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {b.code} · by {b.takenBy}
                       </p>
                     </div>
                     {b.status === 'canceled' ? (
@@ -234,11 +257,11 @@ export default function AdminBookingsPage() {
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
                     ) : (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>
-                        {b.payMethod ? `Paid · ${PAY_LABEL[b.payMethod]}` : 'Confirmed'}
+                        {b.payMethod ? `Paid · ${PAY_LABEL[b.payMethod] ?? b.payMethod}` : 'Confirmed'}
                       </span>
                     )}
                     <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
-                    {b.status !== 'canceled' && (
+                    {b.status !== 'canceled' && canBook && (
                       <span style={{ display: 'flex', gap: 6 }}>
                         {b.paidCents < b.priceCents && b.priceCents > 0 && (
                           <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setPayingId(isPaying ? null : b.id); setEditingId(null) }}>Take payment</button>
@@ -251,7 +274,7 @@ export default function AdminBookingsPage() {
                   {isPaying && me && (
                     <div style={{ padding: '4px 18px 16px 39px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Collect {formatCents(b.priceCents - b.paidCents)} by</span>
-                      <PayButtons onPick={(m) => { recordPayment(b.id, m, me.name); setPayingId(null) }} />
+                      <PayButtons disabled={busyWrite} onPick={async (m) => { setBusyWrite(true); await recordPayment(b, m, me.id); setBusyWrite(false); setPayingId(null) }} />
                     </div>
                   )}
 
@@ -260,27 +283,30 @@ export default function AdminBookingsPage() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
                         <div>
                           <label className="sq-label">Date</label>
-                          <input type="date" className="sq-input" value={b.date} onChange={(e) => updateStaffBooking(b.id, { date: e.target.value })} />
+                          <input type="date" className="sq-input" defaultValue={b.date} key={`bd-${b.id}`}
+                            onBlur={async (e) => { const r = await rescheduleBooking(b.id, e.target.value, b.startH, b.hours); if (r.conflict) window.alert('That time is taken in that room.') }} />
                         </div>
                         <div>
                           <label className="sq-label">Start</label>
-                          <select className="sq-select" value={Math.round(b.startH)} onChange={(e) => updateStaffBooking(b.id, { startH: Number(e.target.value) })}>
+                          <select className="sq-select" value={Math.round(b.startH)}
+                            onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, Number(e.target.value), b.hours); if (r.conflict) window.alert('That time is taken in that room.') }}>
                             {START_TIMES.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="sq-label">Length</label>
-                          <select className="sq-select" value={b.hours} onChange={(e) => updateStaffBooking(b.id, { hours: Number(e.target.value) })}>
+                          <select className="sq-select" value={Math.round(b.hours)}
+                            onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, b.startH, Number(e.target.value)); if (r.conflict) window.alert('That length overlaps another booking.') }}>
                             {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hr</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="sq-label">Price ($)</label>
                           <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
-                            onBlur={(e) => updateStaffBooking(b.id, { priceCents: dollarsToCents(e.target.value) })} />
+                            onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
                         </div>
                       </div>
-                      <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={() => { updateStaffBooking(b.id, { status: 'canceled' }); setEditingId(null) }}>
+                      <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }); setEditingId(null) }}>
                         Cancel this booking
                       </button>
                     </div>
@@ -293,8 +319,8 @@ export default function AdminBookingsPage() {
       ))}
 
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
-        Changes land on <Link href="/admin/board" style={{ color: BLUE, fontWeight: 600 }}>the Board</Link> and in Payments instantly.
-        Demo booking book — conflict checks and the real Stripe terminal arrive with the booking engine.
+        Live booking book — changes land on <Link href="/admin/board" style={{ color: BLUE, fontWeight: 600 }}>the Board</Link>, in Payments,
+        and in members&apos; accounts instantly. Double-booking is blocked by the database itself.
       </p>
     </div>
   )

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getPackages, savePackages, resetPackages, type EventPackage } from '@/lib/packages-store'
+import { getPackages, savePackage, addPackage as addPackageLive, type EventPackage } from '@/lib/packages-store'
 import { getRooms, slugify, type RoomConfig } from '@/lib/facilities-store'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -18,35 +20,40 @@ export default function PackagesAdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
 
+  const debouncedSave = useDebouncedSave(async (pkg: EventPackage) => {
+    await savePackage(pkg)
+    setSavedNote(true)
+    window.setTimeout(() => setSavedNote(false), 1800)
+  })
+
   useEffect(() => {
-    setPackages(getPackages())
-    const syncRooms = () => setRooms(getRooms())
-    syncRooms()
-    window.addEventListener('sq-rooms', syncRooms)
-    return () => window.removeEventListener('sq-rooms', syncRooms)
+    if (!isSupabaseConfigured()) return
+    getPackages().then(setPackages).catch(() => {})
+    getRooms().then(setRooms).catch(() => {})
   }, [])
 
   const editing = packages.find((p) => p.id === editingId) ?? null
 
-  const persist = (next: EventPackage[]) => {
-    setPackages(next)
-    savePackages(next)
-    setSavedNote(true)
-    window.setTimeout(() => setSavedNote(false), 1800)
-  }
-
   const patch = (id: string, p: Partial<EventPackage>) => {
-    persist(packages.map((x) => (x.id === id ? { ...x, ...p } : x)))
+    setPackages((cur) => {
+      const next = cur.map((x) => (x.id === id ? { ...x, ...p } : x))
+      const pkg = next.find((x) => x.id === id)
+      if (pkg) debouncedSave(pkg)
+      return next
+    })
   }
 
-  const addPackage = () => {
+  const addPackage = async () => {
     const id = slugify('New Package', new Set(packages.map((p) => p.id)))
-    persist([...packages, {
+    const ok = await addPackageLive({
       id, name: 'New Package', priceCents: 29900, hours: 2, capacity: 'Up to 20',
       blurb: 'Describe the bundle — who it fits and what makes it easy.',
       roomIds: [], includes: ['Staff on site', 'Setup & cleanup'], featured: false, active: false,
-    }])
-    setEditingId(id)
+    })
+    if (ok) {
+      setPackages(await getPackages())
+      setEditingId(id)
+    }
   }
 
   return (
@@ -76,11 +83,6 @@ export default function PackagesAdminPage() {
               <span style={{ fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.priceCents)} · {p.hours} hrs · {p.roomIds.length} rooms</span>
             </button>
           ))}
-          <div style={{ padding: '10px 18px' }}>
-            <button onClick={() => { resetPackages(); setPackages(getPackages()); setEditingId(null) }} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 11.5, color: FAINT, padding: 0 }}>
-              Reset to default packages
-            </button>
-          </div>
         </div>
 
         {/* Editor */}
@@ -160,7 +162,7 @@ export default function PackagesAdminPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href="/packages" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
-              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Changes save automatically on this device (demo) — shared config arrives with the backend.</p>
+              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Saves automatically — live in the store for every visitor.</p>
             </div>
           </div>
         ) : (

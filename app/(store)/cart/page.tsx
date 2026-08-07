@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { productById } from '@/lib/store-data'
-import { clearCart, getCart, setCartQty, type CartItem } from '@/lib/demo-session'
+import { clearCart, getCart, setCartQty, SESSION_EVENT, type CartItem } from '@/lib/session'
 import { findCoupon, couponDiscountCents, type Coupon } from '@/lib/coupons-store'
 
 export default function CartPage() {
@@ -17,8 +17,8 @@ export default function CartPage() {
   useEffect(() => {
     const sync = () => setItems(getCart())
     sync()
-    window.addEventListener('sq-session', sync)
-    return () => window.removeEventListener('sq-session', sync)
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => window.removeEventListener(SESSION_EVENT, sync)
   }, [])
 
   const rows = items.map((c) => ({ ...c, product: productById[c.productId] })).filter((r) => r.product)
@@ -26,10 +26,15 @@ export default function CartPage() {
   const discountCents = coupon ? couponDiscountCents(coupon, subtotalCents) : 0
   const totalCents = subtotalCents - discountCents
 
-  const applyCoupon = () => {
-    const found = findCoupon(code)
-    setCoupon(found)
-    setCouponError(!found && code.trim() !== '')
+  const applyCoupon = async () => {
+    try {
+      const found = await findCoupon(code)
+      setCoupon(found)
+      setCouponError(!found && code.trim() !== '')
+    } catch {
+      setCoupon(null)
+      setCouponError(true)
+    }
   }
 
   const placeOrder = () => {
@@ -46,8 +51,8 @@ export default function CartPage() {
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Order noted — pick up at the front desk</h1>
           <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 18px', lineHeight: 1.6 }}>
-            This is a demo order — real checkout arrives with Stripe in Phase 2.
             Show your member code at the desk and we&apos;ll take payment there.
+            Online checkout arrives with Stripe.
           </p>
           <Link href="/shop" className="sq-btn sq-btn-primary">Back to the shop</Link>
         </div>
@@ -114,7 +119,7 @@ export default function CartPage() {
         </div>
       )}
 
-      <p style={{ fontSize: 11.5, color: FAINT, margin: '20px 0 0' }}>Demo cart — payments arrive with Stripe in Phase 2.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, margin: '20px 0 0' }}>Pay at pickup — online checkout arrives with Stripe.</p>
     </div>
   )
 }

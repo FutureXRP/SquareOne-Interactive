@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { StoreHeader } from '@/components/store/StoreHeader'
 import { FooterInfo } from '@/components/store/FooterInfo'
-import { NAVY, FAINT } from '@/lib/theme'
+import { NAVY } from '@/lib/theme'
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -42,7 +42,6 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
             </div>
             <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>part of SquareOne Compassion · a 501(c)(3)</span>
           </div>
-          <p style={{ fontSize: 10.5, color: FAINT, margin: '14px 0 0' }}>Demo preview — placeholder pricing and data until the live system flows.</p>
         </div>
       </footer>
     </div>

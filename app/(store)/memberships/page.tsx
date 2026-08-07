@@ -33,7 +33,7 @@ export default function MembershipsPage() {
             <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>{a}</p>
           </div>
         ))}
-        <p style={{ fontSize: 11.5, color: FAINT, margin: '18px 0 0' }}>Placeholder plans — billing goes live with Stripe in Phase 2.</p>
+        <p style={{ fontSize: 11.5, color: FAINT, margin: '18px 0 0' }}>Join online today and pay at the desk — automatic billing arrives with Stripe.</p>
       </div>
     </div>
   )

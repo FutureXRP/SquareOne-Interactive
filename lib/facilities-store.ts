@@ -1,11 +1,12 @@
 'use client'
-// Editable room/facility catalog. Admin edits (and new rooms) persist in
-// localStorage and the store reads from here, so the dashboard controls the
-// storefront. Falls back to the built-in catalog until the backend lands.
-// Money is integer cents.
+// Rooms/facilities — live from Supabase. Admin writes upsert; the store,
+// Board, and booking flow refetch on the 'sq-rooms' event. Money is integer
+// cents end to end.
 
+import { supabase, tryWrite, emit, isSupabaseConfigured } from '@/lib/supabase'
 import { ZONES } from '@/lib/theme'
-import { FACILITIES } from '@/lib/store-data'
+
+export const ROOMS_EVENT = 'sq-rooms'
 
 export interface RoomPrice {
   label: string
@@ -22,57 +23,119 @@ export interface RoomConfig {
   perHourCents: number
   pricing: RoomPrice[]
   active: boolean
+  sort: number
 }
 
-const KEY = 'sq-rooms-v1'
-
-// Colors offered for new rooms — the validated zone palette plus a few extras.
 export const ROOM_COLORS = [
   '#b8860b', '#cf4436', '#2e8b57', '#2f6db8', '#1d9a8f', '#8a4bbf', '#e07020', '#c2478f', '#5b93d6', '#182740',
 ]
 
-export function defaultRooms(): RoomConfig[] {
-  return FACILITIES.map((f) => ({
-    id: f.zone.id,
-    name: f.zone.name,
-    color: f.zone.color,
-    blurb: f.blurb,
-    capacity: f.capacity,
-    minHours: f.minHours,
-    perHourCents: f.perHourCents,
-    pricing: f.pricing.map((p) => ({ ...p })),
-    active: true,
-  }))
+interface FacilityRow {
+  id: string
+  name: string
+  color: string
+  blurb: string
+  capacity_label: string
+  min_hours: number
+  per_hour_cents: number
+  active: boolean
+  sort: number
+  facility_prices: { label: string; cents: number; sort: number }[]
 }
 
-export function getRooms(): RoomConfig[] {
-  if (typeof window === 'undefined') return defaultRooms()
-  try {
-    const raw = window.localStorage.getItem(KEY)
-    if (!raw) return defaultRooms()
-    const parsed = JSON.parse(raw) as RoomConfig[]
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultRooms()
-  } catch {
-    return defaultRooms()
+function fromRow(r: FacilityRow): RoomConfig {
+  return {
+    id: r.id,
+    name: r.name,
+    color: r.color,
+    blurb: r.blurb,
+    capacity: r.capacity_label,
+    minHours: r.min_hours,
+    perHourCents: r.per_hour_cents,
+    pricing: [...r.facility_prices].sort((a, b) => a.sort - b.sort).map((p) => ({ label: p.label, cents: p.cents })),
+    active: r.active,
+    sort: r.sort,
   }
 }
 
-export function getActiveRooms(): RoomConfig[] {
-  return getRooms().filter((r) => r.active)
+let cache: RoomConfig[] = []
+
+export async function getRooms(): Promise<RoomConfig[]> {
+  const { data, error } = await supabase()
+    .from('facilities')
+    .select('id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)')
+    .order('sort')
+  if (error) throw error
+  cache = (data as FacilityRow[]).map(fromRow)
+  return cache
 }
 
-export function getRoom(id: string): RoomConfig | null {
-  return getRooms().find((r) => r.id === id) ?? null
+export async function getActiveRooms(): Promise<RoomConfig[]> {
+  return (await getRooms()).filter((r) => r.active)
 }
 
-export function saveRooms(rooms: RoomConfig[]) {
-  window.localStorage.setItem(KEY, JSON.stringify(rooms))
-  window.dispatchEvent(new Event('sq-rooms'))
+export async function getRoom(id: string): Promise<RoomConfig | null> {
+  const { data, error } = await supabase()
+    .from('facilities')
+    .select('id, name, color, blurb, capacity_label, min_hours, per_hour_cents, active, sort, facility_prices(label, cents, sort)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  return data ? fromRow(data as FacilityRow) : null
 }
 
-export function resetRooms() {
-  window.localStorage.removeItem(KEY)
-  window.dispatchEvent(new Event('sq-rooms'))
+async function orgId(): Promise<string> {
+  const { data, error } = await supabase().from('organizations').select('id').limit(1).single()
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+export async function saveRoom(room: RoomConfig): Promise<boolean> {
+  const sb = supabase()
+  const ok = await tryWrite(() => sb.from('facilities').update({
+    name: room.name,
+    color: room.color,
+    blurb: room.blurb,
+    capacity_label: room.capacity,
+    min_hours: room.minHours,
+    per_hour_cents: room.perHourCents,
+    active: room.active,
+    sort: room.sort,
+  }).eq('id', room.id))
+  if (!ok) return false
+  // Replace price chips wholesale — simple and idempotent.
+  await tryWrite(() => sb.from('facility_prices').delete().eq('facility_id', room.id))
+  if (room.pricing.length > 0) {
+    await tryWrite(() => sb.from('facility_prices').insert(
+      room.pricing.map((p, i) => ({ facility_id: room.id, label: p.label, cents: p.cents, sort: i }))
+    ))
+  }
+  emit(ROOMS_EVENT)
+  return true
+}
+
+export async function addRoom(room: Omit<RoomConfig, 'sort'>): Promise<boolean> {
+  const org = await orgId()
+  const sort = cache.reduce((n, r) => Math.max(n, r.sort), 0) + 1
+  const ok = await tryWrite(() => supabase().from('facilities').insert({
+    id: room.id,
+    org_id: org,
+    name: room.name,
+    color: room.color,
+    blurb: room.blurb,
+    capacity_label: room.capacity,
+    min_hours: room.minHours,
+    per_hour_cents: room.perHourCents,
+    active: room.active,
+    sort,
+  }))
+  if (ok && room.pricing.length > 0) {
+    await tryWrite(() => supabase().from('facility_prices').insert(
+      room.pricing.map((p, i) => ({ facility_id: room.id, label: p.label, cents: p.cents, sort: i }))
+    ))
+  }
+  if (ok) emit(ROOMS_EVENT)
+  return ok
 }
 
 export function slugify(name: string, taken: Set<string>): string {
@@ -83,11 +146,15 @@ export function slugify(name: string, taken: Set<string>): string {
   return slug
 }
 
-// Fallback-safe lookup for anything rendering a room name/color from an id
-// (old bookings may reference a deleted room).
+// Synchronous label lookup with graceful fallback — uses the last fetch's
+// cache, then the built-in zone palette, so booking rows always render.
 export function roomLabel(id: string): { name: string; color: string } {
-  const room = getRoom(id)
-  if (room) return { name: room.name, color: room.color }
+  const hit = cache.find((r) => r.id === id)
+  if (hit) return { name: hit.name, color: hit.color }
   const zone = ZONES.find((z) => z.id === id)
   return zone ? { name: zone.name, color: zone.color } : { name: id, color: '#94a6bd' }
+}
+
+export function roomsConfigured(): boolean {
+  return isSupabaseConfigured()
 }

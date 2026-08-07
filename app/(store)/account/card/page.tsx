@@ -33,7 +33,9 @@ export default function MembershipCardPage() {
                 <Barcode value={profile.memberId} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                   <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 500, color: INK, letterSpacing: '0.12em' }}>{profile.memberId}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 9px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Demo — not yet active</span>
+                  {profile.planId
+                    ? <span style={{ fontSize: 10, fontWeight: 700, color: '#2e8b57', background: '#e5f2ea', padding: '2px 9px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active</span>
+                    : <span style={{ fontSize: 10, fontWeight: 700, color: '#64748c', background: '#eef2f8', padding: '2px 9px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.05em' }}>No membership</span>}
                 </div>
               </div>
             </div>
@@ -41,9 +43,9 @@ export default function MembershipCardPage() {
             <div className="sq-card" style={{ ...card, padding: '18px 22px', marginBottom: 14 }}>
               <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 8px' }}>How door access works</p>
               <p style={{ fontSize: 12.5, color: SUB, margin: 0, lineHeight: 1.65 }}>
-                Scan this code at any entrance during open hours and the door unlocks for you.
-                When the door system goes live, this becomes your real credential — until then
-                it&apos;s a preview. Keep your phone bright and hold the code a few inches from the reader.
+                This is your member code — staff verify it at the desk today, and it becomes your
+                scan-to-enter credential when the door hardware integration ships. Keep your phone
+                bright and hold the code a few inches from the reader.
               </p>
             </div>
 

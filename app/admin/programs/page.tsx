@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getPrograms, savePrograms, resetPrograms, PROGRAMS_EVENT, type EditableProgram } from '@/lib/programs-store'
+import { getPrograms, saveProgram, addProgram as addProgramLive, type EditableProgram } from '@/lib/programs-store'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -14,20 +16,31 @@ export default function ProgramsPage() {
   const [programs, setPrograms] = useState<EditableProgram[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  const debouncedSave = useDebouncedSave(async (program: EditableProgram) => {
+    await saveProgram(program)
+  })
+
   useEffect(() => {
-    const sync = () => setPrograms(getPrograms())
-    sync()
-    window.addEventListener(PROGRAMS_EVENT, sync)
-    return () => window.removeEventListener(PROGRAMS_EVENT, sync)
+    if (!isSupabaseConfigured()) return
+    getPrograms().then(setPrograms).catch(() => {})
   }, [])
 
-  const persist = (next: EditableProgram[]) => { setPrograms(next); savePrograms(next) }
-  const patch = (id: string, p: Partial<EditableProgram>) => persist(programs.map((x) => (x.id === id ? { ...x, ...p } : x)))
+  const patch = (id: string, p: Partial<EditableProgram>) => {
+    setPrograms((cur) => {
+      const next = cur.map((x) => (x.id === id ? { ...x, ...p } : x))
+      const program = next.find((x) => x.id === id)
+      if (program) debouncedSave(program)
+      return next
+    })
+  }
 
-  const addProgram = () => {
+  const addProgram = async () => {
     const id = `pg-${Date.now().toString(36)}`
-    persist([...programs, { id, name: 'New Program', schedule: 'Day & time', coach: 'Staff', enrolled: 0, capacity: 12, waitlist: 0, waiversMissing: 0, feeCents: 5000, fee: 'per month', active: false }])
-    setEditingId(id)
+    const ok = await addProgramLive(id, 'New Program')
+    if (ok) {
+      setPrograms(await getPrograms())
+      setEditingId(id)
+    }
   }
 
   const enrolled = programs.filter((p) => p.active).reduce((n, p) => n + p.enrolled, 0)
@@ -66,10 +79,6 @@ export default function ProgramsPage() {
                     <div>
                       <label className="sq-label">Capacity</label>
                       <input className="sq-input" type="number" min={1} value={p.capacity} onChange={(e) => patch(p.id, { capacity: Math.max(1, Number(e.target.value) || 1) })} />
-                    </div>
-                    <div>
-                      <label className="sq-label">Enrolled</label>
-                      <input className="sq-input" type="number" min={0} value={p.enrolled} onChange={(e) => patch(p.id, { enrolled: Math.max(0, Number(e.target.value) || 0) })} />
                     </div>
                     <div>
                       <label className="sq-label">Fee ($)</label>
@@ -117,10 +126,7 @@ export default function ProgramsPage() {
           )
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-        <p style={{ fontSize: 11.5, color: FAINT, margin: 0 }}>Registration and roster check-in arrive in Phase 3; edits here are demo records.</p>
-        <button onClick={() => { resetPrograms(); setPrograms(getPrograms()) }} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 11.5, color: FAINT, padding: 0 }}>Reset to defaults</button>
-      </div>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Enrollment counts come from registrations; online registration arrives in Phase 3. Edits save live.</p>
     </div>
   )
 }

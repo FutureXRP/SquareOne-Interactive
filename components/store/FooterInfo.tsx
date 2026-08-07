@@ -1,18 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useLive } from '@/lib/use-live'
 import { formatHour } from '@/lib/format'
 import { getSiteConfig, SITE_CONFIG_EVENT, type SiteConfig } from '@/lib/site-config-store'
 
 // Footer address + hours — reads the admin-editable site config.
 export function FooterInfo() {
-  const [cfg, setCfg] = useState<SiteConfig | null>(null)
-
-  useEffect(() => {
-    const sync = () => setCfg(getSiteConfig())
-    sync()
-    window.addEventListener(SITE_CONFIG_EVENT, sync)
-    return () => window.removeEventListener(SITE_CONFIG_EVENT, sync)
-  }, [])
+  const { data: cfg } = useLive<SiteConfig | null>(getSiteConfig, [SITE_CONFIG_EVENT], null)
 
   if (!cfg) return null
   return (

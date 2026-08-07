@@ -1,4 +1,5 @@
 import { Sidebar } from '@/components/layout/Sidebar'
+import { AdminGate } from '@/components/admin/AdminGate'
 import { NAVY } from '@/lib/theme'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -6,7 +7,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="sq-shell" style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
       <main style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1 }}>{children}</div>
+        <div style={{ flex: 1 }}><AdminGate>{children}</AdminGate></div>
 
         {/* Store-matching navy footer on every admin screen */}
         <footer style={{ background: NAVY, color: 'rgba(255,255,255,0.62)', marginTop: 30 }}>
@@ -19,7 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </span>
               ))}
             </div>
-            <span style={{ fontSize: 11.5 }}>part of SquareOne Compassion · placeholder data until the live system flows</span>
+            <span style={{ fontSize: 11.5 }}>part of SquareOne Compassion</span>
           </div>
         </footer>
       </main>
