@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { StaffManager } from '@/components/admin/StaffManager'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
@@ -78,6 +79,7 @@ export default function SettingsPage() {
   if (!cfg) return <div style={{ minHeight: '60vh' }} />
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Settings" sub="Hours, location, coupons, and staff — plus the doorway to every other editor. Staff with the right role can change everything the store shows." chip="everything editable" />
 
@@ -168,5 +170,6 @@ export default function SettingsPage() {
       </div>
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Edits save automatically and are shared with all staff and the store.</p>
     </div>
+    </AdminOnly>
   )
 }

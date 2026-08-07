@@ -6,7 +6,9 @@ import { supabase, tryWrite, emit } from '@/lib/supabase'
 
 export const STAFF_EVENT = 'sq-staff'
 
-export type StaffRole = 'owner' | 'manager' | 'front_desk' | 'coach'
+// The four real roles, plus the two legacy values that exist in the
+// database until migration 0007 converts them to 'staff'.
+export type StaffRole = 'owner' | 'admin' | 'manager' | 'staff' | 'front_desk' | 'coach'
 
 export interface StaffMember {
   id: string
@@ -17,19 +19,33 @@ export interface StaffMember {
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   owner: 'Owner',
+  admin: 'Admin',
   manager: 'Manager',
-  front_desk: 'Front desk',
-  coach: 'Coach',
+  staff: 'Staff',
+  front_desk: 'Front desk (legacy)',
+  coach: 'Coach (legacy)',
 }
 
 export const ROLE_ACCESS: Record<StaffRole, string> = {
-  owner: 'Everything',
-  manager: 'Bookings · payments · rooms · reports',
-  front_desk: 'Check-in · bookings · take payments · POS',
-  coach: 'Programs · rosters',
+  owner: 'Everything — edit the whole store',
+  admin: 'Everything — edit the whole store',
+  manager: 'Day-to-day: bookings, payments, clients, schedules',
+  staff: 'Day-to-day: bookings, payments, clients, schedules',
+  front_desk: 'Becomes Staff after the role migration',
+  coach: 'Becomes Staff after the role migration',
 }
 
-export const CAN_BOOK: StaffRole[] = ['owner', 'manager', 'front_desk']
+// Roles offered in the picker — legacy values only display.
+export const ASSIGNABLE_ROLES: StaffRole[] = ['owner', 'admin', 'manager', 'staff']
+
+// Every active staff member handles day-to-day operations.
+export const CAN_BOOK: StaffRole[] = ['owner', 'admin', 'manager', 'staff', 'front_desk', 'coach']
+
+// Only Owner and Admin change the store's structure (rooms, prices,
+// plans, coupons, forms, products, company info, staff).
+export function isAdminRole(role: StaffRole | undefined): boolean {
+  return role === 'owner' || role === 'admin'
+}
 
 export async function getStaff(): Promise<StaffMember[]> {
   const { data, error } = await supabase()
