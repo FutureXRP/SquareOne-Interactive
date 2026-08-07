@@ -37,8 +37,13 @@ export default function FacilityPage() {
     <div className="sq-page" style={{ padding: '30px 20px 10px', maxWidth: 1180, margin: '0 auto' }}>
       <Link href="/facilities" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>← All rooms</Link>
 
-      <div style={{ margin: '14px 0 24px', borderRadius: 18, overflow: 'hidden', background: `linear-gradient(135deg, ${room.color}30, ${room.color}0d)`, padding: '26px 28px', position: 'relative' }}>
-        <div style={{ position: 'absolute', right: 24, top: -18, width: 110, height: 110, border: `2px solid ${room.color}45`, borderRadius: 20, transform: 'rotate(18deg)' }} />
+      <div style={{
+        margin: '14px 0 24px', borderRadius: 18, overflow: 'hidden', padding: '26px 28px', position: 'relative',
+        background: room.photoUrl
+          ? `linear-gradient(90deg, rgba(248,250,253,.94) 0%, rgba(248,250,253,.72) 55%, rgba(248,250,253,.25) 100%), url(${room.photoUrl}) center/cover no-repeat`
+          : `linear-gradient(135deg, ${room.color}30, ${room.color}0d)`,
+      }}>
+        {!room.photoUrl && <div style={{ position: 'absolute', right: 24, top: -18, width: 110, height: 110, border: `2px solid ${room.color}45`, borderRadius: 20, transform: 'rotate(18deg)' }} />}
         <h1 style={{ fontSize: 27, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>{room.name}</h1>
         <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 10px', maxWidth: 520, lineHeight: 1.6 }}>{room.blurb}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

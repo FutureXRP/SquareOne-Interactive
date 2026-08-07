@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getRooms, saveRoom, addRoom, deleteRoom, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
+import { getRooms, saveRoom, addRoom, deleteRoom, uploadRoomPhoto, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -17,6 +17,7 @@ export default function RoomsAdminPage() {
   const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   const debouncedSave = useDebouncedSave(async (room: RoomConfig) => {
     await saveRoom(room)
@@ -30,6 +31,19 @@ export default function RoomsAdminPage() {
   }, [])
 
   const editing = rooms.find((r) => r.id === editingId) ?? null
+
+  const onPhotoPicked = async (room: RoomConfig, file: File | undefined) => {
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { window.alert('That image is over 5 MB — please use a smaller one.'); return }
+    setUploading(true)
+    const url = await uploadRoomPhoto(room.id, file)
+    setUploading(false)
+    if (!url) {
+      window.alert("Couldn't upload the photo. Make sure the 0005_room_photos.sql migration has been run in Supabase.")
+      return
+    }
+    patch(room.id, { photoUrl: url })
+  }
 
   const patch = (id: string, p: Partial<RoomConfig>) => {
     setRooms((cur) => {
@@ -132,6 +146,27 @@ export default function RoomsAdminPage() {
                   }} />
                 ))}
               </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <span className="sq-label">Room photo (card &amp; page background)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {editing.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={editing.photoUrl} alt={`${editing.name} photo`} style={{ width: 92, height: 60, objectFit: 'cover', borderRadius: 9, border: `1px solid ${LINE}` }} />
+                ) : (
+                  <div style={{ width: 92, height: 60, borderRadius: 9, background: `linear-gradient(135deg, ${editing.color}2e, ${editing.color}0d)`, border: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: FAINT }}>no photo</div>
+                )}
+                <label className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5, cursor: 'pointer' }}>
+                  {uploading ? 'Uploading…' : editing.photoUrl ? 'Replace photo' : 'Upload photo'}
+                  <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading}
+                    onChange={(e) => { onPhotoPicked(editing, e.target.files?.[0]); e.target.value = '' }} />
+                </label>
+                {editing.photoUrl && (
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => patch(editing.id, { photoUrl: null })}>Remove</button>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0' }}>JPG or PNG up to 5 MB — shown behind the room&apos;s card in the store. Without one, the zone color is used.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 14 }}>

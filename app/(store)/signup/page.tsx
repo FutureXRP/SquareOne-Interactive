@@ -5,9 +5,9 @@ import { Suspense, useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPlanLive, type EditablePlan } from '@/lib/plans-store'
-import { signUpAuth, choosePlan, isSignedIn, getProfile, hasWaiver } from '@/lib/session'
+import { signUpAuth, choosePlan, isSignedIn, getProfile } from '@/lib/session'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
-import { FITNESS_WAIVER } from '@/lib/waiver-defs'
+import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { NOT_CONFIGURED_MSG } from '@/lib/use-live'
 
@@ -21,6 +21,8 @@ function SignupForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [step, setStep] = useState<'checking' | 'form' | 'waiver' | 'confirm-email'>('checking')
+  const [waivers, setWaivers] = useState<RequiredWaiver[]>([])
+  const [waiverIdx, setWaiverIdx] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,12 +41,13 @@ function SignupForm() {
       if (!planParam) { router.replace('/account'); return }
       const profile = await getProfile()
       if (profile?.name && on) setName(profile.name)
-      if (await hasWaiver(FITNESS_WAIVER.id)) {
+      const due = await unsignedRequiredWaivers('fitness')
+      if (due.length === 0) {
         await choosePlan(planParam)
         router.replace('/account/billing?welcome=1')
         return
       }
-      if (on) setStep('waiver')
+      if (on) { setWaivers(due); setStep('waiver') }
     }
     route()
     return () => { on = false }
@@ -61,13 +64,22 @@ function SignupForm() {
     setSubmitting(false)
     if (!res.ok) { setError(res.error ?? 'Signup failed'); return }
     if (res.needsConfirm) { setStep('confirm-email'); return }
-    if (plan) setStep('waiver')
-    else router.push('/account')
+    if (plan) {
+      const due = await unsignedRequiredWaivers('fitness')
+      if (due.length === 0) { await finishJoin(); return }
+      setWaivers(due)
+      setStep('waiver')
+    } else router.push('/account')
   }
 
   const finishJoin = async () => {
     if (plan) await choosePlan(plan.id)
     router.push('/account/billing?welcome=1')
+  }
+
+  const onWaiverSigned = () => {
+    if (waiverIdx + 1 < waivers.length) setWaiverIdx(waiverIdx + 1)
+    else finishJoin()
   }
 
   if (step === 'checking' || (step === 'waiver' && planParam && !plan)) {
@@ -96,17 +108,22 @@ function SignupForm() {
     )
   }
 
-  if (step === 'waiver' && plan) {
+  if (step === 'waiver' && plan && waivers.length > 0) {
+    const current = waivers[waiverIdx]
     return (
       <div className="sq-page" style={{ padding: '40px 20px 10px', maxWidth: 520, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 18 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: BLUE, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>Step 2 of 2</p>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>One signature and you&apos;re in</h1>
+          <p style={{ fontSize: 11, fontWeight: 700, color: BLUE, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+            {waivers.length > 1 ? `Waiver ${waiverIdx + 1} of ${waivers.length}` : 'Step 2 of 2'}
+          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>
+            {waivers.length > 1 ? 'A few signatures and you’re in' : 'One signature and you’re in'}
+          </h1>
           <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>
-            The fitness center waiver covers everyone on your {plan.name} plan.
+            Required to activate your {plan.name} plan — it covers everyone on it.
           </p>
         </div>
-        <WaiverPanel def={FITNESS_WAIVER} defaultName={name.trim()} onSigned={finishJoin} />
+        <WaiverPanel key={current.id} def={current} defaultName={name.trim()} onSigned={onWaiverSigned} />
       </div>
     )
   }
