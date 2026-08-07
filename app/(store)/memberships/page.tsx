@@ -1,4 +1,5 @@
 import { PlanCards } from '@/components/store/PlanCards'
+import { ContentText } from '@/components/store/FooterNav'
 import { INK, SUB, FAINT, LINE } from '@/lib/theme'
 
 export const metadata = { title: 'Fitness Memberships — SquareOne Interactive' }
@@ -14,10 +15,9 @@ export default function MembershipsPage() {
   return (
     <div className="sq-page" style={{ padding: '34px 20px 10px', maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ textAlign: 'center', maxWidth: 560, margin: '0 auto 32px' }}>
-        <h1 style={{ fontSize: 30, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.03em' }}>Simple fitness memberships, no surprises</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.03em' }}><ContentText k="memberships.heading" fallback="Simple fitness memberships, no surprises" /></h1>
         <p style={{ fontSize: 14, color: SUB, margin: 0, lineHeight: 1.6 }}>
-          Month to month, cancel anytime, and every dollar supports SquareOne
-          Compassion&apos;s work in Tulsa.
+          <ContentText k="memberships.sub" fallback="Month to month, cancel anytime, and every dollar supports SquareOne Compassion’s work in Tulsa." />
         </p>
       </div>
 

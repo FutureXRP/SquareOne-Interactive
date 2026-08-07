@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { StoreHeader } from '@/components/store/StoreHeader'
 import { FooterInfo } from '@/components/store/FooterInfo'
+import { FooterVisit, ContentText } from '@/components/store/FooterNav'
 import { NAVY } from '@/lib/theme'
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
@@ -13,15 +14,13 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
         <div style={{ maxWidth: 1180, margin: '0 auto', padding: '30px 20px 26px' }}>
           <div style={{ display: 'flex', gap: '20px 40px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 22 }}>
             <div style={{ maxWidth: 320 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 6px' }}>SquareOne Interactive</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 6px' }}><ContentText k="footer.org" fallback="SquareOne Interactive" /></p>
               <FooterInfo />
             </div>
             <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap' }}>
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Visit</p>
-                {[['Rent a room', '/facilities'], ['Event packages', '/packages'], ['Fitness memberships', '/memberships'], ['Shop', '/shop']].map(([label, href]) => (
-                  <Link key={href} href={href} style={{ display: 'block', fontSize: 12.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none', marginBottom: 5 }}>{label}</Link>
-                ))}
+                <FooterVisit />
               </div>
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Members</p>
@@ -40,7 +39,7 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
                 </span>
               ))}
             </div>
-            <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>part of SquareOne Compassion · a 501(c)(3)</span>
+            <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}><ContentText k="footer.tagline" fallback="part of SquareOne Compassion · a 501(c)(3)" /></span>
           </div>
         </div>
       </footer>

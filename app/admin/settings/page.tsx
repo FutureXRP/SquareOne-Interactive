@@ -6,7 +6,8 @@ import { AdminOnly } from '@/components/admin/AdminOnly'
 import { StaffManager } from '@/components/admin/StaffManager'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getSiteConfig, saveSiteConfig, type SiteConfig } from '@/lib/site-config-store'
+import { getSiteConfig, saveSiteConfig, type SiteConfig, type Closure } from '@/lib/site-config-store'
+import { DAY_NAMES } from '@/lib/facilities-store'
 import { getCoupons, upsertCoupon, deleteCoupon, type Coupon } from '@/lib/coupons-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -98,23 +99,87 @@ export default function SettingsPage() {
                 <input id="s-phone" className="sq-input" value={cfg.phone} onChange={(e) => patchCfg({ phone: e.target.value })} />
               </div>
             </div>
-            {[
-              { label: cfg.weekdayLabel, openKey: 'weekdayOpenH' as const, closeKey: 'weekdayCloseH' as const },
-              { label: cfg.sundayLabel, openKey: 'sundayOpenH' as const, closeKey: 'sundayCloseH' as const },
-            ].map((row) => (
-              <div key={row.openKey} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: SUB, minWidth: 74 }}>{row.label}</span>
-                <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12.5 }} value={cfg[row.openKey]} onChange={(e) => patchCfg({ [row.openKey]: Number(e.target.value) } as Partial<SiteConfig>)}>
-                  {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
-                </select>
-                <span style={{ fontSize: 12, color: FAINT }}>to</span>
-                <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12.5 }} value={cfg[row.closeKey]} onChange={(e) => patchCfg({ [row.closeKey]: Number(e.target.value) } as Partial<SiteConfig>)}>
-                  {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
-                </select>
-              </div>
-            ))}
-            <p style={{ fontSize: 11, color: FAINT, margin: '8px 0 0' }}>The store footer and the booking flow&apos;s available time slots follow these hours.</p>
+            {cfg.hoursByDay === undefined ? (
+              <>
+                {[
+                  { label: cfg.weekdayLabel, openKey: 'weekdayOpenH' as const, closeKey: 'weekdayCloseH' as const },
+                  { label: cfg.sundayLabel, openKey: 'sundayOpenH' as const, closeKey: 'sundayCloseH' as const },
+                ].map((row) => (
+                  <div key={row.openKey} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: SUB, minWidth: 74 }}>{row.label}</span>
+                    <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12.5 }} value={cfg[row.openKey]} onChange={(e) => patchCfg({ [row.openKey]: Number(e.target.value) } as Partial<SiteConfig>)}>
+                      {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: FAINT }}>to</span>
+                    <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12.5 }} value={cfg[row.closeKey]} onChange={(e) => patchCfg({ [row.closeKey]: Number(e.target.value) } as Partial<SiteConfig>)}>
+                      {HOUR_OPTIONS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                    </select>
+                  </div>
+                ))}
+                <p style={{ fontSize: 11, color: FAINT, margin: '8px 0 0' }}>
+                  Run the <strong>0010_site_hours.sql</strong> migration in Supabase to set each day&apos;s hours
+                  separately and add holiday closures.
+                </p>
+              </>
+            ) : (
+              <>
+                {[1, 2, 3, 4, 5, 6, 0].map((dow) => {
+                  const d = cfg.hoursByDay![dow]
+                  const patchDay = (p: Partial<typeof d>) =>
+                    patchCfg({ hoursByDay: cfg.hoursByDay!.map((x, j) => (j === dow ? { ...x, ...p } : x)) })
+                  return (
+                    <div key={dow} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7, flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: d.closed ? FAINT : INK, minWidth: 110, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!d.closed} style={{ accentColor: BLUE }} onChange={(e) => patchDay({ closed: !e.target.checked })} />
+                        {DAY_NAMES[dow]}
+                      </label>
+                      {d.closed ? (
+                        <span style={{ fontSize: 11.5, color: FAINT }}>closed</span>
+                      ) : (
+                        <>
+                          <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={d.openH} onChange={(e) => patchDay({ openH: Number(e.target.value) })}>
+                            {HOUR_OPTIONS.filter((h) => h < d.closeH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                          </select>
+                          <span style={{ fontSize: 12, color: FAINT }}>to</span>
+                          <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={d.closeH} onChange={(e) => patchDay({ closeH: Number(e.target.value) })}>
+                            {HOUR_OPTIONS.filter((h) => h > d.openH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                          </select>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+                <p style={{ fontSize: 11, color: FAINT, margin: '8px 0 0' }}>The store footer and the booking flow&apos;s available time slots follow these hours. Rooms with a custom schedule override them.</p>
+              </>
+            )}
           </div>
+
+          {/* Holiday closures */}
+          {cfg.closures !== undefined && (
+            <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Holiday closures</p>
+                <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }}
+                  onClick={() => patchCfg({ closures: [...(cfg.closures ?? []), { date: '', label: '' }] })}>+ Add closure</button>
+              </div>
+              {(cfg.closures ?? []).length === 0 && (
+                <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>No closures scheduled — add one to close the whole building for a day.</p>
+              )}
+              {(cfg.closures ?? []).map((c: Closure, i: number) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <input className="sq-input" style={{ width: 150 }} type="date" value={c.date}
+                    onChange={(e) => patchCfg({ closures: cfg.closures!.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)) })} />
+                  <input className="sq-input" style={{ flex: 1, minWidth: 150 }} placeholder="Christmas Day" value={c.label}
+                    onChange={(e) => patchCfg({ closures: cfg.closures!.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                  <button aria-label="Remove closure" onClick={() => patchCfg({ closures: cfg.closures!.filter((_, j) => j !== i) })}
+                    style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+              <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0' }}>
+                On these dates nothing can be booked and the store shows the closure. Past dates can be removed any time.
+              </p>
+            </div>
+          )}
 
           {/* Coupons */}
           <div className="sq-card" style={card}>

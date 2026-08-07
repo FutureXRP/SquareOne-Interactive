@@ -244,10 +244,10 @@ export function roomsConfigured(): boolean {
 export function roomDayHours(
   room: Pick<RoomConfig, 'bookingHours'>,
   weekday: number,
-  site: { openH: number; closeH: number },
+  site: { closed?: boolean; openH: number; closeH: number },
 ): { closed: boolean; openH: number; closeH: number } {
   const sched = room.bookingHours?.[weekday]
-  if (!sched) return { closed: false, ...site }
+  if (!sched) return { closed: site.closed ?? false, openH: site.openH, closeH: site.closeH }
   return { closed: sched.closed, openH: sched.openH, closeH: sched.closeH }
 }
 

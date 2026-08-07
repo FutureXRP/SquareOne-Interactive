@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getActiveProducts, PRODUCTS_EVENT, type ProductConfig } from '@/lib/products-store'
+import { getSiteContent, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
 import { useLive } from '@/lib/use-live'
 import { addToCart } from '@/lib/session'
 
 export default function ShopPage() {
   const { data: products, loading } = useLive<ProductConfig[]>(getActiveProducts, [PRODUCTS_EVENT], [])
+  const { data: content } = useLive<SiteContent | null>(getSiteContent, [CONTENT_EVENT], null)
   const [added, setAdded] = useState<string | null>(null)
 
   const add = (id: string) => {
@@ -18,10 +20,9 @@ export default function ShopPage() {
 
   return (
     <div className="sq-page" style={{ padding: '34px 20px 10px', maxWidth: 1180, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>SquareOne gear</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 800, color: INK, margin: '0 0 6px', letterSpacing: '-0.03em' }}>{content?.text['shop.heading'] ?? 'SquareOne gear'}</h1>
       <p style={{ fontSize: 14, color: SUB, margin: '0 0 28px', maxWidth: 520 }}>
-        Rep the square. Every purchase supports SquareOne Compassion programs.
-        Pick up in person at the front desk — shipping comes later.
+        {content?.text['shop.sub'] ?? 'Rep the square. Every purchase supports SquareOne Compassion programs. Pick up in person at the front desk — shipping comes later.'}
       </p>
 
       {products.length === 0 && (
