@@ -11,7 +11,7 @@ export default function ReportsPage() {
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Reports" sub="Live views over the ledger and bookings — not canned exports. These charts read straight from the data." chip="this week">
+      <PageHero title="Reports" sub="Live views over the ledger and bookings — not canned exports. These charts read straight from the data." chip="example data">
         <HeroStat label="Rental revenue" value={formatCents(weekTotalCents)} sub="by zone, Mon–Sun" />
       </PageHero>
 
@@ -71,7 +71,7 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Placeholder figures — these become live SQL views over the ledger in Phase 3.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Example figures — these become live SQL views over the ledger as booking and payment volume builds.</p>
     </div>
   )
 }

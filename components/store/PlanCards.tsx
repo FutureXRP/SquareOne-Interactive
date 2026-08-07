@@ -1,20 +1,13 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getActivePlans, PLANS_EVENT, type EditablePlan } from '@/lib/plans-store'
+import { useLive } from '@/lib/use-live'
 
 // Membership plan cards — read live from the admin-editable plans catalog.
 export function PlanCards({ showFeatures = true }: { showFeatures?: boolean }) {
-  const [plans, setPlans] = useState<EditablePlan[]>([])
-
-  useEffect(() => {
-    const sync = () => setPlans(getActivePlans())
-    sync()
-    window.addEventListener(PLANS_EVENT, sync)
-    return () => window.removeEventListener(PLANS_EVENT, sync)
-  }, [])
+  const { data: plans } = useLive<EditablePlan[]>(getActivePlans, [PLANS_EVENT], [])
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: showFeatures ? 18 : 14 }}>

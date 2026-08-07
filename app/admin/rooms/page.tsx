@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getRooms, saveRooms, resetRooms, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
+import { getRooms, saveRoom, addRoom, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -16,26 +18,31 @@ export default function RoomsAdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
 
+  const debouncedSave = useDebouncedSave(async (room: RoomConfig) => {
+    await saveRoom(room)
+    setSavedNote(true)
+    window.setTimeout(() => setSavedNote(false), 1800)
+  })
+
   useEffect(() => {
-    setRooms(getRooms())
+    if (!isSupabaseConfigured()) return
+    getRooms().then(setRooms).catch(() => {})
   }, [])
 
   const editing = rooms.find((r) => r.id === editingId) ?? null
 
-  const persist = (next: RoomConfig[]) => {
-    setRooms(next)
-    saveRooms(next)
-    setSavedNote(true)
-    window.setTimeout(() => setSavedNote(false), 1800)
-  }
-
   const patch = (id: string, p: Partial<RoomConfig>) => {
-    persist(rooms.map((r) => (r.id === id ? { ...r, ...p } : r)))
+    setRooms((cur) => {
+      const next = cur.map((r) => (r.id === id ? { ...r, ...p } : r))
+      const room = next.find((r) => r.id === id)
+      if (room) debouncedSave(room)
+      return next
+    })
   }
 
-  const addRoom = () => {
+  const createRoom = async () => {
     const id = slugify('New Room', new Set(rooms.map((r) => r.id)))
-    const room: RoomConfig = {
+    const room: Omit<RoomConfig, 'sort'> = {
       id,
       name: 'New Room',
       color: ROOM_COLORS[rooms.length % ROOM_COLORS.length],
@@ -46,16 +53,19 @@ export default function RoomsAdminPage() {
       pricing: [{ label: 'Per hour', cents: 5000 }],
       active: false,
     }
-    persist([...rooms, room])
-    setEditingId(id)
+    const ok = await addRoom(room)
+    if (ok) {
+      setRooms(await getRooms())
+      setEditingId(id)
+    }
   }
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Rooms & Pricing" sub="Everything the store shows about each room is edited here — names, colors, descriptions, capacity, and rates. Changes appear in the store instantly." chip={`${rooms.filter((r) => r.active).length} live in store`}>
+      <PageHero title="Rooms & Pricing" sub="Everything the store shows about each room is edited here — changes go live for every visitor as soon as they save." chip={`${rooms.filter((r) => r.active).length} live in store`}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {savedNote && <span style={{ fontSize: 12, fontWeight: 700 }}>Saved ✓</span>}
-          <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={addRoom}>+ Add a room</button>
+          <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={createRoom}>+ Add a room</button>
         </div>
       </PageHero>
 
@@ -71,18 +81,16 @@ export default function RoomsAdminPage() {
               <span style={{ width: 10, height: 10, borderRadius: 3, background: r.color, flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: editingId === r.id ? BLUE : INK }}>{r.name}</span>
-                <span style={{ display: 'block', fontSize: 11.5, color: SUB }}>{r.capacity} · from {formatCents(Math.min(...r.pricing.map((p) => p.cents)))}</span>
+                <span style={{ display: 'block', fontSize: 11.5, color: SUB }}>
+                  {r.capacity}{r.pricing.length > 0 ? ` · from ${formatCents(Math.min(...r.pricing.map((p) => p.cents)))}` : ''}
+                </span>
               </span>
               {r.active
                 ? <span style={{ fontSize: 10, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '1px 8px', borderRadius: 999 }}>live</span>
                 : <span style={{ fontSize: 10, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '1px 8px', borderRadius: 999 }}>hidden</span>}
             </button>
           ))}
-          <div style={{ padding: '10px 18px' }}>
-            <button onClick={() => { resetRooms(); setRooms(getRooms()); setEditingId(null) }} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 11.5, color: FAINT, padding: 0 }}>
-              Reset all rooms to defaults
-            </button>
-          </div>
+          {rooms.length === 0 && <p style={{ fontSize: 13, color: SUB, padding: '16px 18px', margin: 0 }}>Loading rooms…</p>}
         </div>
 
         {/* Editor */}
@@ -156,7 +164,7 @@ export default function RoomsAdminPage() {
 
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href={`/facilities/${editing.id}`} style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
-              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Changes save automatically on this device (demo) — shared config arrives with the backend.</p>
+              <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>Saves automatically as you type — live for every visitor.</p>
             </div>
           </div>
         ) : (

@@ -5,7 +5,7 @@ import { messages } from '@/lib/admin-data'
 export default function MessagesPage() {
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
-      <PageHero title="Messages" sub="Email and SMS to members and guests — Claude drafts the words, deterministic code fills every number." chip={`${messages.length} recent`} />
+      <PageHero title="Messages" sub="Email and SMS to members and guests — Claude drafts the words, deterministic code fills every number." chip="integration pending" />
 
       <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
@@ -29,7 +29,7 @@ export default function MessagesPage() {
           </div>
         </div>
       </div>
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Composer, templates, and open tracking arrive with communications in Phase 3.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Example sends — the composer, templates, and open tracking arrive with the communications integration.</p>
     </div>
   )
 }

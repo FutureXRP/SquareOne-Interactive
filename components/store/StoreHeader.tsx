@@ -2,7 +2,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { getCart, getProfile } from '@/lib/demo-session'
+import { getCart, getProfile, SESSION_EVENT } from '@/lib/session'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 const links = [
   { href: '/facilities', label: 'Rent a room' },
@@ -27,13 +28,16 @@ export function StoreHeader() {
   const [userName, setUserName] = useState<string | null>(null)
 
   useEffect(() => {
+    let on = true
     const sync = () => {
       setCartCount(getCart().reduce((n, c) => n + c.qty, 0))
-      setUserName(getProfile()?.name ?? null)
+      if (isSupabaseConfigured()) {
+        getProfile().then((p) => { if (on) setUserName(p?.name ?? null) }).catch(() => {})
+      }
     }
     sync()
-    window.addEventListener('sq-session', sync)
-    return () => window.removeEventListener('sq-session', sync)
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => { on = false; window.removeEventListener(SESSION_EVENT, sync) }
   }, [])
 
   return (

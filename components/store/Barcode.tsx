@@ -1,10 +1,10 @@
 'use client'
-import { hashString, mulberry32 } from '@/lib/demo-session'
+import { hashString, mulberry32 } from '@/lib/rng'
 
-// Deterministic barcode art seeded from the member id (seeded RNG per house
-// rules). Rendered as a demo credential — real scannable codes are issued by
-// the door-access system when it goes live, and the UI says so wherever this
-// renders.
+// Deterministic barcode art seeded from the real member code (seeded RNG per
+// house rules). Becomes a scannable credential when the door-access hardware
+// integration ships; until then the member code below it is the credential
+// staff verify at the desk.
 export function Barcode({ value, height = 44 }: { value: string; height?: number }) {
   const rng = mulberry32(hashString(value))
   const bars: { x: number; w: number }[] = []
@@ -15,7 +15,7 @@ export function Barcode({ value, height = 44 }: { value: string; height?: number
     x += w + 2
   }
   return (
-    <svg viewBox={`0 0 200 ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img" aria-label={`Demo member barcode ${value}`}>
+    <svg viewBox={`0 0 200 ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img" aria-label={`Member barcode ${value}`}>
       {bars.map((b, i) => (
         <rect key={i} x={b.x} y={0} width={b.w} height={height} fill="#1f2c42" />
       ))}

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { PRODUCTS } from '@/lib/store-data'
-import { addToCart } from '@/lib/demo-session'
+import { addToCart } from '@/lib/session'
 
 export default function ShopPage() {
   const [added, setAdded] = useState<string | null>(null)
@@ -49,7 +49,7 @@ export default function ShopPage() {
       </div>
 
       <p style={{ fontSize: 11.5, color: FAINT, margin: '26px 0 0' }}>
-        Placeholder catalog — inventory and checkout go live with the POS in a later phase.
+        Checkout goes live with the POS — for now, orders are paid at pickup.
         {' '}<a href="/cart" style={{ color: BLUE, fontWeight: 600 }}>View cart →</a>
       </p>
     </div>

@@ -1,78 +1,81 @@
 'use client'
-// Staff members and roles — editable in Settings, used across the admin for
-// "who took this booking / payment". Demo persistence (localStorage) until
-// real auth lands; roles then become enforced permissions.
+// Staff & roles — live from Supabase. "Current staff" is whoever is signed in
+// (their linked staff row), fetched via the my_staff() RPC.
 
-export type StaffRole = 'owner' | 'manager' | 'front-desk' | 'coach'
+import { supabase, tryWrite, emit } from '@/lib/supabase'
+
+export const STAFF_EVENT = 'sq-staff'
+
+export type StaffRole = 'owner' | 'manager' | 'front_desk' | 'coach'
 
 export interface StaffMember {
   id: string
   name: string
   role: StaffRole
+  linked: boolean
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   owner: 'Owner',
   manager: 'Manager',
-  'front-desk': 'Front desk',
+  front_desk: 'Front desk',
   coach: 'Coach',
 }
 
 export const ROLE_ACCESS: Record<StaffRole, string> = {
   owner: 'Everything',
   manager: 'Bookings · payments · rooms · reports',
-  'front-desk': 'Check-in · bookings · take payments · POS',
+  front_desk: 'Check-in · bookings · take payments · POS',
   coach: 'Programs · rosters',
 }
 
-// Which roles can create bookings and take payments (enforced for real once
-// auth lands; shown as guidance in the demo).
-export const CAN_BOOK: StaffRole[] = ['owner', 'manager', 'front-desk']
+export const CAN_BOOK: StaffRole[] = ['owner', 'manager', 'front_desk']
 
-const KEY = 'sq-staff-v1'
-const CURRENT_KEY = 'sq-staff-current-v1'
-
-function seed(): StaffMember[] {
-  return [
-    { id: 'st-1', name: 'A. Blair', role: 'owner' },
-    { id: 'st-2', name: 'M. Santos', role: 'manager' },
-    { id: 'st-3', name: 'K. Reyes', role: 'coach' },
-    { id: 'st-4', name: 'D. Fields', role: 'front-desk' },
-  ]
+export async function getStaff(): Promise<StaffMember[]> {
+  const { data, error } = await supabase()
+    .from('staff')
+    .select('id, name, role, user_id, active')
+    .eq('active', true)
+    .order('name')
+  if (error) throw error
+  return (data as { id: string; name: string; role: StaffRole; user_id: string | null }[])
+    .map((r) => ({ id: r.id, name: r.name, role: r.role, linked: !!r.user_id }))
 }
 
-export function getStaff(): StaffMember[] {
-  if (typeof window === 'undefined') return seed()
-  try {
-    const raw = window.localStorage.getItem(KEY)
-    if (!raw) return seed()
-    const parsed = JSON.parse(raw) as StaffMember[]
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : seed()
-  } catch {
-    return seed()
+// The signed-in user's own staff row — null when not staff.
+export async function getMyStaff(): Promise<StaffMember | null> {
+  const { data, error } = await supabase().rpc('my_staff')
+  if (error) throw error
+  const row = data as { id: string; name: string; role: StaffRole } | null
+  return row ? { ...row, linked: true } : null
+}
+
+export async function patchStaff(id: string, patch: { name?: string; role?: StaffRole }): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('staff').update(patch).eq('id', id))
+  if (ok) emit(STAFF_EVENT)
+  return ok
+}
+
+export async function addStaff(name: string, role: StaffRole): Promise<boolean> {
+  const { data: org } = await supabase().from('organizations').select('id').limit(1).single()
+  const ok = await tryWrite(() => supabase().from('staff').insert({ org_id: (org as { id: string }).id, name, role }))
+  if (ok) emit(STAFF_EVENT)
+  return ok
+}
+
+export async function removeStaff(id: string): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('staff').update({ active: false }).eq('id', id))
+  if (ok) emit(STAFF_EVENT)
+  return ok
+}
+
+// Owners/managers link a staff row to a login by email.
+export async function linkStaffLogin(staffId: string, email: string): Promise<boolean> {
+  const { data, error } = await supabase().rpc('link_staff_login', { p_staff_id: staffId, p_email: email })
+  if (error) {
+    console.error('[staff]', error.message)
+    return false
   }
-}
-
-export function saveStaff(staff: StaffMember[]) {
-  window.localStorage.setItem(KEY, JSON.stringify(staff))
-  window.dispatchEvent(new Event('sq-staff'))
-}
-
-export function resetStaff() {
-  window.localStorage.removeItem(KEY)
-  window.localStorage.removeItem(CURRENT_KEY)
-  window.dispatchEvent(new Event('sq-staff'))
-}
-
-// The staff member currently working the desk (demo stand-in for a login).
-export function getCurrentStaff(): StaffMember {
-  const staff = getStaff()
-  if (typeof window === 'undefined') return staff[0]
-  const id = window.localStorage.getItem(CURRENT_KEY)
-  return staff.find((s) => s.id === id) ?? staff[0]
-}
-
-export function setCurrentStaff(id: string) {
-  window.localStorage.setItem(CURRENT_KEY, id)
-  window.dispatchEvent(new Event('sq-staff'))
+  if (data === true) emit(STAFF_EVENT)
+  return data === true
 }

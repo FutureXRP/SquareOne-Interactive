@@ -1,11 +1,13 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, type SiteConfig } from '@/lib/site-config-store'
-import { addBooking, getProfile, hasWaiver, hashString, mulberry32, type DemoBooking } from '@/lib/demo-session'
+import { isSignedIn, hasWaiver, requestMemberHold, SESSION_EVENT } from '@/lib/session'
+import { facilityBusy } from '@/lib/staff-bookings-store'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { RENTAL_WAIVER } from '@/lib/waiver-defs'
 
@@ -23,82 +25,103 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [dayIdx, setDayIdx] = useState(0)
   const [hours, setHours] = useState(1)
   const [startH, setStartH] = useState<number | null>(null)
+  const [busy, setBusy] = useState<{ fromH: number; toH: number }[]>([])
   const [signedIn, setSignedIn] = useState(false)
   const [needsWaiver, setNeedsWaiver] = useState(false)
-  const [confirmed, setConfirmed] = useState<DemoBooking | null>(null)
+  const [requesting, setRequesting] = useState(false)
+  const [conflict, setConflict] = useState(false)
+  const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
 
-  // Dates come from the real clock, so they render client-side only.
+  // Dates come from the real clock, so this renders client-side only.
   useEffect(() => {
     const out: DayOption[] = []
     const now = new Date()
     for (let i = 0; i < 14; i++) {
       const d = new Date(now)
       d.setDate(now.getDate() + i)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
       out.push({
-        iso: d.toISOString().slice(0, 10),
+        iso: `${y}-${m}-${dd}`,
         label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         weekday: i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' }),
         isSunday: d.getDay() === 0,
       })
     }
     setDays(out)
-    setSignedIn(!!getProfile())
-    setCfg(getSiteConfig())
-    const room = getRoom(facilityId)
-    setF(room)
-    if (room) setHours((h) => Math.max(h, room.minHours))
-    const sync = () => setSignedIn(!!getProfile())
-    window.addEventListener('sq-session', sync)
-    return () => window.removeEventListener('sq-session', sync)
+    if (!isSupabaseConfigured()) return
+    getSiteConfig().then(setCfg).catch(() => {})
+    getRoom(facilityId).then((room) => {
+      setF(room)
+      if (room) setHours((h) => Math.max(h, room.minHours))
+    }).catch(() => {})
+    const sync = () => { isSignedIn().then(setSignedIn) }
+    sync()
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => window.removeEventListener(SESSION_EVENT, sync)
   }, [facilityId])
 
   const day = days[dayIdx]
+
+  // Real availability: fetch this room's booked ranges for the selected day.
+  const loadBusy = useCallback(() => {
+    if (!day || !isSupabaseConfigured()) return
+    facilityBusy(facilityId, day.iso).then(setBusy).catch(() => setBusy([]))
+  }, [facilityId, day])
+
+  useEffect(() => { loadBusy() }, [loadBusy])
+
   const dayHours = !cfg
     ? { openH: 6, closeH: 22 }
     : day?.isSunday
       ? { openH: cfg.sundayOpenH, closeH: cfg.sundayCloseH }
       : { openH: cfg.weekdayOpenH, closeH: cfg.weekdayCloseH }
 
-  // Deterministic availability per zone+date (seeded RNG, house rules).
   const slots = useMemo(() => {
     if (!day) return []
-    const rng = mulberry32(hashString(`${facilityId}-${day.iso}`))
+    const now = new Date()
+    const isToday = dayIdx === 0
+    const nowH = now.getHours() + now.getMinutes() / 60
     const open = Math.ceil(dayHours.openH)
     const out: { startH: number; available: boolean }[] = []
     for (let h = open; h + hours <= dayHours.closeH; h++) {
-      out.push({ startH: h, available: rng() > 0.3 })
+      const overlaps = busy.some((b) => h < b.toH && h + hours > b.fromH)
+      const past = isToday && h <= nowH
+      out.push({ startH: h, available: !overlaps && !past })
     }
     return out
-  }, [day, dayHours, facilityId, hours])
+  }, [day, dayIdx, dayHours.openH, dayHours.closeH, hours, busy])
 
-  if (!f) return null
+  if (!f) return <div style={{ minHeight: 200 }} />
 
   const priceCents = f.id === 'party'
     ? 27900 + Math.max(0, hours - 2) * 9900
     : f.perHourCents * hours
 
-  const requestHold = () => {
+  const placeHold = async () => {
+    if (!day || startH == null || requesting) return
+    setRequesting(true)
+    setConflict(false)
+    const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents)
+    setRequesting(false)
+    setNeedsWaiver(false)
+    if (res.ok) {
+      setConfirmed({ code: res.code, startH, hours, priceCents })
+    } else if (res.conflict) {
+      setConflict(true)
+      setStartH(null)
+      loadBusy() // someone else took it — refresh availability
+    }
+  }
+
+  const requestHold = async () => {
     if (!day || startH == null) return
-    // The facility rental waiver is part of booking — sign once, then book.
-    if (!hasWaiver(RENTAL_WAIVER.id)) {
+    if (!(await hasWaiver(RENTAL_WAIVER.id))) {
       setNeedsWaiver(true)
       return
     }
     placeHold()
-  }
-
-  const placeHold = () => {
-    if (!day || startH == null) return
-    const booking = addBooking({
-      zoneId: f.id,
-      date: day.iso,
-      startH,
-      hours,
-      priceCents,
-      status: 'hold',
-    })
-    setNeedsWaiver(false)
-    setConfirmed(booking)
   }
 
   if (confirmed && day) {
@@ -114,8 +137,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </p>
         <div style={{ background: '#faf0dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
-            <strong>Hold {confirmed.id}</strong> — pay the deposit within 24 hours to confirm.
-            Unpaid holds release automatically. (Demo: checkout with Stripe arrives in Phase 2.)
+            <strong>Hold {confirmed.code}</strong> — the room is yours for 24 hours. Pay the deposit at the
+            front desk (or when we call to confirm) and it locks in. Unpaid holds release automatically.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -133,7 +156,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         <p className="sq-label">Pick a date</p>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 18 }}>
           {days.map((d, i) => (
-            <button key={d.iso} onClick={() => { setDayIdx(i); setStartH(null) }} style={{
+            <button key={d.iso} onClick={() => { setDayIdx(i); setStartH(null); setConflict(false) }} style={{
               font: 'inherit', cursor: 'pointer', flexShrink: 0, textAlign: 'center',
               border: `1.5px solid ${i === dayIdx ? BLUE : LINE}`, borderRadius: 10,
               background: i === dayIdx ? '#eef4fb' : '#fff', padding: '8px 13px',
@@ -158,8 +181,13 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           ))}
         </div>
 
-        {/* Slots */}
+        {/* Slots — live availability from the booking book */}
         <p className="sq-label">Available start times {day ? `· ${day.weekday} ${day.label}` : ''}</p>
+        {conflict && (
+          <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 10px' }}>
+            That slot was just taken — here&apos;s what&apos;s still open.
+          </p>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 8 }}>
           {slots.map((s) => (
             <button key={s.startH} disabled={!s.available} onClick={() => setStartH(s.startH)} style={{
@@ -206,8 +234,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             <span style={{ fontSize: 17, fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(priceCents)}</span>
           </div>
           {signedIn ? (
-            <button className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={startH == null} onClick={requestHold}>
-              Request this slot
+            <button className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={startH == null || requesting} onClick={requestHold}>
+              {requesting ? 'Booking…' : 'Request this slot'}
             </button>
           ) : (
             <>
@@ -216,8 +244,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             </>
           )}
           <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0', lineHeight: 1.5 }}>
-            Requesting places a hold — you confirm by paying the deposit. Setup and
-            teardown time is included in your window.
+            Availability is live — a slot can&apos;t be double-booked. Requesting places a 24-hour hold;
+            you confirm by paying the deposit.
           </p>
         </div>
         )}

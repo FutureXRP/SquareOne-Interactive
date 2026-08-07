@@ -3,19 +3,27 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
-import { signIn } from '@/lib/demo-session'
+import { signInAuth } from '@/lib/session'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import { NOT_CONFIGURED_MSG } from '@/lib/use-live'
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = /.+@.+\..+/.test(email) && password.length > 0
+  const canSubmit = /.+@.+\..+/.test(email) && password.length > 0 && !submitting
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSubmit) return
-    signIn(email.trim())
+    setSubmitting(true)
+    setError(null)
+    const res = await signInAuth(email.trim(), password)
+    setSubmitting(false)
+    if (!res.ok) { setError(res.error ?? 'Sign-in failed'); return }
     router.push('/account')
   }
 
@@ -35,14 +43,17 @@ export default function LoginPage() {
           <label className="sq-label" htmlFor="password">Password</label>
           <input id="password" type="password" className="sq-input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password" />
         </div>
-        <button type="submit" className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={!canSubmit}>Sign in</button>
+        <button type="submit" className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={!canSubmit}>
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </button>
+        {error && <p style={{ fontSize: 12, color: '#cf4436', fontWeight: 600, margin: '10px 0 0', textAlign: 'center' }}>{error}</p>}
         <p style={{ fontSize: 12, color: FAINT, margin: '12px 0 0', textAlign: 'center' }}>
           New to SquareOne? <Link href="/signup" style={{ color: BLUE, fontWeight: 600 }}>Create a profile</Link>
         </p>
       </form>
 
       <p style={{ fontSize: 11, color: FAINT, margin: '14px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
-        Demo sign-in — any email works and stays on your device until real auth lands.
+        {isSupabaseConfigured() ? 'Staff sign in here too — your account unlocks the dashboard.' : NOT_CONFIGURED_MSG}
       </p>
     </div>
   )

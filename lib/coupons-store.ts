@@ -1,39 +1,57 @@
 'use client'
-// Coupons — built in the dashboard, redeemable in the store. A coupon is a
-// percent or fixed amount off; all math is integer cents at the point of use.
+// Coupons — staff manage the list; shoppers validate through the
+// validate_coupon() RPC so codes are never listable publicly.
+// All math is integer cents.
 
-import { createLocalStore } from '@/lib/local-store'
+import { supabase, tryWrite, emit } from '@/lib/supabase'
+
+export const COUPONS_EVENT = 'sq-coupons'
 
 export interface Coupon {
-  code: string // stored uppercase
+  code: string
   kind: 'percent' | 'amount'
   value: number // percent (1–100) or cents
   note: string
   active: boolean
 }
 
-const store = createLocalStore<Coupon[]>('sq-coupons-v1', () => [
-  { code: 'WELCOME10', kind: 'percent', value: 10, note: '10% off — new member welcome', active: true },
-  { code: 'PARTY25', kind: 'amount', value: 2500, note: '$25 off any party or rental', active: true },
-])
-
-export const COUPONS_EVENT = store.event
-
-export function getCoupons(): Coupon[] {
-  return store.get()
+export async function getCoupons(): Promise<Coupon[]> {
+  const { data, error } = await supabase().from('coupons').select('code, kind, value, note, active').order('code')
+  if (error) throw error
+  return data as Coupon[]
 }
 
-export function saveCoupons(coupons: Coupon[]) {
-  store.save(coupons)
+export async function upsertCoupon(c: Coupon, previousCode?: string): Promise<boolean> {
+  const sb = supabase()
+  if (previousCode && previousCode !== c.code) {
+    await tryWrite(() => sb.from('coupons').delete().eq('code', previousCode))
+  }
+  const { data: org } = await sb.from('organizations').select('id').limit(1).single()
+  const ok = await tryWrite(() => sb.from('coupons').upsert({
+    code: c.code,
+    org_id: (org as { id: string }).id,
+    kind: c.kind,
+    value: c.value,
+    note: c.note,
+    active: c.active,
+  }))
+  if (ok) emit(COUPONS_EVENT)
+  return ok
 }
 
-export function resetCoupons() {
-  store.reset()
+export async function deleteCoupon(code: string): Promise<boolean> {
+  const ok = await tryWrite(() => supabase().from('coupons').delete().eq('code', code))
+  if (ok) emit(COUPONS_EVENT)
+  return ok
 }
 
-export function findCoupon(code: string): Coupon | null {
-  const c = code.trim().toUpperCase()
-  return store.get().find((x) => x.active && x.code === c) ?? null
+// Shopper-side validation (works for anon too).
+export async function findCoupon(code: string): Promise<Coupon | null> {
+  if (!code.trim()) return null
+  const { data, error } = await supabase().rpc('validate_coupon', { p_code: code })
+  if (error) throw error
+  const rows = data as { code: string; kind: 'percent' | 'amount'; value: number; note: string }[]
+  return rows.length > 0 ? { ...rows[0], active: true } : null
 }
 
 export function couponDiscountCents(coupon: Coupon, subtotalCents: number): number {

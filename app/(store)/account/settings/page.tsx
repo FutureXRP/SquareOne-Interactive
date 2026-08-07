@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, RED, GREEN } from '@/lib/theme'
 import { getPlan } from '@/lib/plans-store'
-import { cancelMembership, resumeMembership, updateProfile } from '@/lib/demo-session'
+import { cancelMembership, resumeMembership, updateProfileName } from '@/lib/session'
 
 export default function SettingsPage() {
   const [name, setName] = useState<string | null>(null)
@@ -17,11 +17,13 @@ export default function SettingsPage() {
         const plan = profile.planId ? getPlan(profile.planId) : null
         const displayName = name ?? profile.name
 
-        const saveName = () => {
+        const saveName = async () => {
           if (!displayName.trim()) return
-          updateProfile({ name: displayName.trim() })
-          setSavedNote(true)
-          window.setTimeout(() => setSavedNote(false), 2000)
+          const ok = await updateProfileName(displayName.trim())
+          if (ok) {
+            setSavedNote(true)
+            window.setTimeout(() => setSavedNote(false), 2000)
+          }
         }
 
         return (
@@ -74,7 +76,7 @@ export default function SettingsPage() {
                     fitness membership and door access end. No further charges. You can rejoin anytime.
                   </p>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button className="sq-btn sq-btn-danger" onClick={() => { cancelMembership(); setConfirmingCancel(false) }}>Yes, cancel at period end</button>
+                    <button className="sq-btn sq-btn-danger" onClick={async () => { await cancelMembership(); setConfirmingCancel(false) }}>Yes, cancel at period end</button>
                     <button className="sq-btn sq-btn-ghost" onClick={() => setConfirmingCancel(false)}>Keep my fitness membership</button>
                   </div>
                 </div>
@@ -86,7 +88,7 @@ export default function SettingsPage() {
                     <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 2px' }}>{plan.name} plan — canceling</p>
                     <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Access ends {profile.renewsOn}. Changed your mind?</p>
                   </div>
-                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} onClick={resumeMembership}>Resume fitness membership</button>
+                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} onClick={() => { resumeMembership() }}>Resume fitness membership</button>
                 </div>
               )}
             </div>

@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getActivePackages, type EventPackage } from '@/lib/packages-store'
-import { roomLabel } from '@/lib/facilities-store'
-import { getProfile } from '@/lib/demo-session'
+import { getActivePackages, PACKAGES_EVENT, type EventPackage } from '@/lib/packages-store'
+import { getRooms, roomLabel, ROOMS_EVENT } from '@/lib/facilities-store'
+import { isSignedIn, SESSION_EVENT } from '@/lib/session'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 export default function PackagesPage() {
   const [packages, setPackages] = useState<EventPackage[]>([])
@@ -13,11 +14,23 @@ export default function PackagesPage() {
   const [signedIn, setSignedIn] = useState(false)
 
   useEffect(() => {
-    const sync = () => { setPackages(getActivePackages()); setSignedIn(!!getProfile()) }
+    if (!isSupabaseConfigured()) return
+    let on = true
+    const sync = () => {
+      Promise.all([getActivePackages(), getRooms(), isSignedIn()]).then(([pkgs, , signed]) => {
+        if (on) { setPackages(pkgs); setSignedIn(signed) }
+      }).catch(() => {})
+    }
     sync()
-    window.addEventListener('sq-packages', sync)
-    window.addEventListener('sq-session', sync)
-    return () => { window.removeEventListener('sq-packages', sync); window.removeEventListener('sq-session', sync) }
+    window.addEventListener(PACKAGES_EVENT, sync)
+    window.addEventListener(ROOMS_EVENT, sync)
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => {
+      on = false
+      window.removeEventListener(PACKAGES_EVENT, sync)
+      window.removeEventListener(ROOMS_EVENT, sync)
+      window.removeEventListener(SESSION_EVENT, sync)
+    }
   }, [])
 
   return (
@@ -65,7 +78,7 @@ export default function PackagesPage() {
               {requested === p.id ? (
                 <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 10, padding: '10px 13px' }}>
                   <p style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Request received!</p>
-                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>The front desk will call to lock in your date. (Demo — online scheduling arrives with the booking engine.)</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>The front desk will call to lock in your date and take the deposit.</p>
                 </div>
               ) : signedIn ? (
                 <button className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%' }} onClick={() => setRequested(p.id)}>

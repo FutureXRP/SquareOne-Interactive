@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
-import { createLocalStore } from '@/lib/local-store'
+import { supabase, tryWrite, isSupabaseConfigured } from '@/lib/supabase'
+import { useDebouncedSave } from '@/lib/use-debounced-save'
 
 type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph'
 
@@ -30,92 +31,87 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'paragraph', label: 'Info paragraph' },
 ]
 
-const seedForms: FormDef[] = [
-  {
-    id: 'fitness-v1',
-    name: 'Fitness Center Waiver',
-    status: 'active',
-    submissions: 214,
-    linkedTo: 'Signed during fitness membership signup',
-    fields: [
-      { label: 'Waiver terms', type: 'paragraph', required: false },
-      { label: 'Full legal name', type: 'text', required: true },
-      { label: 'I agree to the terms', type: 'checkbox', required: true },
-      { label: 'Signature', type: 'signature', required: true },
-    ],
-  },
-  {
-    id: 'rental-v1',
-    name: 'Facility Rental Waiver',
-    status: 'active',
-    submissions: 96,
-    linkedTo: 'Signed with room & facility rentals',
-    fields: [
-      { label: 'Waiver terms', type: 'paragraph', required: false },
-      { label: 'Renter full legal name', type: 'text', required: true },
-      { label: 'I agree to the terms', type: 'checkbox', required: true },
-      { label: 'Signature', type: 'signature', required: true },
-    ],
-  },
-  {
-    id: 'party-agreement',
-    name: 'Party Booking Agreement',
-    status: 'active',
-    submissions: 38,
-    linkedTo: 'Attached to Party Arcade Zone bookings',
-    fields: [
-      { label: 'Host name', type: 'text', required: true },
-      { label: 'Contact email', type: 'email', required: true },
-      { label: 'Party date', type: 'date', required: true },
-      { label: 'I agree to the house rules', type: 'checkbox', required: true },
-      { label: 'Signature', type: 'signature', required: true },
-    ],
-  },
-  {
-    id: 'media-release',
-    name: 'Photo & Media Release',
-    status: 'draft',
-    submissions: 0,
-    linkedTo: 'Optional at registration',
-    fields: [
-      { label: 'Participant name', type: 'text', required: true },
-      { label: 'I consent to photos', type: 'checkbox', required: true },
-      { label: 'Signature', type: 'signature', required: true },
-    ],
-  },
-]
+async function fetchForms(): Promise<FormDef[]> {
+  const { data, error } = await supabase()
+    .from('forms')
+    .select('id, name, status, linked_to, fields, form_submissions(count)')
+    .order('id')
+  if (error) throw error
+  interface Row {
+    id: string
+    name: string
+    status: 'active' | 'draft'
+    linked_to: string
+    fields: FormField[]
+    form_submissions: { count: number }[]
+  }
+  return (data as unknown as Row[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    linkedTo: r.linked_to,
+    fields: Array.isArray(r.fields) ? r.fields : [],
+    submissions: r.form_submissions[0]?.count ?? 0,
+  }))
+}
 
-const formsStore = createLocalStore<FormDef[]>('sq-forms-v1', () => seedForms)
+async function persistForm(f: FormDef): Promise<boolean> {
+  return tryWrite(() => supabase().from('forms').update({
+    name: f.name,
+    status: f.status,
+    linked_to: f.linkedTo,
+    fields: f.fields,
+  }).eq('id', f.id))
+}
 
 export default function FormsPage() {
   const [forms, setForms] = useState<FormDef[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  const debouncedSave = useDebouncedSave(async (f: FormDef) => { await persistForm(f) })
+
   useEffect(() => {
-    setForms(formsStore.get())
+    if (!isSupabaseConfigured()) return
+    fetchForms().then(setForms).catch(() => {})
   }, [])
 
   const editing = forms.find((f) => f.id === editingId) ?? null
 
-  const persist = (next: FormDef[]) => {
-    setForms(next)
-    formsStore.save(next)
-  }
-
-  const newForm = () => {
+  const newForm = async () => {
     const id = `form-${Date.now().toString(36)}`
-    persist([...forms, { id, name: 'Untitled form', status: 'draft', submissions: 0, linkedTo: 'Not linked yet', fields: [{ label: 'Full name', type: 'text', required: true }] }])
-    setEditingId(id)
+    const { data: org } = await supabase().from('organizations').select('id').limit(1).single()
+    const ok = await tryWrite(() => supabase().from('forms').insert({
+      id,
+      org_id: (org as { id: string }).id,
+      name: 'Untitled form',
+      status: 'draft',
+      linked_to: 'Not linked yet',
+      fields: [{ label: 'Full name', type: 'text', required: true }],
+    }))
+    if (ok) {
+      setForms(await fetchForms())
+      setEditingId(id)
+    }
   }
 
   const patchForm = (id: string, patch: Partial<FormDef>) => {
-    persist(forms.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+    setForms((cur) => {
+      const next = cur.map((f) => (f.id === id ? { ...f, ...patch } : f))
+      const form = next.find((f) => f.id === id)
+      if (form) debouncedSave(form)
+      return next
+    })
   }
 
   const patchField = (id: string, idx: number, patch: Partial<FormField>) => {
-    persist(forms.map((f) => f.id === id
-      ? { ...f, fields: f.fields.map((fl, i) => (i === idx ? { ...fl, ...patch } : fl)) }
-      : f))
+    setForms((cur) => {
+      const next = cur.map((f) => f.id === id
+        ? { ...f, fields: f.fields.map((fl, i) => (i === idx ? { ...fl, ...patch } : fl)) }
+        : f)
+      const form = next.find((f) => f.id === id)
+      if (form) debouncedSave(form)
+      return next
+    })
   }
 
   return (
@@ -177,8 +173,7 @@ export default function FormsPage() {
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14 }}>
               <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.6 }}>
                 Guests sign these inside the store flows — the <strong>fitness waiver</strong> during membership
-                signup, the <strong>rental waiver</strong> when booking a room. Signed PDFs to secure storage and
-                booking-linked requirements arrive with the forms engine (Phase 3). Edits save on this device.
+                signup, the <strong>rental waiver</strong> when booking a room. Signatures are stored on members' accounts. Edits save live.
               </p>
             </div>
           </div>
@@ -189,7 +184,7 @@ export default function FormsPage() {
         )}
       </div>
 
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 22 }}>Placeholder data — submission counts are demo values until the forms engine flows.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 22 }}>Live — signed counts come from real submissions on members&apos; accounts.</p>
     </div>
   )
 }

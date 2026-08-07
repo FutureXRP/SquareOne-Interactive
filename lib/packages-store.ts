@@ -1,7 +1,9 @@
 'use client'
-// Event bundle packages — built in the dashboard, displayed in the store.
-// Same demo persistence pattern as rooms: localStorage until the backend
-// lands. Money is integer cents.
+// Event packages — live from Supabase. Money is integer cents.
+
+import { supabase, tryWrite, emit } from '@/lib/supabase'
+
+export const PACKAGES_EVENT = 'sq-packages'
 
 export interface EventPackage {
   id: string
@@ -14,73 +16,94 @@ export interface EventPackage {
   includes: string[]
   featured: boolean
   active: boolean
+  sort: number
 }
 
-const KEY = 'sq-packages-v1'
-
-export function defaultPackages(): EventPackage[] {
-  return [
-    {
-      id: 'ultimate-birthday',
-      name: 'Ultimate Birthday Bash',
-      priceCents: 39900,
-      hours: 3,
-      capacity: 'Up to 20 kids',
-      blurb: 'The big one — arcade party room plus the Gaming Zone, with a dedicated host from setup to cleanup.',
-      roomIds: ['party', 'gaming'],
-      includes: ['Dedicated party host', 'Arcade play for every guest', 'Console & VR gaming hour', 'Tables, setup & cleanup', 'Pizza & drinks for the group'],
-      featured: true,
-      active: true,
-    },
-    {
-      id: 'team-celebration',
-      name: 'Team Celebration',
-      priceCents: 49900,
-      hours: 4,
-      capacity: 'Up to 60',
-      blurb: 'End-of-season parties done right — full-court gym time plus the Dining Hall for the awards and the cake.',
-      roomIds: ['gym', 'dining'],
-      includes: ['Full-court gym block', 'Dining Hall for meals & awards', 'Tables, chairs & AV setup', 'Staff on site throughout'],
-      featured: false,
-      active: true,
-    },
-    {
-      id: 'family-fun-night',
-      name: 'Family Fun Night',
-      priceCents: 24900,
-      hours: 2,
-      capacity: 'Up to 15',
-      blurb: 'A two-hour sampler — climb in the Adventure Zone, then burn it off in the Multiball Zone.',
-      roomIds: ['adventure', 'multiball'],
-      includes: ['Adventure Zone hour with staff', 'Multiball Zone hour', 'Water & snacks included'],
-      featured: false,
-      active: true,
-    },
-  ]
+interface PackageRow {
+  id: string
+  name: string
+  blurb: string
+  price_cents: number
+  hours: number
+  capacity_label: string
+  featured: boolean
+  active: boolean
+  sort: number
+  event_package_rooms: { facility_id: string }[]
+  event_package_items: { label: string; sort: number }[]
 }
 
-export function getPackages(): EventPackage[] {
-  if (typeof window === 'undefined') return defaultPackages()
-  try {
-    const raw = window.localStorage.getItem(KEY)
-    if (!raw) return defaultPackages()
-    const parsed = JSON.parse(raw) as EventPackage[]
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultPackages()
-  } catch {
-    return defaultPackages()
+function fromRow(r: PackageRow): EventPackage {
+  return {
+    id: r.id,
+    name: r.name,
+    blurb: r.blurb,
+    priceCents: r.price_cents,
+    hours: r.hours,
+    capacity: r.capacity_label,
+    featured: r.featured,
+    active: r.active,
+    sort: r.sort,
+    roomIds: r.event_package_rooms.map((x) => x.facility_id),
+    includes: [...r.event_package_items].sort((a, b) => a.sort - b.sort).map((x) => x.label),
   }
 }
 
-export function getActivePackages(): EventPackage[] {
-  return getPackages().filter((p) => p.active)
+const SELECT = 'id, name, blurb, price_cents, hours, capacity_label, featured, active, sort, event_package_rooms(facility_id), event_package_items(label, sort)'
+
+let cache: EventPackage[] = []
+
+export async function getPackages(): Promise<EventPackage[]> {
+  const { data, error } = await supabase().from('event_packages').select(SELECT).order('sort')
+  if (error) throw error
+  cache = (data as PackageRow[]).map(fromRow)
+  return cache
 }
 
-export function savePackages(packages: EventPackage[]) {
-  window.localStorage.setItem(KEY, JSON.stringify(packages))
-  window.dispatchEvent(new Event('sq-packages'))
+export async function getActivePackages(): Promise<EventPackage[]> {
+  return (await getPackages()).filter((p) => p.active)
 }
 
-export function resetPackages() {
-  window.localStorage.removeItem(KEY)
-  window.dispatchEvent(new Event('sq-packages'))
+export async function savePackage(p: EventPackage): Promise<boolean> {
+  const sb = supabase()
+  const ok = await tryWrite(() => sb.from('event_packages').update({
+    name: p.name,
+    blurb: p.blurb,
+    price_cents: p.priceCents,
+    hours: p.hours,
+    capacity_label: p.capacity,
+    featured: p.featured,
+    active: p.active,
+    sort: p.sort,
+  }).eq('id', p.id))
+  if (!ok) return false
+  await tryWrite(() => sb.from('event_package_rooms').delete().eq('package_id', p.id))
+  if (p.roomIds.length > 0) {
+    await tryWrite(() => sb.from('event_package_rooms').insert(p.roomIds.map((rid) => ({ package_id: p.id, facility_id: rid }))))
+  }
+  await tryWrite(() => sb.from('event_package_items').delete().eq('package_id', p.id))
+  if (p.includes.length > 0) {
+    await tryWrite(() => sb.from('event_package_items').insert(p.includes.map((label, i) => ({ package_id: p.id, label, sort: i }))))
+  }
+  emit(PACKAGES_EVENT)
+  return true
+}
+
+export async function addPackage(p: Omit<EventPackage, 'sort'>): Promise<boolean> {
+  const { data: org } = await supabase().from('organizations').select('id').limit(1).single()
+  const sort = cache.reduce((n, x) => Math.max(n, x.sort), 0) + 1
+  const ok = await tryWrite(() => supabase().from('event_packages').insert({
+    id: p.id,
+    org_id: (org as { id: string }).id,
+    name: p.name,
+    blurb: p.blurb,
+    price_cents: p.priceCents,
+    hours: p.hours,
+    capacity_label: p.capacity,
+    featured: p.featured,
+    active: p.active,
+    sort,
+  }))
+  if (ok) emit(PACKAGES_EVENT)
+  return ok
 }

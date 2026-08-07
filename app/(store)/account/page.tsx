@@ -3,23 +3,30 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
-import { roomLabel } from '@/lib/facilities-store'
 import { formatCents, formatHour } from '@/lib/format'
 import { getPlan } from '@/lib/plans-store'
-import { getBookings, getWaivers, type DemoBooking, type DemoWaiver } from '@/lib/demo-session'
+import { getRooms, roomLabel } from '@/lib/facilities-store'
+import { getMyBookings, getMyWaivers, SESSION_EVENT, type MemberBooking, type SignedWaiver } from '@/lib/session'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
 
 export default function AccountOverview() {
-  const [bookings, setBookings] = useState<DemoBooking[]>([])
-  const [waivers, setWaivers] = useState<DemoWaiver[]>([])
+  const [bookings, setBookings] = useState<MemberBooking[]>([])
+  const [waivers, setWaivers] = useState<SignedWaiver[]>([])
   const [signingFitness, setSigningFitness] = useState(false)
 
   useEffect(() => {
-    const sync = () => { setBookings(getBookings()); setWaivers(getWaivers()) }
+    if (!isSupabaseConfigured()) return
+    let on = true
+    const sync = () => {
+      Promise.all([getMyBookings(), getMyWaivers(), getRooms().catch(() => [])])
+        .then(([b, w]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w) } })
+        .catch(() => {})
+    }
     sync()
-    window.addEventListener('sq-session', sync)
-    return () => window.removeEventListener('sq-session', sync)
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => { on = false; window.removeEventListener(SESSION_EVENT, sync) }
   }, [])
 
   return (
@@ -83,9 +90,9 @@ export default function AccountOverview() {
                 <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Nothing booked yet — grab a room for your next get-together.</p>
               ) : (
                 bookings.slice(0, 3).map((b, i) => {
-                  const zone = roomLabel(b.zoneId)
+                  const zone = roomLabel(b.roomId)
                   return (
-                    <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
+                    <div key={b.code} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
                       <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{zone.name}</p>
@@ -132,7 +139,7 @@ export default function AccountOverview() {
                     </div>
                     {fitnessNeeded && signingFitness && (
                       <div style={{ padding: '0 20px 16px' }}>
-                        <WaiverPanel def={FITNESS_WAIVER} compact onSigned={() => setSigningFitness(false)} />
+                        <WaiverPanel def={FITNESS_WAIVER} compact defaultName={profile.name} onSigned={() => setSigningFitness(false)} />
                       </div>
                     )}
                   </div>
