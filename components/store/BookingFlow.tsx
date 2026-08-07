@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, rentalPriceCents, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
-import { getSiteConfig, type SiteConfig } from '@/lib/site-config-store'
+import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -75,17 +75,23 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   useEffect(() => { loadBusy() }, [loadBusy])
 
-  const siteHours = !cfg
-    ? { openH: 6, closeH: 22 }
-    : day?.isSunday
-      ? { openH: cfg.sundayOpenH, closeH: cfg.sundayCloseH }
-      : { openH: cfg.weekdayOpenH, closeH: cfg.weekdayCloseH }
-  const roomHours = day && f ? roomDayHours(f, day.dow, siteHours) : { closed: false, ...siteHours }
-  const closedToday = roomHours.closed
+  const siteHours = !cfg || !day
+    ? { closed: false, openH: 6, closeH: 22 }
+    : siteDayHours(cfg, day.dow)
+  const closure = cfg && day ? closureFor(cfg, day.iso) : null
+  const roomHours = day && f ? roomDayHours(f, day.dow, siteHours) : { closed: false, openH: siteHours.openH, closeH: siteHours.closeH }
+  const closedToday = !!closure || roomHours.closed
   const dayHours = { openH: roomHours.openH, closeH: roomHours.closeH }
 
-  // Which upcoming days this room takes bookings at all (for graying the picker).
-  const dayClosed = (d: DayOption) => !!f?.bookingHours?.[d.dow]?.closed
+  // Which upcoming days this room takes bookings at all (for graying the picker):
+  // holiday closures close everything; otherwise the room's schedule, falling
+  // back to the site's per-day hours.
+  const dayClosed = (d: DayOption) => {
+    if (cfg && closureFor(cfg, d.iso)) return true
+    const sched = f?.bookingHours?.[d.dow]
+    if (sched) return sched.closed
+    return cfg ? siteDayHours(cfg, d.dow).closed : false
+  }
 
   const slots = useMemo(() => {
     if (!day || closedToday) return []
@@ -230,9 +236,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           ))}
           {day && slots.length === 0 && (
             <p style={{ fontSize: 13, color: SUB, gridColumn: '1/-1' }}>
-              {closedToday
-                ? `${f.name} isn't bookable on ${DAY_NAMES[day.dow]}s — pick another day.`
-                : 'No slots fit that duration — try a shorter rental.'}
+              {closure
+                ? `We're closed ${day.label}${closure.label ? ` for ${closure.label}` : ''} — pick another day.`
+                : closedToday
+                  ? `${f.name} isn't bookable on ${DAY_NAMES[day.dow]}s — pick another day.`
+                  : 'No slots fit that duration — try a shorter rental.'}
             </p>
           )}
         </div>

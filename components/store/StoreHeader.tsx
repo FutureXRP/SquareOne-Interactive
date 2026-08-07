@@ -5,20 +5,15 @@ import { useEffect, useState } from 'react'
 import { getCart, getProfile, SESSION_EVENT } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { Logo } from '@/components/Logo'
-
-const links = [
-  { href: '/facilities', label: 'Rent a room' },
-  { href: '/packages', label: 'Event Packages' },
-  { href: '/memberships', label: 'Fitness Memberships' },
-  { href: '/shop', label: 'Shop' },
-]
-
-
+import { getSiteContent, CONTENT_EVENT, NAV_DEFAULT, type SiteContent } from '@/lib/content-store'
+import { useLive } from '@/lib/use-live'
 
 export function StoreHeader() {
   const pathname = usePathname()
   const [cartCount, setCartCount] = useState(0)
   const [userName, setUserName] = useState<string | null>(null)
+  const { data: content } = useLive<SiteContent | null>(getSiteContent, [CONTENT_EVENT], null)
+  const links = (content?.nav ?? NAV_DEFAULT).filter((l) => l.visible)
 
   useEffect(() => {
     let on = true
@@ -39,15 +34,16 @@ export function StoreHeader() {
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', marginRight: 6 }}>
           <Logo size={30} />
           <span>
-            <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, color: '#1f2c42', letterSpacing: '-0.02em', lineHeight: 1.15 }}>SquareOne</span>
-            <span style={{ display: 'block', fontSize: 10, color: '#94a6bd', lineHeight: 1.15 }}>Interactive · Tulsa</span>
+            <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, color: '#1f2c42', letterSpacing: '-0.02em', lineHeight: 1.15 }}>{content?.text['brand.name'] ?? 'SquareOne'}</span>
+            <span style={{ display: 'block', fontSize: 10, color: '#94a6bd', lineHeight: 1.15 }}>{content?.text['brand.sub'] ?? 'Interactive · Tulsa'}</span>
           </span>
         </Link>
 
         <nav className="sq-store-nav" style={{ flex: 1 }}>
-          {links.map((l) => (
-            <Link key={l.href} href={l.href} className={pathname.startsWith(l.href) ? 'active' : ''}>{l.label}</Link>
-          ))}
+          {links.map((l) => l.href.startsWith('http')
+            ? <a key={l.id} href={l.href} target="_blank" rel="noreferrer">{l.label}</a>
+            : <Link key={l.id} href={l.href} className={pathname.startsWith(l.href) ? 'active' : ''}>{l.label}</Link>
+          )}
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
