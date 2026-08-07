@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import {
   getStaff, patchStaff, addStaff, removeStaff, linkStaffLogin,
-  ROLE_LABEL, ROLE_ACCESS, STAFF_EVENT, type StaffMember, type StaffRole,
+  ROLE_LABEL, ROLE_ACCESS, ASSIGNABLE_ROLES, STAFF_EVENT, type StaffMember, type StaffRole,
 } from '@/lib/staff-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -46,7 +46,7 @@ export function StaffManager() {
     <div className="sq-card" style={card}>
       <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Staff &amp; roles</span>
-        <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => addStaff('New staff member', 'front_desk')}>+ Add staff</button>
+        <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => addStaff('New staff member', 'staff')}>+ Add staff</button>
       </div>
       {staff.map((s, i) => (
         <div key={s.id} style={{ padding: '11px 20px', borderBottom: i < staff.length - 1 ? `1px solid ${LINE}` : 'none' }}>
@@ -54,7 +54,7 @@ export function StaffManager() {
             <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#eef4fb', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{s.name.charAt(0)}</div>
             <input className="sq-input" style={{ flex: 1, minWidth: 120, padding: '7px 10px', fontSize: 12.5 }} value={s.name} onChange={(e) => editName(s.id, e.target.value)} />
             <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12.5 }} value={s.role} onChange={(e) => patchStaff(s.id, { role: e.target.value as StaffRole })}>
-              {(Object.keys(ROLE_LABEL) as StaffRole[]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              {(ASSIGNABLE_ROLES.includes(s.role) ? ASSIGNABLE_ROLES : [...ASSIGNABLE_ROLES, s.role]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
             {s.linked
               ? <span style={{ fontSize: 10, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 9px', borderRadius: 999 }}>login linked</span>
@@ -73,8 +73,9 @@ export function StaffManager() {
       ))}
       {staff.length === 0 && <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Loading staff…</p>}
       <p style={{ fontSize: 11, color: FAINT, margin: 0, padding: '10px 20px' }}>
-        Owners, managers &amp; front desk can create bookings and take payments — enforced by database rules.
-        To give someone dashboard access: they sign up in the store, then link their email here.
+        Owners &amp; Admins edit everything. Managers &amp; Staff handle day-to-day operations — bookings,
+        payments, clients, schedules — but can&apos;t change rooms, prices, plans, or company info. Enforced
+        by database rules. To give someone dashboard access: they sign up in the store, then link their email here.
       </p>
     </div>
   )

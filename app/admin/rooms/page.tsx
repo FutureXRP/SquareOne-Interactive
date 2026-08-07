@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getRooms, saveRoom, addRoom, deleteRoom, uploadRoomPhoto, slugify, ROOM_COLORS, type RoomConfig } from '@/lib/facilities-store'
@@ -87,6 +88,7 @@ export default function RoomsAdminPage() {
   }
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Rooms & Pricing" sub="Everything the store shows about each room is edited here — changes go live for every visitor as soon as they save." chip={`${rooms.filter((r) => r.active).length} live in store`}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -230,5 +232,6 @@ export default function RoomsAdminPage() {
         )}
       </div>
     </div>
+    </AdminOnly>
   )
 }

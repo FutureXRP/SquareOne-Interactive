@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getMembershipStats, type MembershipStats } from '@/lib/membership-stats'
@@ -66,6 +67,7 @@ export default function AdminMembershipsPage() {
   }
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Fitness Memberships" sub="Edit the plans the store sells and watch the live subscriber base. Automatic billing arrives with Stripe." chip={`${m.active} active`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -186,5 +188,6 @@ export default function AdminMembershipsPage() {
         )}
       </div>
     </div>
+    </AdminOnly>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { supabase, tryWrite, isSupabaseConfigured } from '@/lib/supabase'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
@@ -181,6 +182,7 @@ export default function FormsPage() {
   }
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 48px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Forms & Waivers" sub="Build the forms guests sign — waivers, agreements, releases — and link them to bookings and programs." chip={`${forms.filter((f) => f.status === 'active').length} active`}>
         <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={newForm}>+ New form</button>
@@ -315,5 +317,6 @@ export default function FormsPage() {
 
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 22 }}>Live — signed counts come from real submissions on members&apos; accounts.</p>
     </div>
+    </AdminOnly>
   )
 }

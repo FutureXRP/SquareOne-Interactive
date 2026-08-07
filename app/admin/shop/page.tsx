@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getProducts, saveProduct, addProduct, deleteProduct, productSlug, PRODUCT_COLORS, type ProductConfig } from '@/lib/products-store'
@@ -68,6 +69,7 @@ export default function ShopAdminPage() {
   }
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Shop" sub="The merch catalog people see in the store — add products, set prices, and take items down, live for every visitor." chip={`${products.filter((p) => p.active).length} live in store`}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -165,5 +167,6 @@ export default function ShopAdminPage() {
         )}
       </div>
     </div>
+    </AdminOnly>
   )
 }

@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPackages, savePackage, addPackage as addPackageLive, deletePackage, type EventPackage } from '@/lib/packages-store'
@@ -66,6 +67,7 @@ export default function PackagesAdminPage() {
   }
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Event Packages" sub="Bundle rooms, hours, and extras into one flat price. Published packages appear on the store's Event Packages page instantly." chip={`${packages.filter((p) => p.active).length} live in store`}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -182,5 +184,6 @@ export default function PackagesAdminPage() {
         )}
       </div>
     </div>
+    </AdminOnly>
   )
 }

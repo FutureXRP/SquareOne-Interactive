@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPrograms, saveProgram, addProgram as addProgramLive, deleteProgram, type EditableProgram } from '@/lib/programs-store'
@@ -56,6 +57,7 @@ export default function ProgramsPage() {
   const waiversMissing = programs.filter((p) => p.active).reduce((n, p) => n + p.waiversMissing, 0)
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Programs" sub="Recurring activities with rosters, capacity, waitlists, and waiver tracking — every field editable." chip={`${waiversMissing} waivers missing`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -140,5 +142,6 @@ export default function ProgramsPage() {
       </div>
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>Enrollment counts come from registrations; online registration arrives in Phase 3. Edits save live.</p>
     </div>
+    </AdminOnly>
   )
 }
