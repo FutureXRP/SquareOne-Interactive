@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getRoom, rentalPriceCents, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
+import { getRoom, rentalPriceCents, rentalPriceCentsAt, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy } from '@/lib/staff-bookings-store'
@@ -110,7 +110,12 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   if (!f) return <div style={{ minHeight: 200 }} />
 
-  const priceCents = rentalPriceCents(f, hours)
+  // Price the actual slot when one is picked (time/day rules can change the
+  // rate); before that, show the base-rate estimate.
+  const hasRules = (f.rateRules?.length ?? 0) > 0
+  const priceCents = day && startH != null
+    ? rentalPriceCentsAt(f, day.dow, startH, hours)
+    : rentalPriceCents(f, hours)
   const firstHourCents = f.firstHourCents ?? f.perHourCents
   const splitRate = firstHourCents !== f.perHourCents
   // Deposit that locks the booking in (undefined until migration 0009 runs)
@@ -265,9 +270,13 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             ['Date', day ? `${day.weekday}, ${day.label}` : '—'],
             ['Time', startH != null ? `${formatHour(startH)}–${formatHour(startH + hours)}` : 'pick a start time'],
             ['Duration', `${hours} hour${hours > 1 ? 's' : ''}`],
-            ['Rate', splitRate
-              ? `${formatCents(firstHourCents)} first hour · ${formatCents(f.perHourCents)}/hr after`
-              : `${formatCents(f.perHourCents)}/hr`],
+            ['Rate', hasRules
+              ? (startH != null && day
+                  ? `${formatCents(Math.round(priceCents / hours))}/hr avg for this time`
+                  : 'varies by day & time — pick a slot')
+              : splitRate
+                ? `${formatCents(firstHourCents)} first hour · ${formatCents(f.perHourCents)}/hr after`
+                : `${formatCents(f.perHourCents)}/hr`],
           ].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: `1px solid ${LINE}` }}>
               <span style={{ fontSize: 12.5, color: FAINT }}>{k}</span>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { getActiveRooms, roomLabel, rentalPriceCents, type RoomConfig } from '@/lib/facilities-store'
+import { getActiveRooms, roomLabel, rentalPriceCentsAt, type RoomConfig } from '@/lib/facilities-store'
 import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
@@ -75,7 +75,8 @@ export default function AdminBookingsPage() {
   }, [])
 
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
-  const autoPriceCents = room ? rentalPriceCents(room, nbHours) : 0
+  const nbDow = nbDate ? new Date(`${nbDate}T00:00:00`).getDay() : 0
+  const autoPriceCents = room ? rentalPriceCentsAt(room, nbDow, nbStart, nbHours) : 0
   const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
   // Deposit defaults from the room; adjustable per booking (0009 required)
   const roomDepositCents = room?.depositRequired ? (room.depositCents ?? 0) : 0
