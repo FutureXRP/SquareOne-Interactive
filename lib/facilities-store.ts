@@ -36,6 +36,16 @@ export interface RoomConfig {
   // Deposit that locks a booking in. undefined = column not migrated yet.
   depositCents?: number
   depositRequired?: boolean
+  // Time/day pricing overrides. undefined = column not migrated yet.
+  rateRules?: RateRule[]
+}
+
+export interface RateRule {
+  days: number[]  // 0=Sunday … 6=Saturday
+  fromH: number   // decimal hours, rule covers [fromH, toH)
+  toH: number
+  cents: number   // $/hr for hours inside the window
+  label?: string
 }
 
 export interface DaySchedule {
@@ -61,6 +71,19 @@ function normalizeSchedule(v: unknown): DaySchedule[] | null {
   return out
 }
 
+function normalizeRules(v: unknown): RateRule[] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((r): r is RateRule => !!r && typeof r === 'object' && Array.isArray((r as RateRule).days))
+    .map((r) => ({
+      days: r.days.filter((d) => typeof d === 'number' && d >= 0 && d <= 6),
+      fromH: typeof r.fromH === 'number' ? r.fromH : 9,
+      toH: typeof r.toH === 'number' ? r.toH : 17,
+      cents: typeof r.cents === 'number' ? r.cents : 0,
+      label: typeof r.label === 'string' ? r.label : '',
+    }))
+}
+
 export const ROOM_COLORS = [
   '#b8860b', '#cf4436', '#2e8b57', '#2f6db8', '#1d9a8f', '#8a4bbf', '#e07020', '#c2478f', '#5b93d6', '#182740',
 ]
@@ -80,6 +103,7 @@ interface FacilityRow {
   booking_hours?: unknown
   deposit_cents?: number | null
   deposit_required?: boolean | null
+  rate_rules?: unknown
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -100,6 +124,7 @@ function fromRow(r: FacilityRow): RoomConfig {
     bookingHours: 'booking_hours' in r ? normalizeSchedule(r.booking_hours) : undefined,
     depositCents: 'deposit_cents' in r ? (r.deposit_cents ?? 0) : undefined,
     depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
+    rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
   }
 }
 
@@ -107,6 +132,7 @@ const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_c
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
 const COL_SETS = [
+  `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, ${BASE_COLS}`,
   `photo_url, first_hour_cents, ${BASE_COLS}`,
@@ -162,6 +188,7 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     ...(room.bookingHours !== undefined ? { booking_hours: room.bookingHours } : {}),
     ...(room.depositCents !== undefined ? { deposit_cents: room.depositCents } : {}),
     ...(room.depositRequired !== undefined ? { deposit_required: room.depositRequired } : {}),
+    ...(room.rateRules !== undefined ? { rate_rules: room.rateRules } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.
@@ -257,6 +284,36 @@ export function rentalPriceCents(room: Pick<RoomConfig, 'perHourCents' | 'firstH
   if (hours <= 0) return 0
   const first = room.firstHourCents ?? room.perHourCents
   return first + (hours - 1) * room.perHourCents
+}
+
+// The $/hr for one specific hour of the week: the first rate rule matching
+// the day and time wins; otherwise the base rate (first-hour rate for the
+// rental's opening hour, additional-hour rate after).
+export function hourRateCents(
+  room: Pick<RoomConfig, 'perHourCents' | 'firstHourCents' | 'rateRules'>,
+  dow: number,
+  hour: number,
+  isFirstHour: boolean,
+): number {
+  const rule = room.rateRules?.find((r) => r.days.includes(dow) && hour >= r.fromH && hour < r.toH)
+  if (rule) return rule.cents
+  return isFirstHour ? (room.firstHourCents ?? room.perHourCents) : room.perHourCents
+}
+
+// What a rental costs for a specific slot — each rented hour is priced by
+// the rules for its day/time, falling back to the base rates. Matches
+// rentalPriceCents exactly when the room has no rules.
+export function rentalPriceCentsAt(
+  room: Pick<RoomConfig, 'perHourCents' | 'firstHourCents' | 'rateRules'>,
+  dow: number,
+  startH: number,
+  hours: number,
+): number {
+  let total = 0
+  for (let i = 0; i < hours; i++) {
+    total += hourRateCents(room, dow, startH + i, i === 0)
+  }
+  return total
 }
 
 // Upload a room photo to the public room-photos bucket and return its URL.

@@ -208,6 +208,68 @@ export default function RoomsAdminPage() {
                 ? 'The booking calculator charges the first-hour rate for hour one and the additional-hour rate for every hour after — set them equal for flat pricing. The advertised prices below are the chips shown on the room’s store card — keep them in sync.'
                 : 'The booking rate is what the online booking calculator charges per hour. Run the 0006_room_rates.sql migration in Supabase to unlock separate first-hour and additional-hour rates. The advertised prices below are the chips shown on the room’s store card.'}
             </p>
+            {/* Time & day pricing rules — override the base rates by window */}
+            {editing.rateRules !== undefined && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <span className="sq-label" style={{ marginBottom: 0 }}>Time &amp; day pricing</span>
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }}
+                    onClick={() => patch(editing.id, { rateRules: [...(editing.rateRules ?? []), { days: [1, 2, 3, 4, 5], fromH: 17, toH: 22, cents: editing.perHourCents, label: '' }] })}>
+                    + Add rule
+                  </button>
+                </div>
+                {(editing.rateRules ?? []).length === 0 && (
+                  <p style={{ fontSize: 11.5, color: FAINT, margin: '6px 0 0', lineHeight: 1.5 }}>
+                    No rules — every hour uses the base rates above. Add a rule to charge differently by
+                    time of day or day of the week (evenings, weekends…).
+                  </p>
+                )}
+                {(editing.rateRules ?? []).map((rule, i) => {
+                  const patchRule = (p: Partial<typeof rule>) =>
+                    patch(editing.id, { rateRules: editing.rateRules!.map((x, j) => (j === i ? { ...x, ...p } : x)) })
+                  return (
+                    <div key={i} style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 12px', marginTop: 8 }}>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                        {DAY_NAMES.map((name, dow) => (
+                          <button key={dow} onClick={() => patchRule({ days: rule.days.includes(dow) ? rule.days.filter((d) => d !== dow) : [...rule.days, dow].sort() })} style={{
+                            font: 'inherit', cursor: 'pointer', fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                            color: rule.days.includes(dow) ? '#fff' : SUB,
+                            background: rule.days.includes(dow) ? BLUE : '#fff',
+                            border: `1.5px solid ${rule.days.includes(dow) ? BLUE : LINE}`,
+                          }}>
+                            {name.slice(0, 3)}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={rule.fromH} onChange={(e) => patchRule({ fromH: Number(e.target.value) })}>
+                          {HOUR_OPTIONS.filter((h) => h < rule.toH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                        </select>
+                        <span style={{ fontSize: 11.5, color: FAINT }}>to</span>
+                        <select className="sq-select" style={{ width: 'auto', padding: '6px 9px', fontSize: 12 }} value={rule.toH} onChange={(e) => patchRule({ toH: Number(e.target.value) })}>
+                          {HOUR_OPTIONS.filter((h) => h > rule.fromH).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                        </select>
+                        <span style={{ fontSize: 11.5, color: FAINT }}>at $</span>
+                        <input className="sq-input" style={{ width: 84 }} inputMode="decimal" defaultValue={(rule.cents / 100).toFixed(2)} key={`rr-${editing.id}-${i}`}
+                          onBlur={(e) => patchRule({ cents: dollarsToCents(e.target.value) })} />
+                        <span style={{ fontSize: 11.5, color: FAINT }}>/hr</span>
+                        <input className="sq-input" style={{ flex: 1, minWidth: 110, fontSize: 12 }} placeholder="label (Evenings, Weekend…)" value={rule.label ?? ''}
+                          onChange={(e) => patchRule({ label: e.target.value })} />
+                        <button aria-label="Remove rule" onClick={() => patch(editing.id, { rateRules: editing.rateRules!.filter((_, j) => j !== i) })}
+                          style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
+                      </div>
+                    </div>
+                  )
+                })}
+                {(editing.rateRules ?? []).length > 0 && (
+                  <p style={{ fontSize: 11, color: FAINT, margin: '8px 0 0', lineHeight: 1.5 }}>
+                    Each rented hour is priced by the first rule that matches its day and time — hours no rule
+                    covers use the base rates above. The booking calculator applies this automatically.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Deposit — locks a booking in; adjustable per booking when staff book */}
             {editing.depositCents !== undefined && (
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
