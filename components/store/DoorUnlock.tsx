@@ -5,12 +5,25 @@ import { supabase } from '@/lib/supabase'
 
 type DoorState = 'idle' | 'unlocking' | 'open' | 'offline' | 'denied'
 
+// Translate the failure into words that say which link is broken.
+function offlineDetail(dashboardStatus: number | undefined): string {
+  switch (dashboardStatus) {
+    case 404: return 'The Dashboard app hasn’t been redeployed with the door update yet.'
+    case 401: return 'The door secret doesn’t match between the two apps — re-copy DOOR_SERVICE_TOKEN.'
+    case 501: return 'The Dashboard is missing its DOOR_SERVICE_TOKEN variable.'
+    case 502: return 'The door hardware isn’t connected to the hub yet — scan your member card at the door.'
+    case 0: return 'The Dashboard couldn’t be reached — double-check DASHBOARD_URL.'
+    default: return 'The door system didn’t answer — scan your member card or see the front desk.'
+  }
+}
+
 // The member's fitness-door button. Rendered only while a membership is
 // current (active or paid-through-cancellation); the server re-checks the
 // membership on every press, so the button is convenience — not the lock.
 export function DoorUnlock({ memberName }: { memberName: string }) {
   const [state, setState] = useState<DoorState>('idle')
   const [seconds, setSeconds] = useState(7)
+  const [detail, setDetail] = useState('')
   const timer = useRef<number | null>(null)
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
@@ -32,13 +45,19 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
         timer.current = window.setTimeout(() => setState('idle'), (json.relockSeconds ?? 7) * 1000)
       } else if (res.status === 403) {
         setState('denied')
-      } else {
+      } else if (res.status === 501) {
+        setDetail('Door unlock isn’t configured on this deployment yet (DASHBOARD_URL / DOOR_SERVICE_TOKEN).')
         setState('offline')
-        timer.current = window.setTimeout(() => setState('idle'), 6000)
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { dashboardStatus?: number }
+        setDetail(offlineDetail(body.dashboardStatus))
+        setState('offline')
+        timer.current = window.setTimeout(() => setState('idle'), 12000)
       }
     } catch {
+      setDetail(offlineDetail(undefined))
       setState('offline')
-      timer.current = window.setTimeout(() => setState('idle'), 6000)
+      timer.current = window.setTimeout(() => setState('idle'), 12000)
     }
   }
 
@@ -60,7 +79,7 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
             {state === 'open' && `It relocks itself in about ${seconds} seconds.`}
             {state === 'idle' && 'One tap opens the door once — no card scan needed.'}
             {state === 'unlocking' && 'Unlocking…'}
-            {state === 'offline' && 'The door system didn’t answer — scan your member card or see the front desk.'}
+            {state === 'offline' && (detail || 'The door system didn’t answer — scan your member card or see the front desk.')}
             {state === 'denied' && 'This needs an active fitness membership.'}
           </p>
         </div>

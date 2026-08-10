@@ -34,11 +34,17 @@ export async function POST(req: Request) {
       body: JSON.stringify({ member: caller.name }),
       signal: AbortSignal.timeout(10_000),
     })
-    if (!res.ok) return NextResponse.json({ error: 'door_offline' }, { status: 502 })
+    if (!res.ok) {
+      // Pass the dashboard's status through so the button can say exactly
+      // which link in the chain is broken (deploy, secret, or hardware).
+      let message = ''
+      try { message = ((await res.json()) as { message?: string }).message ?? '' } catch { /* non-JSON body */ }
+      return NextResponse.json({ error: 'door_offline', dashboardStatus: res.status, message }, { status: 502 })
+    }
     const json = (await res.json()) as { relockSeconds?: number }
     return NextResponse.json({ ok: true, relockSeconds: json.relockSeconds ?? 7 })
   } catch (e) {
     console.error('[door/unlock]', e)
-    return NextResponse.json({ error: 'door_offline' }, { status: 502 })
+    return NextResponse.json({ error: 'door_offline', dashboardStatus: 0, message: 'unreachable' }, { status: 502 })
   }
 }
