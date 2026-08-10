@@ -193,7 +193,7 @@ export default function AdminBookingsPage() {
             <div>
               <label className="sq-label" htmlFor="nb-hours">Length</label>
               <select id="nb-hours" className="sq-select" value={nbHours} onChange={(e) => { setNbHours(Number(e.target.value)); setNbPrice('') }}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
+                {[1, 2, 3, 4, 5, 6].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
               </select>
             </div>
             <div>

@@ -75,6 +75,17 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   useEffect(() => { loadBusy() }, [loadBusy])
 
+  // With 48-hour notice the first day or two can't be booked — land the
+  // picker on the first day that actually can.
+  useEffect(() => {
+    if (days.length === 0) return
+    const closed = (d: DayOption) => new Date(`${d.iso}T23:59:59`).getTime() < Date.now() + (f?.minNoticeHours ?? 48) * 3600_000
+    if (!closed(days[dayIdx])) return
+    const idx = days.findIndex((d) => !closed(d))
+    if (idx >= 0) setDayIdx(idx)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, f])
+
   const siteHours = !cfg || !day
     ? { closed: false, openH: 6, closeH: 22 }
     : siteDayHours(cfg, day.dow)
@@ -87,6 +98,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   // holiday closures close everything; otherwise the room's schedule, falling
   // back to the site's per-day hours.
   const dayClosed = (d: DayOption) => {
+    // Days that end before the notice window opens can't be booked at all.
+    if (new Date(`${d.iso}T23:59:59`).getTime() < earliestMs()) return true
     if (cfg && closureFor(cfg, d.iso)) return true
     const sched = f?.bookingHours?.[d.dow]
     if (sched) return sched.closed
@@ -94,7 +107,9 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   }
 
   // Online bookings need this much lead time (staff can always book sooner).
-  const noticeH = f?.minNoticeHours ?? 0
+  // 48 hours is the house rule — enforced even before migration 0014 runs.
+  const noticeH = f?.minNoticeHours ?? 48
+  const earliestMs = () => Date.now() + noticeH * 3600_000
 
   const slots = useMemo(() => {
     if (!day || closedToday) return []
@@ -212,10 +227,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           })}
         </div>
 
-        {/* Duration — rentals run up to 8 hours */}
+        {/* Duration — 1 hour by default, up to 6 per rental */}
         <p className="sq-label">How long?</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8].filter((h) => h >= f.minHours).map((h) => (
+          {[1, 2, 3, 4, 5, 6].filter((h) => h >= f.minHours).map((h) => (
             <button key={h} onClick={() => { setHours(h); setStartH(null) }} style={{
               font: 'inherit', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
               color: h === hours ? '#fff' : SUB, background: h === hours ? BLUE : '#fff',

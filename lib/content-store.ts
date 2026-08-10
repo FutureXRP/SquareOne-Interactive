@@ -40,7 +40,7 @@ export const TEXT_FIELDS: TextField[] = [
   { key: 'home.footnote', group: 'Home sections', label: 'Note under the sections', def: 'Members enter any time we’re open with their member code — hours are below.', multiline: true },
 
   { key: 'facilities.heading', group: 'Rooms page', label: 'Page heading', def: 'Rent a room or facility' },
-  { key: 'facilities.sub', group: 'Rooms page', label: 'Intro paragraph', def: 'Pick a space, choose a time, and request your booking online — up to 8 hours. A hold keeps your slot while you pay the deposit, and members get member pricing automatically.', multiline: true },
+  { key: 'facilities.sub', group: 'Rooms page', label: 'Intro paragraph', def: 'Pick a space, choose a time, and request your booking online — 1 to 6 hours, at least 48 hours ahead. A hold keeps your slot while you pay the deposit, and members get member pricing automatically.', multiline: true },
 
   { key: 'memberships.heading', group: 'Memberships page', label: 'Page heading', def: 'Simple fitness memberships, no surprises' },
   { key: 'memberships.sub', group: 'Memberships page', label: 'Intro paragraph', def: 'Month to month, cancel anytime, and every dollar supports SquareOne Compassion’s work in Tulsa.', multiline: true },
