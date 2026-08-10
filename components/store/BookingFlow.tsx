@@ -93,20 +93,28 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     return cfg ? siteDayHours(cfg, d.dow).closed : false
   }
 
+  // Online bookings need this much lead time (staff can always book sooner).
+  const noticeH = f?.minNoticeHours ?? 0
+
   const slots = useMemo(() => {
     if (!day || closedToday) return []
     const now = new Date()
     const isToday = dayIdx === 0
     const nowH = now.getHours() + now.getMinutes() / 60
+    const [yy, mm, dd] = day.iso.split('-').map(Number)
+    const earliest = new Date(now.getTime() + noticeH * 3600_000)
     const open = Math.ceil(dayHours.openH)
     const out: { startH: number; available: boolean }[] = []
     for (let h = open; h + hours <= dayHours.closeH; h++) {
       const overlaps = busy.some((b) => h < b.toH && h + hours > b.fromH)
       const past = isToday && h <= nowH
-      out.push({ startH: h, available: !overlaps && !past })
+      const slotTime = new Date(yy, mm - 1, dd, Math.floor(h), Math.round((h % 1) * 60))
+      const tooSoon = slotTime < earliest
+      out.push({ startH: h, available: !overlaps && !past && !tooSoon })
     }
     return out
-  }, [day, dayIdx, closedToday, dayHours.openH, dayHours.closeH, hours, busy])
+  }, [day, dayIdx, closedToday, dayHours.openH, dayHours.closeH, hours, busy, noticeH])
+  const allTooSoon = slots.length > 0 && slots.every((s) => !s.available) && noticeH > 0
 
   if (!f) return <div style={{ minHeight: 200 }} />
 
@@ -246,6 +254,12 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
                 : closedToday
                   ? `${f.name} isn't bookable on ${DAY_NAMES[day.dow]}s — pick another day.`
                   : 'No slots fit that duration — try a shorter rental.'}
+            </p>
+          )}
+          {day && allTooSoon && (
+            <p style={{ fontSize: 12.5, color: SUB, gridColumn: '1/-1', margin: '6px 0 0' }}>
+              {f.name} needs at least {noticeH >= 24 ? `${Math.round(noticeH / 24)} day${noticeH > 24 ? 's' : ''}` : `${noticeH} hours`}&apos; notice
+              to book online — pick a later day, or call the front desk for short-notice availability.
             </p>
           )}
         </div>

@@ -38,6 +38,8 @@ export interface RoomConfig {
   depositRequired?: boolean
   // Time/day pricing overrides. undefined = column not migrated yet.
   rateRules?: RateRule[]
+  // How far ahead online bookings must be made. undefined = not migrated.
+  minNoticeHours?: number
 }
 
 export interface RateRule {
@@ -104,6 +106,7 @@ interface FacilityRow {
   deposit_cents?: number | null
   deposit_required?: boolean | null
   rate_rules?: unknown
+  min_notice_hours?: number | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -125,6 +128,7 @@ function fromRow(r: FacilityRow): RoomConfig {
     depositCents: 'deposit_cents' in r ? (r.deposit_cents ?? 0) : undefined,
     depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
     rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
+    minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 6) : undefined,
   }
 }
 
@@ -132,6 +136,7 @@ const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_c
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
 const COL_SETS = [
+  `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, ${BASE_COLS}`,
@@ -189,6 +194,7 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     ...(room.depositCents !== undefined ? { deposit_cents: room.depositCents } : {}),
     ...(room.depositRequired !== undefined ? { deposit_required: room.depositRequired } : {}),
     ...(room.rateRules !== undefined ? { rate_rules: room.rateRules } : {}),
+    ...(room.minNoticeHours !== undefined ? { min_notice_hours: room.minNoticeHours } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.

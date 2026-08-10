@@ -8,7 +8,7 @@ import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import type { WaiverFrequency } from '@/lib/waivers-live'
 
-type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph'
+type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph' | 'multi'
 type AssignTo = 'none' | 'fitness' | 'rentals'
 
 interface FormField {
@@ -16,6 +16,7 @@ interface FormField {
   type: FieldType
   required: boolean
   content?: string // paragraph body text shown to the signer
+  options?: string[] // choices for a multiple-checkbox field
 }
 
 interface FormDef {
@@ -53,6 +54,7 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'checkbox', label: 'Agreement checkbox' },
   { value: 'signature', label: 'Signature' },
   { value: 'paragraph', label: 'Info paragraph' },
+  { value: 'multi', label: 'Multiple checkboxes' },
 ]
 
 interface Row {
@@ -293,6 +295,17 @@ export default function FormsPage() {
                 <textarea className="sq-textarea" rows={4} placeholder="Write the paragraph text people read and agree to — the full waiver terms go here."
                   value={fl.content ?? ''} style={{ marginLeft: 16, width: 'calc(100% - 16px)' }}
                   onChange={(e) => patchField(editing.id, i, { content: e.target.value })} />
+              )}
+              {fl.type === 'multi' && (
+                <div style={{ marginLeft: 16 }}>
+                  <textarea className="sq-textarea" rows={3} placeholder={'One choice per line, e.g.\nGym\nDining Hall\nMultiball Zone'}
+                    value={(fl.options ?? []).join('\n')}
+                    onChange={(e) => patchField(editing.id, i, { options: e.target.value.split('\n') })}
+                    onBlur={(e) => patchField(editing.id, i, { options: e.target.value.split('\n').map((o) => o.trim()).filter(Boolean) })} />
+                  <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0' }}>
+                    Signers can check any that apply — their choices are saved with the signature.
+                  </p>
+                </div>
               )}
               </div>
             ))}

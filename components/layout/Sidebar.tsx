@@ -1,14 +1,18 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { Logo } from '@/components/Logo'
+import { newBookingsSince, bookingsSeenAt, BOOKINGS_EVENT, SEEN_EVENT } from '@/lib/staff-bookings-store'
 
 const nav = [
   { href: '/admin', label: 'Today',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/></svg> },
   { href: '/admin/board', label: 'The Board',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.5 3.5h13M1.5 8h13M1.5 12.5h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity=".35"/><rect x="2" y="2.2" width="6" height="2.6" rx="1.3" fill="currentColor" opacity=".75"/><rect x="6" y="6.7" width="7" height="2.6" rx="1.3" fill="currentColor" opacity=".55"/><rect x="3.5" y="11.2" width="5" height="2.6" rx="1.3" fill="currentColor" opacity=".75"/></svg> },
+  { href: '/admin/calendar', label: 'Calendar',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="5.2" cy="9.5" r="1" fill="currentColor"/><circle cx="8" cy="9.5" r="1" fill="currentColor"/><circle cx="10.8" cy="9.5" r="1" fill="currentColor"/><circle cx="5.2" cy="12" r="1" fill="currentColor"/><circle cx="8" cy="12" r="1" fill="currentColor"/></svg> },
   { href: '/admin/rooms', label: 'Rooms & Pricing',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.3" stroke="currentColor" strokeWidth="1.4"/><path d="M11.75 9v5.5M9 11.75h5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg> },
   { href: '/admin/packages', label: 'Event Packages',
@@ -45,6 +49,23 @@ const nav = [
 
 export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOut?: () => void }) {
   const pathname = usePathname()
+  const [newBookings, setNewBookings] = useState(0)
+
+  // New-booking notifications: poll for bookings created since this device
+  // last opened the Bookings tab, so store requests surface without a refresh.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    let on = true
+    const check = () => {
+      newBookingsSince(bookingsSeenAt()).then((list) => { if (on) setNewBookings(list.length) }).catch(() => {})
+    }
+    check()
+    const timer = window.setInterval(check, 60_000)
+    window.addEventListener(BOOKINGS_EVENT, check)
+    window.addEventListener(SEEN_EVENT, check)
+    return () => { on = false; window.clearInterval(timer); window.removeEventListener(BOOKINGS_EVENT, check); window.removeEventListener(SEEN_EVENT, check) }
+  }, [])
+
   return (
     <aside className="sq-sidebar" style={{ width: 220, flexShrink: 0, background: '#fff', borderRight: '1px solid #dbe4f0', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div className="sq-sidebar-head" style={{ padding: '20px 20px 16px', borderBottom: '1px solid #eaf0f8' }}>
@@ -68,6 +89,11 @@ export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOu
             }}>
               <span style={{ color: active ? '#2f6db8' : '#94a6bd', display: 'flex', flexShrink: 0 }}>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
+              {item.href === '/admin/bookings' && newBookings > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: '#cf4436', borderRadius: 999, minWidth: 17, height: 17, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
+                  {newBookings > 9 ? '9+' : newBookings}
+                </span>
+              )}
             </Link>
           )
         })}

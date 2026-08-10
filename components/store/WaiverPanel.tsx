@@ -21,30 +21,46 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
   const [failed, setFailed] = useState(false)
   const [terms, setTerms] = useState<string[]>(def.terms)
   const [title, setTitle] = useState(def.name)
+  const [multis, setMultis] = useState<{ label: string; options: string[]; required: boolean }[]>([])
+  const [choices, setChoices] = useState<Record<string, string[]>>({})
 
-  // The signed terms come from the live form (editable in the dashboard);
-  // the built-in text is only the fallback.
+  // The signed terms and choice questions come from the live form (editable
+  // in the dashboard); the built-in text is only the fallback.
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     let on = true
     supabase().from('forms').select('name, fields').eq('id', def.id).maybeSingle().then(({ data }) => {
       if (!on || !data) return
-      const row = data as { name: string; fields: { type: string; content?: string; label: string }[] }
+      const row = data as { name: string; fields: { type: string; content?: string; label: string; required?: boolean; options?: string[] }[] }
       setTitle(row.name || def.name)
-      const paras = (Array.isArray(row.fields) ? row.fields : [])
+      const fields = Array.isArray(row.fields) ? row.fields : []
+      const paras = fields
         .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
         .map((f) => (f.content as string).trim())
       if (paras.length > 0) setTerms(paras)
+      setMultis(fields
+        .filter((f) => f.type === 'multi' && Array.isArray(f.options) && f.options.length > 0)
+        .map((f) => ({ label: f.label, options: f.options as string[], required: !!f.required })))
     })
     return () => { on = false }
   }, [def.id, def.name])
 
-  const canSign = signer.trim().length > 0 && agreed && signature.trim().toLowerCase() === signer.trim().toLowerCase()
+  const toggleChoice = (label: string, option: string) => {
+    setChoices((cur) => {
+      const set = new Set(cur[label] ?? [])
+      if (set.has(option)) set.delete(option)
+      else set.add(option)
+      return { ...cur, [label]: [...set] }
+    })
+  }
+
+  const multisOk = multis.every((m) => !m.required || (choices[m.label]?.length ?? 0) > 0)
+  const canSign = signer.trim().length > 0 && agreed && multisOk && signature.trim().toLowerCase() === signer.trim().toLowerCase()
 
   const sign = async () => {
     setSaving(true)
     setFailed(false)
-    const ok = await signWaiver(def.id, signer.trim(), signer.trim())
+    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), choices)
     setSaving(false)
     if (ok) onSigned()
     else setFailed(true)
@@ -63,6 +79,23 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
           </p>
         ))}
       </div>
+
+      {multis.map((m) => (
+        <div key={m.label} style={{ marginBottom: 12 }}>
+          <span className="sq-label">{m.label}{m.required ? '' : ' (optional)'}</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {m.options.map((opt) => {
+              const on = (choices[m.label] ?? []).includes(opt)
+              return (
+                <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 9, padding: '6px 11px' }}>
+                  <input type="checkbox" checked={on} onChange={() => toggleChoice(m.label, opt)} style={{ accentColor: BLUE }} />
+                  {opt}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      ))}
 
       <div style={{ marginBottom: 12 }}>
         <label className="sq-label" htmlFor={`${def.id}-signer`}>Your full legal name</label>
