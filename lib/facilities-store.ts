@@ -128,7 +128,7 @@ function fromRow(r: FacilityRow): RoomConfig {
     depositCents: 'deposit_cents' in r ? (r.deposit_cents ?? 0) : undefined,
     depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
     rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
-    minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 6) : undefined,
+    minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 48) : undefined,
   }
 }
 
