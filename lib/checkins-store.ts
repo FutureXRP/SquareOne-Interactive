@@ -10,30 +10,48 @@ export interface CheckIn {
   id: string
   who: string
   context: string
+  entryPoint: string
   method: string
   outcome: 'in' | 'denied' | 'flagged'
   when: string // "2:05 PM"
+  dateIso: string // YYYY-MM-DD local
+  hour: number // local hour 0-23
 }
 
-export async function getTodayCheckIns(): Promise<CheckIn[]> {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const { data, error } = await supabase()
-    .from('check_ins')
-    .select('id, who, context, method, outcome, at')
-    .gte('at', start.toISOString())
-    .order('at', { ascending: false })
-    .limit(100)
-  if (error) throw error
-  interface Row { id: string; who: string; context: string; method: string; outcome: CheckIn['outcome']; at: string }
-  return (data as Row[]).map((r) => ({
+interface Row { id: string; who: string; context: string; entry_point: string; method: string; outcome: CheckIn['outcome']; at: string }
+
+function fromRow(r: Row): CheckIn {
+  const d = new Date(r.at)
+  return {
     id: r.id,
     who: r.who,
     context: r.context,
+    entryPoint: r.entry_point,
     method: r.method,
     outcome: r.outcome,
-    when: new Date(r.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-  }))
+    when: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    dateIso: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+    hour: d.getHours(),
+  }
+}
+
+// Check-ins since local midnight (rangeDays - 1) days ago, newest first.
+export async function getCheckIns(rangeDays = 1): Promise<CheckIn[]> {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - (rangeDays - 1))
+  const { data, error } = await supabase()
+    .from('check_ins')
+    .select('id, who, context, entry_point, method, outcome, at')
+    .gte('at', start.toISOString())
+    .order('at', { ascending: false })
+    .limit(500)
+  if (error) throw error
+  return (data as Row[]).map(fromRow)
+}
+
+export async function getTodayCheckIns(): Promise<CheckIn[]> {
+  return getCheckIns(1)
 }
 
 export async function recordCheckIn(who: string, context: string): Promise<boolean> {

@@ -41,7 +41,23 @@ export async function POST(req: Request) {
       try { message = ((await res.json()) as { message?: string }).message ?? '' } catch { /* non-JSON body */ }
       return NextResponse.json({ error: 'door_offline', dashboardStatus: res.status, message }, { status: 502 })
     }
-    const json = (await res.json()) as { relockSeconds?: number }
+    const json = (await res.json()) as { relockSeconds?: number; door?: string }
+    // Record the entry in our own check-in log so the Check-ins & Doors tab
+    // shows app unlocks alongside front-desk check-ins.
+    try {
+      const db = serviceDb()
+      const { data: org } = await db.from('organizations').select('id').limit(1).single()
+      await db.from('check_ins').insert({
+        org_id: (org as { id: string }).id,
+        who: caller.name,
+        context: 'Fitness membership · app unlock',
+        entry_point: json.door ?? 'Fitness door',
+        method: 'app unlock',
+        outcome: 'in',
+      })
+    } catch (e) {
+      console.warn('[door/unlock] check-in log failed', e)
+    }
     return NextResponse.json({ ok: true, relockSeconds: json.relockSeconds ?? 7 })
   } catch (e) {
     console.error('[door/unlock]', e)
