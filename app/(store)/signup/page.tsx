@@ -6,6 +6,7 @@ import { card, INK, SUB, FAINT, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPlanLive, type EditablePlan } from '@/lib/plans-store'
 import { signUpAuth, choosePlan, isSignedIn, getProfile } from '@/lib/session'
+import { startMembershipCheckout } from '@/lib/billing-client'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -43,6 +44,8 @@ function SignupForm() {
       if (profile?.name && on) setName(profile.name)
       const due = await unsignedRequiredWaivers('fitness')
       if (due.length === 0) {
+        // Card first when Stripe is live; otherwise activate directly.
+        if (await startMembershipCheckout(planParam)) return
         await choosePlan(planParam)
         router.replace('/account/billing?welcome=1')
         return
@@ -73,7 +76,12 @@ function SignupForm() {
   }
 
   const finishJoin = async () => {
-    if (plan) await choosePlan(plan.id)
+    if (plan) {
+      // Stripe live: collect the card now and let the subscription activate
+      // the membership. Otherwise activate directly (pay at the desk).
+      if (await startMembershipCheckout(plan.id)) return
+      await choosePlan(plan.id)
+    }
     router.push('/account/billing?welcome=1')
   }
 

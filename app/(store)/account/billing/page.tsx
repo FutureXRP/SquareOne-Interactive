@@ -7,11 +7,17 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getPlan } from '@/lib/plans-store'
 import { setCard } from '@/lib/session'
+import { billingConfigured, openBillingPortal } from '@/lib/billing-client'
+import { useEffect } from 'react'
 
 function BillingContent() {
   const params = useSearchParams()
   const welcome = params.get('welcome') === '1'
+  const [stripeLive, setStripeLive] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
+
+  useEffect(() => { billingConfigured().then(setStripeLive) }, [])
   const [number, setNumber] = useState('')
   const [exp, setExp] = useState('')
   const [cvc, setCvc] = useState('')
@@ -69,7 +75,17 @@ function BillingContent() {
                 {saved && <span style={{ fontSize: 11.5, fontWeight: 700, color: GREEN }}>Saved ✓</span>}
               </div>
 
-              {!editing ? (
+              {stripeLive ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 13.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+                    Your card is stored securely with Stripe — add, update, or change it any time.
+                  </p>
+                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} disabled={busy}
+                    onClick={async () => { setBusy(true); await openBillingPortal(); setBusy(false) }}>
+                    Manage card &amp; invoices
+                  </button>
+                </div>
+              ) : !editing ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   {profile.card ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
