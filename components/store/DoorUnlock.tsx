@@ -11,7 +11,7 @@ function offlineDetail(dashboardStatus: number | undefined): string {
     case 404: return 'The Dashboard app hasn’t been redeployed with the door update yet.'
     case 401: return 'The door secret doesn’t match between the two apps — re-copy DOOR_SERVICE_TOKEN.'
     case 501: return 'The Dashboard is missing its DOOR_SERVICE_TOKEN variable.'
-    case 502: return 'The door hardware isn’t connected to the hub yet — scan your member card at the door.'
+    case 502: return 'The door controller didn’t respond — scan your member card or see the front desk.'
     case 0: return 'The Dashboard couldn’t be reached — double-check DASHBOARD_URL.'
     default: return 'The door system didn’t answer — scan your member card or see the front desk.'
   }
@@ -49,8 +49,9 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
         setDetail('Door unlock isn’t configured on this deployment yet (DASHBOARD_URL / DOOR_SERVICE_TOKEN).')
         setState('offline')
       } else {
-        const body = (await res.json().catch(() => ({}))) as { dashboardStatus?: number }
-        setDetail(offlineDetail(body.dashboardStatus))
+        const body = (await res.json().catch(() => ({}))) as { dashboardStatus?: number; message?: string }
+        // The Dashboard's own explanation is the most specific — prefer it.
+        setDetail(body.dashboardStatus === 502 && body.message ? body.message : offlineDetail(body.dashboardStatus))
         setState('offline')
         timer.current = window.setTimeout(() => setState('idle'), 12000)
       }
