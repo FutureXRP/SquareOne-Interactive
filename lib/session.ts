@@ -239,15 +239,22 @@ export async function hasWaiver(formId: string): Promise<boolean> {
   return (data as unknown[]).length > 0
 }
 
-export async function signWaiver(formId: string, signedBy: string, participant: string): Promise<boolean> {
+export async function signWaiver(formId: string, signedBy: string, participant: string, responses?: Record<string, string[]>): Promise<boolean> {
   const profile = await getProfile()
-  const { error } = await supabase().from('form_submissions').insert({
+  const base = {
     form_id: formId,
     account_id: profile?.accountId ?? null,
     signed_by: signedBy,
     participant,
     signature: signedBy,
-  })
+  }
+  const withResponses = responses && Object.keys(responses).length > 0
+  const payload = (withResponses ? { ...base, responses } : base) as typeof base
+  let { error } = await supabase().from('form_submissions').insert(payload)
+  // responses column arrives with migration 0013 — never lose a signature over it
+  if (error && withResponses && error.code === 'PGRST204') {
+    ;({ error } = await supabase().from('form_submissions').insert(base))
+  }
   if (error) {
     console.error('[session]', error.message)
     return false

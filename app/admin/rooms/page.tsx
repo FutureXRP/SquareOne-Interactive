@@ -195,6 +195,15 @@ export default function RoomsAdminPage() {
                   {[1, 2, 3, 4].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
                 </select>
               </div>
+              {editing.minNoticeHours !== undefined && (
+                <div>
+                  <label className="sq-label" htmlFor="r-notice">Book at least … ahead</label>
+                  <select id="r-notice" className="sq-select" value={editing.minNoticeHours} onChange={(e) => patch(editing.id, { minNoticeHours: Number(e.target.value) })}>
+                    <option value={0}>No notice needed</option>
+                    {[2, 6, 12, 24, 48, 72].map((h) => <option key={h} value={h}>{h >= 24 ? `${h / 24} day${h > 24 ? 's' : ''}` : `${h} hours`}</option>)}
+                  </select>
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: SUB, cursor: 'pointer' }}>
                   <input type="checkbox" checked={editing.active} onChange={(e) => patch(editing.id, { active: e.target.checked })} style={{ accentColor: BLUE }} />

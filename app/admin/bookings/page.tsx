@@ -8,7 +8,7 @@ import { getActiveRooms, roomLabel, rentalPriceCentsAt, type RoomConfig } from '
 import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
+  markBookingsSeen, BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -68,6 +68,7 @@ export default function AdminBookingsPage() {
     }
     sync()
     setNbDate(isoDate(0))
+    markBookingsSeen() // clears the sidebar's new-booking badge
     // Front Desk deep-link: /admin/bookings?new=1 opens the booking form
     if (new URLSearchParams(window.location.search).get('new') === '1') setShowNew(true)
     window.addEventListener(BOOKINGS_EVENT, sync)

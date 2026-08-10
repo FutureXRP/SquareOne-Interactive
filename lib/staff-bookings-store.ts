@@ -225,6 +225,46 @@ export async function deleteBooking(id: string): Promise<boolean> {
   return true
 }
 
+// ── New-booking notifications ────────────────────────────────
+// The dashboard shows a badge for bookings created since staff last
+// looked at the Bookings tab. Last-seen lives per device.
+
+const SEEN_KEY = 'sq-bookings-seen'
+export const SEEN_EVENT = 'sq-bookings-seen'
+
+export function bookingsSeenAt(): string {
+  if (typeof window === 'undefined') return new Date().toISOString()
+  const v = window.localStorage.getItem(SEEN_KEY)
+  if (v) return v
+  // First run: start the clock now so an old backlog doesn't flood the badge.
+  const now = new Date().toISOString()
+  window.localStorage.setItem(SEEN_KEY, now)
+  return now
+}
+
+export function markBookingsSeen(): void {
+  window.localStorage.setItem(SEEN_KEY, new Date().toISOString())
+  window.dispatchEvent(new Event(SEEN_EVENT))
+}
+
+export interface NewBookingPeek {
+  code: string
+  client: string
+  roomId: string
+}
+
+export async function newBookingsSince(sinceIso: string): Promise<NewBookingPeek[]> {
+  const { data, error } = await supabase()
+    .from('bookings')
+    .select('code, client_name, facility_id, created_at')
+    .gt('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) return []
+  return (data as { code: string; client_name: string; facility_id: string }[])
+    .map((r) => ({ code: r.code, client: r.client_name, roomId: r.facility_id }))
+}
+
 export interface PaymentRow {
   code: string
   client: string
