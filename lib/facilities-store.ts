@@ -40,6 +40,8 @@ export interface RoomConfig {
   rateRules?: RateRule[]
   // How far ahead online bookings must be made. undefined = not migrated.
   minNoticeHours?: number
+  // Add-ons this room offers (ids from the addons catalog). undefined = not migrated.
+  addonIds?: string[]
 }
 
 export interface RateRule {
@@ -107,6 +109,7 @@ interface FacilityRow {
   deposit_required?: boolean | null
   rate_rules?: unknown
   min_notice_hours?: number | null
+  addon_ids?: string[] | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -129,6 +132,7 @@ function fromRow(r: FacilityRow): RoomConfig {
     depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
     rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
     minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 48) : undefined,
+    addonIds: 'addon_ids' in r ? (Array.isArray(r.addon_ids) ? r.addon_ids : []) : undefined,
   }
 }
 
@@ -136,6 +140,7 @@ const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_c
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
 const COL_SETS = [
+  `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, ${BASE_COLS}`,
@@ -195,6 +200,7 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     ...(room.depositRequired !== undefined ? { deposit_required: room.depositRequired } : {}),
     ...(room.rateRules !== undefined ? { rate_rules: room.rateRules } : {}),
     ...(room.minNoticeHours !== undefined ? { min_notice_hours: room.minNoticeHours } : {}),
+    ...(room.addonIds !== undefined ? { addon_ids: room.addonIds } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.

@@ -6,6 +6,8 @@ import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRooms, saveRoom, addRoom, deleteRoom, uploadRoomPhoto, slugify, ROOM_COLORS, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
+import { getAddons, ADDONS_EVENT, type AddonConfig } from '@/lib/addons-store'
+import { getFormLinks, setRoomWaiver, roomRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -19,6 +21,8 @@ const HOUR_OPTIONS = Array.from({ length: 37 }, (_, i) => 5 + i * 0.5)
 
 export default function RoomsAdminPage() {
   const [rooms, setRooms] = useState<RoomConfig[]>([])
+  const [addons, setAddons] = useState<AddonConfig[]>([])
+  const [formLinks, setFormLinks] = useState<FormLink[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -32,7 +36,19 @@ export default function RoomsAdminPage() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     getRooms().then(setRooms).catch(() => {})
+    const syncAddons = () => { getAddons().then(setAddons).catch(() => {}) }
+    syncAddons()
+    const syncLinks = () => { getFormLinks().then(setFormLinks).catch(() => {}) }
+    syncLinks()
+    window.addEventListener(ADDONS_EVENT, syncAddons)
+    window.addEventListener(FORM_LINKS_EVENT, syncLinks)
+    return () => { window.removeEventListener(ADDONS_EVENT, syncAddons); window.removeEventListener(FORM_LINKS_EVENT, syncLinks) }
   }, [])
+
+  const toggleRoomWaiver = async (f: FormLink, roomId: string, on: boolean) => {
+    await setRoomWaiver(f, roomId, on, rooms.map((r) => r.id))
+    setFormLinks(await getFormLinks())
+  }
 
   const editing = rooms.find((r) => r.id === editingId) ?? null
 
@@ -293,6 +309,63 @@ export default function RoomsAdminPage() {
                 </label>
                 <p style={{ fontSize: 11, color: FAINT, margin: '0 0 9px', flexBasis: '100%', lineHeight: 1.5 }}>
                   New bookings start with this deposit — staff can adjust the amount on each booking.
+                </p>
+              </div>
+            )}
+
+            {/* Add-ons this room offers, from the Add Ons catalog */}
+            {editing.addonIds !== undefined && (
+              <div style={{ marginBottom: 16 }}>
+                <span className="sq-label">Add-ons offered</span>
+                {addons.filter((a) => a.active).length === 0 ? (
+                  <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.5 }}>
+                    No add-ons in the catalog yet — build them on the <Link href="/admin/addons" style={{ color: BLUE, fontWeight: 600 }}>Add Ons</Link> tab first.
+                  </p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {addons.filter((a) => a.active).map((a) => {
+                        const on = editing.addonIds!.includes(a.id)
+                        return (
+                          <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 9, padding: '6px 11px' }}>
+                            <input type="checkbox" checked={on} style={{ accentColor: BLUE }}
+                              onChange={(e) => patch(editing.id, {
+                                addonIds: e.target.checked
+                                  ? [...editing.addonIds!, a.id]
+                                  : editing.addonIds!.filter((id) => id !== a.id),
+                              })} />
+                            {a.name} · {formatCents(a.priceCents)}
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0' }}>
+                      Checked add-ons appear as optional extras when someone books this room.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Waivers this room requires at booking (same data the Forms tab edits) */}
+            {formLinks.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <span className="sq-label">Waivers required to book this room</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {formLinks.filter((fl) => fl.assignTo !== 'fitness').map((fl) => {
+                    const on = roomRequires(fl, editing.id)
+                    return (
+                      <label key={fl.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 9, padding: '6px 11px' }}>
+                        <input type="checkbox" checked={on} style={{ accentColor: BLUE }}
+                          onChange={(e) => toggleRoomWaiver(fl, editing.id, e.target.checked)} />
+                        {fl.name}{fl.status === 'draft' ? ' (draft)' : ''}
+                      </label>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0', lineHeight: 1.5 }}>
+                  Checked waivers must be signed before this room can be booked online. Draft waivers
+                  aren&apos;t collected until published on Forms &amp; Waivers.
                 </p>
               </div>
             )}

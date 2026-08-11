@@ -7,7 +7,9 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { FITNESS_WAIVER, RENTAL_WAIVER, type WaiverDef } from '@/lib/waiver-defs'
 
 export type WaiverFrequency = 'once' | 'annual' | 'every_time'
-export type WaiverTarget = 'fitness' | { roomId: string }
+// 'fitness' = fitness signup, any plan; { planId } filters plan-targeted
+// waivers; { roomId } is a rental booking for that room.
+export type WaiverTarget = 'fitness' | { planId: string } | { roomId: string }
 
 export interface RequiredWaiver extends WaiverDef {
   frequency: WaiverFrequency
@@ -24,43 +26,58 @@ interface FormRow {
   name: string
   fields: { type: string; content?: string }[]
   assign_room_ids: string[] | null
+  assign_plan_ids?: string[] | null
   frequency: WaiverFrequency
 }
+
+const isFitness = (t: WaiverTarget) => t === 'fitness' || 'planId' in t
 
 function toRequired(r: FormRow, target: WaiverTarget): RequiredWaiver {
   const paras = (Array.isArray(r.fields) ? r.fields : [])
     .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
     .map((f) => (f.content as string).trim())
-  const builtin = target === 'fitness' ? FITNESS_WAIVER : RENTAL_WAIVER
+  const builtin = isFitness(target) ? FITNESS_WAIVER : RENTAL_WAIVER
   return {
     id: r.id,
     name: r.name,
-    context: `${target === 'fitness' ? 'Required with a gym membership' : 'Required with this rental'} · ${FREQUENCY_NOTE[r.frequency]}`,
+    context: `${isFitness(target) ? 'Required with a gym membership' : 'Required with this rental'} · ${FREQUENCY_NOTE[r.frequency]}`,
     terms: paras.length > 0 ? paras : builtin.terms,
     frequency: r.frequency ?? 'once',
   }
 }
 
 function builtinFor(target: WaiverTarget): RequiredWaiver[] {
-  const def = target === 'fitness' ? FITNESS_WAIVER : RENTAL_WAIVER
+  const def = isFitness(target) ? FITNESS_WAIVER : RENTAL_WAIVER
   return [{ ...def, frequency: 'once' }]
 }
 
 // Every active form assigned to this flow, in stable order.
 export async function getRequiredWaivers(target: WaiverTarget): Promise<RequiredWaiver[]> {
   if (!isSupabaseConfigured()) return builtinFor(target)
-  const { data, error } = await supabase()
+  // assign_plan_ids arrives with migration 0017 — retry without it.
+  let res: { data: unknown; error: unknown } = await supabase()
     .from('forms')
-    .select('id, name, fields, assign_room_ids, frequency')
+    .select('id, name, fields, assign_room_ids, assign_plan_ids, frequency')
     .eq('status', 'active')
-    .eq('assign_to', target === 'fitness' ? 'fitness' : 'rentals')
+    .eq('assign_to', isFitness(target) ? 'fitness' : 'rentals')
     .order('id')
+  if (res.error) {
+    res = await supabase()
+      .from('forms')
+      .select('id, name, fields, assign_room_ids, frequency')
+      .eq('status', 'active')
+      .eq('assign_to', isFitness(target) ? 'fitness' : 'rentals')
+      .order('id')
+  }
   // Column missing means the assignment migration hasn't run — keep the
   // built-in behavior so waivers are never silently skipped.
-  if (error) return builtinFor(target)
-  let rows = data as unknown as FormRow[]
-  if (target !== 'fitness') {
+  if (res.error) return builtinFor(target)
+  let rows = res.data as unknown as FormRow[]
+  if (typeof target === 'object' && 'roomId' in target) {
     rows = rows.filter((r) => !r.assign_room_ids || r.assign_room_ids.length === 0 || r.assign_room_ids.includes(target.roomId))
+  }
+  if (typeof target === 'object' && 'planId' in target) {
+    rows = rows.filter((r) => !r.assign_plan_ids || r.assign_plan_ids.length === 0 || r.assign_plan_ids.includes(target.planId))
   }
   return rows.map((r) => toRequired(r, target))
 }

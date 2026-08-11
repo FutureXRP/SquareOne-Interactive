@@ -295,9 +295,12 @@ export async function getPayments(): Promise<PaymentRow[]> {
   }
   return (data as unknown as PRow[]).map((r) => {
     const d = new Date(r.created_at)
+    // Membership payments carry no booking — their memo leads with the
+    // member's name ("Jane Doe · Individual fitness membership").
+    const memoName = r.memo?.includes(' · ') ? r.memo.split(' · ')[0] : null
     return {
       code: r.code,
-      client: r.bookings?.client_name ?? '—',
+      client: r.bookings?.client_name ?? memoName ?? '—',
       memo: r.memo ?? '',
       method: r.method,
       amountCents: r.amount_cents,

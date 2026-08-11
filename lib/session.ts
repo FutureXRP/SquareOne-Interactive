@@ -180,7 +180,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   })
 }
 
-export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null):
+export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string):
   Promise<{ ok: true; code: string } | { ok: false; conflict: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
@@ -200,6 +200,7 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     price_cents: priceCents,
     hold_expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
     ...(depositCents !== undefined ? { deposit_cents: depositCents } : {}),
+    ...(note ? { note } : {}),
   }).select('code').single()
   if (error) {
     const conflict = error.code === '23P01'
