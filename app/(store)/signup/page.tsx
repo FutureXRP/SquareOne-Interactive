@@ -42,7 +42,7 @@ function SignupForm() {
       if (!planParam) { router.replace('/account'); return }
       const profile = await getProfile()
       if (profile?.name && on) setName(profile.name)
-      const due = await unsignedRequiredWaivers('fitness')
+      const due = await unsignedRequiredWaivers({ planId: planParam })
       if (due.length === 0) {
         // Card first when Stripe is live; otherwise activate directly.
         if (await startMembershipCheckout(planParam)) return
@@ -68,7 +68,7 @@ function SignupForm() {
     if (!res.ok) { setError(res.error ?? 'Signup failed'); return }
     if (res.needsConfirm) { setStep('confirm-email'); return }
     if (plan) {
-      const due = await unsignedRequiredWaivers('fitness')
+      const due = await unsignedRequiredWaivers({ planId: plan.id })
       if (due.length === 0) { await finishJoin(); return }
       setWaivers(due)
       setStep('waiver')

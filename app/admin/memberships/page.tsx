@@ -8,6 +8,7 @@ import { formatCents } from '@/lib/format'
 import { getMembershipStats, type MembershipStats } from '@/lib/membership-stats'
 import { getPlans, savePlan, addPlan as addPlanLive, deletePlan, type EditablePlan } from '@/lib/plans-store'
 import { slugify } from '@/lib/facilities-store'
+import { getFormLinks, setPlanWaiver, planRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -21,6 +22,7 @@ const EMPTY_STATS: MembershipStats = { active: 0, canceling: 0, pastDue: 0, mrrC
 export default function AdminMembershipsPage() {
   const [m, setStats] = useState<MembershipStats>(EMPTY_STATS)
   const [plans, setPlans] = useState<EditablePlan[]>([])
+  const [formLinks, setFormLinks] = useState<FormLink[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
 
@@ -34,7 +36,16 @@ export default function AdminMembershipsPage() {
     if (!isSupabaseConfigured()) return
     getPlans().then(setPlans).catch(() => {})
     getMembershipStats().then(setStats).catch(() => {})
+    const syncLinks = () => { getFormLinks().then(setFormLinks).catch(() => {}) }
+    syncLinks()
+    window.addEventListener(FORM_LINKS_EVENT, syncLinks)
+    return () => window.removeEventListener(FORM_LINKS_EVENT, syncLinks)
   }, [])
+
+  const togglePlanWaiver = async (f: FormLink, planId: string, on: boolean) => {
+    await setPlanWaiver(f, planId, on, plans.map((p) => p.id))
+    setFormLinks(await getFormLinks())
+  }
 
   const removePlan = async (id: string, name: string) => {
     if (!window.confirm(`Delete the ${name} plan? If members are subscribed it will be hidden from the store instead.`)) return
@@ -154,6 +165,30 @@ export default function AdminMembershipsPage() {
               </div>
             ))}
             <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', marginTop: 4 }} onClick={() => patch(editing.id, { features: [...editing.features, 'New feature'] })}>+ Add feature</button>
+
+            {/* Waivers required at signup for this plan (same data as Forms tab) */}
+            {formLinks.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <span className="sq-label">Waivers required at signup</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {formLinks.filter((fl) => fl.assignTo !== 'rentals').map((fl) => {
+                    const on = planRequires(fl, editing.id)
+                    return (
+                      <label key={fl.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 9, padding: '6px 11px' }}>
+                        <input type="checkbox" checked={on} style={{ accentColor: BLUE }}
+                          onChange={(e) => togglePlanWaiver(fl, editing.id, e.target.checked)} />
+                        {fl.name}{fl.status === 'draft' ? ' (draft)' : ''}
+                      </label>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0', lineHeight: 1.5 }}>
+                  Checked waivers must be signed when someone joins this plan. Requires the
+                  0017_waiver_targets.sql migration for per-plan targeting.
+                </p>
+              </div>
+            )}
+
             <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 18, paddingTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <Link href="/memberships" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Preview in store →</Link>
               <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={() => removePlan(editing.id, editing.name)}>Delete plan</button>

@@ -5,6 +5,7 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, rentalPriceCents, rentalPriceCentsAt, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
+import { getActiveAddons, type AddonConfig } from '@/lib/addons-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -30,6 +31,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [signedIn, setSignedIn] = useState(false)
   const [needsWaiver, setNeedsWaiver] = useState(false)
   const [pendingWaivers, setPendingWaivers] = useState<RequiredWaiver[]>([])
+  const [addons, setAddons] = useState<AddonConfig[]>([])
+  const [picked, setPicked] = useState<string[]>([])
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
@@ -58,6 +61,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     getRoom(facilityId).then((room) => {
       setF(room)
       if (room) setHours((h) => Math.max(h, room.minHours))
+      // Optional extras this room offers, from the Add Ons catalog.
+      if (room?.addonIds?.length) {
+        getActiveAddons().then((all) => setAddons(all.filter((a) => room.addonIds!.includes(a.id)))).catch(() => {})
+      }
     }).catch(() => {})
     const sync = () => { isSignedIn().then(setSignedIn) }
     sync()
@@ -136,9 +143,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   // Price the actual slot when one is picked (time/day rules can change the
   // rate); before that, show the base-rate estimate.
   const hasRules = (f.rateRules?.length ?? 0) > 0
-  const priceCents = day && startH != null
+  const pickedAddons = addons.filter((a) => picked.includes(a.id))
+  const addonsCents = pickedAddons.reduce((n, a) => n + a.priceCents, 0)
+  const priceCents = (day && startH != null
     ? rentalPriceCentsAt(f, day.dow, startH, hours)
-    : rentalPriceCents(f, hours)
+    : rentalPriceCents(f, hours)) + addonsCents
   const firstHourCents = f.firstHourCents ?? f.perHourCents
   const splitRate = firstHourCents !== f.perHourCents
   // Deposit that locks the booking in (undefined until migration 0009 runs)
@@ -148,8 +157,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     if (!day || startH == null || requesting) return
     setRequesting(true)
     setConflict(false)
+    const note = pickedAddons.length > 0
+      ? `Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(a.priceCents)})`).join(', ')}`
+      : undefined
     const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
-      f.depositCents === undefined ? undefined : depositCents)
+      f.depositCents === undefined ? undefined : depositCents, note)
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {
@@ -241,6 +253,29 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           ))}
         </div>
 
+        {/* Optional extras from the Add Ons catalog */}
+        {addons.length > 0 && (
+          <>
+            <p className="sq-label">Add extras (optional)</p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+              {addons.map((a) => {
+                const on = picked.includes(a.id)
+                return (
+                  <label key={a.id} title={a.blurb} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 10, padding: '7px 13px' }}>
+                    <input type="checkbox" checked={on} style={{ accentColor: BLUE }}
+                      onChange={() => setPicked((cur) => on ? cur.filter((id) => id !== a.id) : [...cur, a.id])} />
+                    <span>
+                      <span style={{ fontWeight: 700 }}>{a.name}</span>
+                      <span style={{ color: SUB, fontVariantNumeric: 'tabular-nums' }}> +{formatCents(a.priceCents)}</span>
+                      {a.blurb && <span style={{ display: 'block', fontSize: 10.5, color: FAINT }}>{a.blurb}</span>}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </>
+        )}
+
         {/* Slots — live availability from the booking book */}
         <p className="sq-label">Available start times {day ? `· ${day.weekday} ${day.label}` : ''}</p>
         {conflict && (
@@ -299,6 +334,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             ['Date', day ? `${day.weekday}, ${day.label}` : '—'],
             ['Time', startH != null ? `${formatHour(startH)}–${formatHour(startH + hours)}` : 'pick a start time'],
             ['Duration', `${hours} hour${hours > 1 ? 's' : ''}`],
+            ...(pickedAddons.length > 0 ? [['Extras', `${pickedAddons.map((a) => a.name).join(', ')} · ${formatCents(addonsCents)}`]] : []),
             ['Rate', hasRules
               ? (startH != null && day
                   ? `${formatCents(Math.round(priceCents / hours))}/hr avg for this time`

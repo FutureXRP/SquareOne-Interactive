@@ -19,6 +19,38 @@ function statusOf(sub: Stripe.Subscription): 'active' | 'canceling' | 'past_due'
   return 'active'
 }
 
+// Record a Stripe invoice payment in our payments ledger, so membership
+// charges (first signup and every monthly renewal) show on Payments and
+// Reports beside desk payments. Idempotent on the invoice id.
+async function recordInvoicePayment(invoice: Stripe.Invoice): Promise<void> {
+  if (!invoice.id || !invoice.amount_paid || invoice.amount_paid <= 0) return
+  const db = serviceDb()
+  const { data: existing } = await db
+    .from('payments')
+    .select('id')
+    .eq('stripe_payment_intent_id', invoice.id)
+    .maybeSingle()
+  if (existing) return
+  const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id
+  let accountId: string | null = null
+  if (customerId) {
+    const { data: acct } = await db.from('client_accounts').select('id').eq('stripe_customer_id', customerId).maybeSingle()
+    accountId = (acct as { id: string } | null)?.id ?? null
+  }
+  const { data: org } = await db.from('organizations').select('id').limit(1).single()
+  const what = invoice.lines?.data?.[0]?.description || 'Fitness membership'
+  await db.from('payments').insert({
+    org_id: (org as { id: string }).id,
+    account_id: accountId,
+    booking_id: null,
+    method: 'stripe',
+    status: 'paid',
+    amount_cents: invoice.amount_paid,
+    memo: `${invoice.customer_name ?? 'Member'} · ${what}`,
+    stripe_payment_intent_id: invoice.id,
+  })
+}
+
 async function upsertSubscription(sub: Stripe.Subscription): Promise<void> {
   const accountId = sub.metadata.account_id
   const planId = sub.metadata.plan_id
@@ -58,6 +90,13 @@ export async function POST(req: Request) {
         if (session.mode === 'subscription' && session.subscription) {
           const sub = await stripe().subscriptions.retrieve(session.subscription as string)
           await upsertSubscription(sub)
+          // Record the first charge here too (idempotent with invoice.paid),
+          // so signups hit the payments ledger even before that event is
+          // added to the webhook destination.
+          if (session.invoice) {
+            const invoice = await stripe().invoices.retrieve(session.invoice as string)
+            await recordInvoicePayment(invoice)
+          }
           // Membership confirmation email (silently skipped until Resend is set up —
           // Stripe's own receipt email covers the payment itself).
           const email = session.customer_details?.email
@@ -79,6 +118,11 @@ export async function POST(req: Request) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted':
         await upsertSubscription(event.data.object)
+        break
+      // Membership charges land in our payments ledger too — add the
+      // invoice.paid event to the Stripe webhook destination.
+      case 'invoice.paid':
+        await recordInvoicePayment(event.data.object)
         break
     }
   } catch (e) {
