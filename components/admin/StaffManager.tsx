@@ -20,6 +20,10 @@ export function StaffManager() {
   const debouncedName = useDebouncedSave(async (p: { id: string; name: string }) => {
     await patchStaff(p.id, { name: p.name })
   })
+  const debouncedCashtag = useDebouncedSave(async (p: { id: string; cashtag: string }) => {
+    const clean = p.cashtag.trim().replace(/^\$+/, '')
+    await patchStaff(p.id, { cashtag: clean || null })
+  })
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
@@ -33,6 +37,11 @@ export function StaffManager() {
   const editName = (id: string, name: string) => {
     setStaff((cur) => cur.map((s) => (s.id === id ? { ...s, name } : s)))
     debouncedName({ id, name })
+  }
+
+  const editCashtag = (id: string, cashtag: string) => {
+    setStaff((cur) => cur.map((s) => (s.id === id ? { ...s, cashtag } : s)))
+    debouncedCashtag({ id, cashtag })
   }
 
   const doLink = async (id: string) => {
@@ -62,6 +71,14 @@ export function StaffManager() {
             <button aria-label={`Remove ${s.name}`} onClick={() => removeStaff(s.id)} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1, marginLeft: 'auto' }}>×</button>
           </div>
           <span style={{ fontSize: 11, color: FAINT, display: 'block', paddingLeft: 40, marginTop: 3 }}>{ROLE_ACCESS[s.role]}</span>
+          {s.cashtag !== undefined && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 40, marginTop: 6 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: SUB }}>$</span>
+              <input className="sq-input" style={{ width: 180, padding: '6px 10px', fontSize: 12 }} placeholder="cashtag for event pay"
+                value={s.cashtag ?? ''} onChange={(e) => editCashtag(s.id, e.target.value)} />
+              <span style={{ fontSize: 10.5, color: FAINT }}>Cash App $cashtag — used to pay event payouts</span>
+            </div>
+          )}
           {linkingId === s.id && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingLeft: 40, marginTop: 8, flexWrap: 'wrap' }}>
               <input className="sq-input" style={{ width: 220, padding: '7px 10px', fontSize: 12 }} type="email" placeholder="their-login@email.com" value={linkEmail} onChange={(e) => { setLinkEmail(e.target.value); setLinkResult(null) }} />

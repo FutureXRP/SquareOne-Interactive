@@ -42,6 +42,10 @@ export interface RoomConfig {
   minNoticeHours?: number
   // Add-ons this room offers (ids from the addons catalog). undefined = not migrated.
   addonIds?: string[]
+  // What staff earn for running a booking here. undefined = not migrated (0023).
+  // 'flat': payoutValue is cents. 'percent': payoutValue is whole percent of the booking.
+  payoutKind?: 'none' | 'flat' | 'percent'
+  payoutValue?: number
 }
 
 export interface RateRule {
@@ -110,6 +114,8 @@ interface FacilityRow {
   rate_rules?: unknown
   min_notice_hours?: number | null
   addon_ids?: string[] | null
+  payout_kind?: string | null
+  payout_value?: number | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -133,6 +139,10 @@ function fromRow(r: FacilityRow): RoomConfig {
     rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
     minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 48) : undefined,
     addonIds: 'addon_ids' in r ? (Array.isArray(r.addon_ids) ? r.addon_ids : []) : undefined,
+    payoutKind: 'payout_kind' in r
+      ? (r.payout_kind === 'flat' || r.payout_kind === 'percent' ? r.payout_kind : 'none')
+      : undefined,
+    payoutValue: 'payout_kind' in r ? (r.payout_value ?? 0) : undefined,
   }
 }
 
@@ -140,6 +150,7 @@ const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_c
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
 const COL_SETS = [
+  `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, payout_kind, payout_value, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, ${BASE_COLS}`,
@@ -201,6 +212,8 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     ...(room.rateRules !== undefined ? { rate_rules: room.rateRules } : {}),
     ...(room.minNoticeHours !== undefined ? { min_notice_hours: room.minNoticeHours } : {}),
     ...(room.addonIds !== undefined ? { addon_ids: room.addonIds } : {}),
+    ...(room.payoutKind !== undefined ? { payout_kind: room.payoutKind } : {}),
+    ...(room.payoutValue !== undefined ? { payout_value: room.payoutValue } : {}),
   }).eq('id', room.id))
   if (!ok) return false
   // Replace price chips wholesale — simple and idempotent.
