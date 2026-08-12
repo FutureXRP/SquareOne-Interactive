@@ -161,6 +161,23 @@ export async function getMyVisitStats(accountId: string): Promise<MyVisitStats |
   }
 }
 
+// Who's in the building right now: open member visits (checked in via the
+// app within the last 16 hours, not yet checked out). Null until 0019 runs.
+export async function getInsideNow(): Promise<{ count: number; names: string[] } | null> {
+  const since = new Date(Date.now() - 16 * 3600_000).toISOString()
+  const { data, error } = await supabase()
+    .from('check_ins')
+    .select('who')
+    .not('account_id', 'is', null)
+    .is('checked_out_at', null)
+    .gte('at', since)
+    .order('at', { ascending: false })
+    .limit(200)
+  if (error) return null
+  const names = [...new Set((data as { who: string }[]).map((r) => r.who))]
+  return { count: names.length, names }
+}
+
 export async function recordCheckIn(who: string, context: string): Promise<boolean> {
   const { data: org, error: orgErr } = await supabase().from('organizations').select('id').limit(1).single()
   if (orgErr) return false

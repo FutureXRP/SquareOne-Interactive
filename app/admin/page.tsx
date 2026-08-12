@@ -7,6 +7,7 @@ import { card, HERO_GRADIENT, INK, SUB, FAINT, LINE, BLUE, GREEN, RED, GOLD } fr
 import { roomLabel } from '@/lib/facilities-store'
 import { getStaffBookings, getPayments, isoDate, BOOKINGS_EVENT, type StaffBooking, type PaymentRow } from '@/lib/staff-bookings-store'
 import { getClients, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
+import { getInsideNow, CHECKINS_EVENT } from '@/lib/checkins-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 function SectionLabel({ children, meta }: { children: string; meta?: string }) {
@@ -41,23 +42,28 @@ export default function TodayPage() {
   const [bookings, setBookings] = useState<StaffBooking[]>([])
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [clients, setClients] = useState<ClientAccount[]>([])
+  const [inside, setInside] = useState<{ count: number; names: string[] } | null>(null)
 
   useEffect(() => {
     setNow(new Date())
     if (!isSupabaseConfigured()) return
     let on = true
     const sync = () => {
-      Promise.all([getStaffBookings(), getPayments(), getClients()]).then(([b, p, c]) => {
-        if (on) { setBookings(b); setPayments(p); setClients(c) }
+      Promise.all([getStaffBookings(), getPayments(), getClients(), getInsideNow()]).then(([b, p, c, ins]) => {
+        if (on) { setBookings(b); setPayments(p); setClients(c); setInside(ins) }
       }).catch(() => {})
     }
     sync()
     window.addEventListener(BOOKINGS_EVENT, sync)
     window.addEventListener(CLIENTS_EVENT, sync)
+    window.addEventListener(CHECKINS_EVENT, sync)
+    const poll = window.setInterval(sync, 60_000) // check-ins land from other devices
     return () => {
       on = false
       window.removeEventListener(BOOKINGS_EVENT, sync)
       window.removeEventListener(CLIENTS_EVENT, sync)
+      window.removeEventListener(CHECKINS_EVENT, sync)
+      window.clearInterval(poll)
     }
   }, [])
 
@@ -112,7 +118,18 @@ export default function TodayPage() {
         <Kpi label="Collected today" value={formatCents(revenueTodayCents)} accent={GREEN} sub="all payment methods" />
         <Kpi label="Client accounts" value={String(clients.length)} sub="signed up in the store" />
         <Kpi label="Owed to you" value={formatCents(owing.reduce((n, c) => n + c.balanceCents, 0))} accent={owing.length > 0 ? RED : undefined} sub={`${owing.length} accounts`} />
-        <Kpi label="People inside" value="—" sub="door hardware coming" />
+        <Kpi
+          label="People inside"
+          value={inside ? String(inside.count) : '—'}
+          accent={inside && inside.count > 0 ? GREEN : undefined}
+          sub={
+            inside === null
+              ? 'needs 0019_member_visits.sql'
+              : inside.count === 0
+                ? 'no open member check-ins'
+                : inside.names.slice(0, 3).join(', ') + (inside.count > 3 ? ` +${inside.count - 3} more` : '')
+          }
+        />
       </div>
 
       {/* Needs a person */}
