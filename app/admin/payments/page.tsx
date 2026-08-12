@@ -8,6 +8,7 @@ import {
   BOOKINGS_EVENT, PAY_LABEL, type PaymentRow, type StaffBooking,
 } from '@/lib/staff-bookings-store'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
+import { getPackages, type EventPackage } from '@/lib/packages-store'
 import { getStaff, getMyStaff, isAdminRole, type StaffMember } from '@/lib/staff-store'
 import { getDrawer, addDrawerEntry, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -17,18 +18,22 @@ function dollarsToCents(v: string): number {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
 }
 
-// What a booking owes its runner: explicit override, else the room's rule.
-function defaultPayoutCents(b: StaffBooking, room: RoomConfig | undefined): number {
+// What a booking owes its runner: explicit override, else the package's
+// rule (when the booking sells one), else the room's rule.
+function defaultPayoutCents(b: StaffBooking, room: RoomConfig | undefined, pkg: EventPackage | undefined): number {
   if (b.payoutCents != null) return b.payoutCents
-  if (!room || room.payoutKind === undefined || room.payoutKind === 'none') return 0
-  if (room.payoutKind === 'flat') return room.payoutValue ?? 0
-  return Math.round((b.priceCents * (room.payoutValue ?? 0)) / 100)
+  const rule: { payoutKind?: string; payoutValue?: number } | undefined =
+    pkg && pkg.payoutKind !== undefined && pkg.payoutKind !== 'none' ? pkg : room
+  if (!rule || rule.payoutKind === undefined || rule.payoutKind === 'none') return 0
+  if (rule.payoutKind === 'flat') return rule.payoutValue ?? 0
+  return Math.round((b.priceCents * (rule.payoutValue ?? 0)) / 100)
 }
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [bookings, setBookings] = useState<StaffBooking[]>([])
   const [rooms, setRooms] = useState<RoomConfig[]>([])
+  const [packages, setPackages] = useState<EventPackage[]>([])
   const [staff, setStaffList] = useState<StaffMember[]>([])
   const [me, setMe] = useState<StaffMember | null>(null)
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
@@ -44,10 +49,10 @@ export default function PaymentsPage() {
     let on = true
     const sync = () => {
       Promise.all([
-        getPayments(), getStaffBookings(), getRooms().catch(() => []), getStaff().catch(() => []), getMyStaff().catch(() => null), getDrawer(),
-      ]).then(([p, b, r, s, m, d]) => {
+        getPayments(), getStaffBookings(), getRooms().catch(() => []), getStaff().catch(() => []), getMyStaff().catch(() => null), getDrawer(), getPackages().catch(() => []),
+      ]).then(([p, b, r, s, m, d, pk]) => {
         if (on) {
-          setPayments(p); setBookings(b); setRooms(r); setStaffList(s); setMe(m); setDrawer(d)
+          setPayments(p); setBookings(b); setRooms(r); setStaffList(s); setMe(m); setDrawer(d); setPackages(pk)
           setDrawerChecked(true); setLoading(false)
         }
       }).catch(() => {})
@@ -65,16 +70,19 @@ export default function PaymentsPage() {
 
   // Payouts owed: fully paid bookings with a runner (or a room rule waiting
   // for one), not yet settled. Admin-run events accrue nothing.
+  const pkgById = useMemo(() => new Map(packages.map((p) => [p.id, p])), [packages])
+
   const due = useMemo(() => bookings
     .filter((b) => b.payoutPaidAt === null && b.status !== 'canceled' && b.priceCents > 0 && b.paidCents >= b.priceCents)
     .map((b) => {
       const room = roomById.get(b.roomId)
+      const pkg = b.packageId ? pkgById.get(b.packageId) : undefined
       const runner = b.runByStaffId ? staffById.get(b.runByStaffId) : undefined
-      const amount = defaultPayoutCents(b, room)
-      return { b, runner, amount, exempt: !!runner && isAdminRole(runner.role) }
+      const amount = defaultPayoutCents(b, room, pkg)
+      return { b, runner, amount, pkg, exempt: !!runner && isAdminRole(runner.role) }
     })
     .filter((x) => x.amount > 0 || x.b.runByStaffId)
-    .sort((x, y) => x.b.date.localeCompare(y.b.date)), [bookings, roomById, staffById])
+    .sort((x, y) => x.b.date.localeCompare(y.b.date)), [bookings, roomById, pkgById, staffById])
 
   const paidOut = useMemo(() => bookings
     .filter((b) => !!b.payoutPaidAt)
@@ -123,10 +131,13 @@ export default function PaymentsPage() {
             <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>
               Nothing owed right now — payouts appear here when a booking with staff pay is paid in full.
             </p>
-          ) : due.map(({ b, runner, amount, exempt }, i) => (
+          ) : due.map(({ b, runner, amount, pkg, exempt }, i) => (
             <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', flexWrap: 'wrap', borderBottom: i < due.length - 1 ? `1px solid ${LINE}` : 'none' }}>
               <div style={{ flex: 1, minWidth: 190 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>
+                  {b.title} · {b.code}
+                  {pkg && <span style={{ fontSize: 10, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '1px 8px', borderRadius: 999, marginLeft: 8 }}>{pkg.name}</span>}
+                </p>
                 <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{b.date} · {b.client} · booking {formatCents(b.priceCents)} paid in full</p>
               </div>
               <select className="sq-select" style={{ width: 170, padding: '7px 10px', fontSize: 12.5 }} value={b.runByStaffId ?? ''}

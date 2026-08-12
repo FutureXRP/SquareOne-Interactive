@@ -17,6 +17,10 @@ export interface EventPackage {
   featured: boolean
   active: boolean
   sort: number
+  // Staff pay for running this package — admin-only, never rendered in
+  // the store. undefined = column not migrated (0026).
+  payoutKind?: 'none' | 'flat' | 'percent'
+  payoutValue?: number // cents for flat, whole percent for percent
 }
 
 interface PackageRow {
@@ -29,6 +33,8 @@ interface PackageRow {
   featured: boolean
   active: boolean
   sort: number
+  payout_kind?: string | null
+  payout_value?: number | null
   event_package_rooms: { facility_id: string }[]
   event_package_items: { label: string; sort: number }[]
 }
@@ -44,20 +50,30 @@ function fromRow(r: PackageRow): EventPackage {
     featured: r.featured,
     active: r.active,
     sort: r.sort,
+    payoutKind: 'payout_kind' in r
+      ? (r.payout_kind === 'flat' || r.payout_kind === 'percent' ? r.payout_kind : 'none')
+      : undefined,
+    payoutValue: 'payout_kind' in r ? (r.payout_value ?? 0) : undefined,
     roomIds: r.event_package_rooms.map((x) => x.facility_id),
     includes: [...r.event_package_items].sort((a, b) => a.sort - b.sort).map((x) => x.label),
   }
 }
 
 const SELECT = 'id, name, blurb, price_cents, hours, capacity_label, featured, active, sort, event_package_rooms(facility_id), event_package_items(label, sort)'
+// payout columns arrive with migration 0026 — retry without.
+const SELECT_SETS = [`payout_kind, payout_value, ${SELECT}`, SELECT]
 
 let cache: EventPackage[] = []
 
 export async function getPackages(): Promise<EventPackage[]> {
-  const { data, error } = await supabase().from('event_packages').select(SELECT).order('sort')
-  if (error) throw error
-  cache = (data as PackageRow[]).map(fromRow)
-  return cache
+  for (const cols of SELECT_SETS) {
+    const { data, error } = await supabase().from('event_packages').select(cols).order('sort')
+    if (!error) {
+      cache = (data as unknown as PackageRow[]).map(fromRow)
+      return cache
+    }
+  }
+  throw new Error('packages query failed')
 }
 
 export async function getActivePackages(): Promise<EventPackage[]> {
@@ -75,6 +91,8 @@ export async function savePackage(p: EventPackage): Promise<boolean> {
     featured: p.featured,
     active: p.active,
     sort: p.sort,
+    ...(p.payoutKind !== undefined ? { payout_kind: p.payoutKind } : {}),
+    ...(p.payoutValue !== undefined ? { payout_value: p.payoutValue } : {}),
   }).eq('id', p.id))
   if (!ok) return false
   await tryWrite(() => sb.from('event_package_rooms').delete().eq('package_id', p.id))

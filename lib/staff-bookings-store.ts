@@ -36,9 +36,11 @@ export interface StaffBooking {
   depositCents?: number | null
   // Staff payout for running this booking (migration 0023). undefined = not migrated.
   runByStaffId?: string | null
-  payoutCents?: number | null // override; null = use the room's default
+  payoutCents?: number | null // override; null = use the package's/room's default
   payoutPaidAt?: string | null
   payoutMethod?: string | null
+  // The party package this booking sells (migration 0026). undefined = not migrated.
+  packageId?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -79,14 +81,16 @@ interface Row {
   payout_cents?: number | null
   payout_paid_at?: string | null
   payout_method?: string | null
+  package_id?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
 
 const SELECT = 'id, code, facility_id, account_id, title, client_name, during, status, price_cents, note, staff:created_by(name), payments(amount_cents, method, status)'
-// deposit_cents arrives with migration 0009, the payout columns with 0023
-// — fall back until each is run.
+// deposit_cents arrives with migration 0009, the payout columns with 0023,
+// package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `deposit_cents, ${SELECT}`,
   SELECT,
@@ -119,6 +123,7 @@ function fromRow(r: Row): StaffBooking | null {
     payoutCents: 'payout_cents' in r ? (r.payout_cents ?? null) : undefined,
     payoutPaidAt: 'payout_paid_at' in r ? (r.payout_paid_at ?? null) : undefined,
     payoutMethod: 'payout_method' in r ? (r.payout_method ?? null) : undefined,
+    packageId: 'package_id' in r ? (r.package_id ?? null) : undefined,
   }
 }
 
@@ -157,6 +162,7 @@ export interface NewBooking {
   depositCents?: number | null // omit before migration 0009
   addonIds?: string[] // reserved extras (0022)
   runByStaffId?: string | null // who runs the event (0023)
+  packageId?: string | null // party package this booking sells (0026)
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -180,6 +186,7 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   const extras = {
     ...(b.addonIds && b.addonIds.length > 0 ? { addon_ids: b.addonIds } : {}),
     ...(b.runByStaffId ? { run_by_staff_id: b.runByStaffId } : {}),
+    ...(b.packageId ? { package_id: b.packageId } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
