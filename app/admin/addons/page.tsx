@@ -5,7 +5,7 @@ import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getAddons, saveAddon, addAddon, deleteAddon, uploadAddonPhoto, addonSlug, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
+import { getAddons, saveAddon, addAddon, deleteAddon, uploadAddonPhoto, addonSlug, addonPriceLabel, addonPriceCents, addonHoursSupported, type AddonConfig } from '@/lib/addons-store'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -36,6 +36,7 @@ export default function AddonsAdminPage() {
   }, [])
 
   const editing = addons.find((a) => a.id === editingId) ?? null
+  const hoursSupported = addonHoursSupported()
   const roomsOffering = (id: string) => rooms.filter((r) => r.addonIds?.includes(id)).map((r) => r.name)
 
   const patch = (id: string, p: Partial<AddonConfig>) => {
@@ -116,14 +117,21 @@ export default function AddonsAdminPage() {
               <input id="a-name" className="sq-input" value={editing.name} onChange={(e) => patch(editing.id, { name: e.target.value })} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginBottom: 6 }}>
               <div>
-                <label className="sq-label" htmlFor="a-price">First hour ($)</label>
+                <label className="sq-label" htmlFor="a-price">Base price ($)</label>
                 <input id="a-price" className="sq-input" inputMode="decimal" defaultValue={(editing.priceCents / 100).toFixed(2)} key={`price-${editing.id}`}
                   onBlur={(e) => patch(editing.id, { priceCents: dollarsToCents(e.target.value) })} />
               </div>
               <div>
-                <label className="sq-label" htmlFor="a-extra">Each additional hour ($)</label>
+                <label className="sq-label" htmlFor="a-incl">Hours it covers</label>
+                <select id="a-incl" className="sq-select" value={editing.includedHours}
+                  onChange={(e) => patch(editing.id, { includedHours: Number(e.target.value) })}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="sq-label" htmlFor="a-extra">Each hour after ($)</label>
                 <input id="a-extra" className="sq-input" inputMode="decimal" placeholder="blank = charged once"
                   defaultValue={editing.extraHourCents === null ? '' : (editing.extraHourCents / 100).toFixed(2)} key={`extra-${editing.id}`}
                   onBlur={(e) => patch(editing.id, { extraHourCents: e.target.value.trim() === '' ? null : dollarsToCents(e.target.value) })} />
@@ -131,8 +139,13 @@ export default function AddonsAdminPage() {
             </div>
             <p style={{ fontSize: 11.5, color: FAINT, margin: '0 0 14px', lineHeight: 1.5 }}>
               {editing.extraHourCents === null
-                ? 'Charged once per booking no matter how long the rental is. Set an additional-hour rate to price it like the inflatable — $100 the first hour, $25 each hour after.'
-                : `A 3-hour rental pays ${formatCents(editing.priceCents + editing.extraHourCents * 2)} for this add-on. Clear the field to charge once per booking instead.`}
+                ? 'Charged once per booking no matter how long the rental is. Set an hourly rate to book it out by the block — e.g. $100 covering 2 hours, then $25 each hour after.'
+                : <>
+                    {formatCents(editing.priceCents)} covers {editing.includedHours} hour{editing.includedHours > 1 ? 's' : ''}, then {formatCents(editing.extraHourCents)} an hour.
+                    {' '}A {editing.includedHours + 2}-hour rental pays <strong>{formatCents(addonPriceCents(editing, editing.includedHours + 2))}</strong> for this add-on.
+                    {' '}Clear the hourly rate to charge once per booking instead.
+                  </>}
+              {!hoursSupported && <span style={{ display: 'block', color: '#b07818', fontWeight: 600, marginTop: 4 }}>Hours-it-covers needs 0028_addon_included_hours.sql — until it&apos;s run the base price covers the first hour.</span>}
             </p>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
