@@ -7,6 +7,7 @@ import { formatCents, formatHour } from '@/lib/format'
 import { getActiveRooms, roomLabel, rentalPriceCentsAt, type RoomConfig } from '@/lib/facilities-store'
 import { getMyStaff, getStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
+import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
   markBookingsSeen, setBookingRunBy, addonsTaken, BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
@@ -63,14 +64,16 @@ export default function AdminBookingsPage() {
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
   const [nbAddons, setNbAddons] = useState<string[]>([])
   const [nbRunBy, setNbRunBy] = useState('')
+  const [nbPackage, setNbPackage] = useState('')
   const [nbTaken, setNbTaken] = useState<string[]>([]) // extras booked elsewhere for this window
+  const [packages, setPackages] = useState<EventPackage[]>([])
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     let on = true
     const sync = () => {
-      Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff(), getStaff().catch(() => []), getActiveAddons().catch(() => [])]).then(([b, r, m, s, a]) => {
-        if (on) { setBookings(b); setRooms(r); setMe(m); setAllStaff(s); setAllAddons(a) }
+      Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff(), getStaff().catch(() => []), getActiveAddons().catch(() => []), getActivePackages().catch(() => [])]).then(([b, r, m, s, a, pk]) => {
+        if (on) { setBookings(b); setRooms(r); setMe(m); setAllStaff(s); setAllAddons(a); setPackages(pk) }
       }).catch(() => {})
     }
     sync()
@@ -128,6 +131,7 @@ export default function AdminBookingsPage() {
       depositCents,
       addonIds: nbAddons,
       runByStaffId: nbRunBy || null,
+      packageId: nbPackage || null,
     })
     if (res.ok && nbPay !== 'hold') {
       // Collect immediately: find the row we just made and record the payment.
@@ -138,7 +142,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy('')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage('')
     } else if (res.conflict) {
       if (res.addonConflict) setAddonConflictMsg(true)
       else setConflictMsg(true)
@@ -200,6 +204,28 @@ export default function AdminBookingsPage() {
               <label className="sq-label" htmlFor="nb-title">What is it? (optional)</label>
               <input id="nb-title" className="sq-input" value={nbTitle} onChange={(e) => setNbTitle(e.target.value)} placeholder="Birthday party" />
             </div>
+            {packages.length > 0 && (
+              <div>
+                <label className="sq-label" htmlFor="nb-pkg">Party package (optional)</label>
+                <select id="nb-pkg" className="sq-select" value={nbPackage} onChange={(e) => {
+                  const id = e.target.value
+                  setNbPackage(id)
+                  const pkg = packages.find((p) => p.id === id)
+                  if (pkg) {
+                    // The package fills in the details — all still adjustable.
+                    setNbTitle(pkg.name)
+                    setNbHours(Math.min(Math.max(pkg.hours, 1), 6))
+                    setNbPrice((pkg.priceCents / 100).toFixed(2))
+                    if (pkg.roomIds.length > 0) setNbRoom(pkg.roomIds[0])
+                  } else {
+                    setNbPrice('')
+                  }
+                }}>
+                  <option value="">— none, plain rental —</option>
+                  {packages.map((p) => <option key={p.id} value={p.id}>{p.name} · {formatCents(p.priceCents)}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="sq-label" htmlFor="nb-room">Room</label>
               <select id="nb-room" className="sq-select" value={room?.id ?? ''} onChange={(e) => { setNbRoom(e.target.value); setNbPrice('') }}>
