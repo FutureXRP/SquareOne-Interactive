@@ -10,7 +10,8 @@ import {
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { getPackages, type EventPackage } from '@/lib/packages-store'
 import { getStaff, getMyStaff, isAdminRole, type StaffMember } from '@/lib/staff-store'
-import { getDrawer, addDrawerEntry, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
+import { getDrawer, addDrawerEntry, setStartingBalance, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
+import Link from 'next/link'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
@@ -219,10 +220,13 @@ export default function PaymentsPage() {
 
         {/* The cash bag */}
         <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Cash bag</span>
             {drawer && (
-              <span style={{ fontSize: 15, fontWeight: 800, color: drawer.balanceCents < 0 ? RED : INK, fontVariantNumeric: 'tabular-nums' }}>
+              <Link href="/admin/cash-report" style={{ fontSize: 11.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Monthly report →</Link>
+            )}
+            {drawer && (
+              <span style={{ marginLeft: 'auto', fontSize: 15, fontWeight: 800, color: drawer.balanceCents < 0 ? RED : INK, fontVariantNumeric: 'tabular-nums' }}>
                 {formatCents(drawer.balanceCents)}
               </span>
             )}
@@ -235,6 +239,30 @@ export default function PaymentsPage() {
             </p>
           ) : (
             <>
+              {/* Moving off the paper log: seed the bag with what's in it today */}
+              {drawer.entries.length === 0 && (
+                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, background: '#faf8f2' }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: INK, margin: '0 0 6px' }}>Start the bag from your paper records</p>
+                  <p style={{ fontSize: 11.5, color: SUB, margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Count the cash on hand right now and enter it once — every entry after that keeps the running balance for you.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="sq-input" style={{ width: 110, padding: '8px 10px', fontSize: 12.5 }} inputMode="decimal" placeholder="$ counted"
+                      value={bagAmount} onChange={(e) => setBagAmount(e.target.value)} />
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 12 }} disabled={busy || !bagAmount}
+                      onClick={async () => {
+                        const cents = dollarsToCents(bagAmount)
+                        if (cents <= 0) return
+                        setBusy(true)
+                        const ok = await setStartingBalance(cents, me?.id ?? null)
+                        if (ok) setBagAmount('')
+                        setBusy(false)
+                      }}>
+                      Set starting balance
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={{ padding: '12px 20px', borderBottom: `1px solid ${LINE}` }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <input className="sq-input" style={{ width: 90, padding: '8px 10px', fontSize: 12.5 }} inputMode="decimal" placeholder="$"
