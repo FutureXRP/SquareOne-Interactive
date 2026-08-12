@@ -12,6 +12,8 @@ import { getPackages, type EventPackage } from '@/lib/packages-store'
 import { getStaff, getMyStaff, isAdminRole, type StaffMember } from '@/lib/staff-store'
 import { getDrawer, addDrawerEntry, setStartingBalance, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
 import { DrawerEntryRow } from '@/components/admin/DrawerEntryRow'
+import { RefundRow } from '@/components/admin/RefundRow'
+import { getRefundedByPayment, REFUNDS_EVENT } from '@/lib/refunds-store'
 import Link from 'next/link'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -40,6 +42,7 @@ export default function PaymentsPage() {
   const [me, setMe] = useState<StaffMember | null>(null)
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [drawerChecked, setDrawerChecked] = useState(false)
+  const [refunded, setRefunded] = useState<Map<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   // Cash bag quick-entry form
@@ -51,10 +54,10 @@ export default function PaymentsPage() {
     let on = true
     const sync = () => {
       Promise.all([
-        getPayments(), getStaffBookings(), getRooms().catch(() => []), getStaff().catch(() => []), getMyStaff().catch(() => null), getDrawer(), getPackages().catch(() => []),
-      ]).then(([p, b, r, s, m, d, pk]) => {
+        getPayments(), getStaffBookings(), getRooms().catch(() => []), getStaff().catch(() => []), getMyStaff().catch(() => null), getDrawer(), getPackages().catch(() => []), getRefundedByPayment(),
+      ]).then(([p, b, r, s, m, d, pk, rf]) => {
         if (on) {
-          setPayments(p); setBookings(b); setRooms(r); setStaffList(s); setMe(m); setDrawer(d); setPackages(pk)
+          setPayments(p); setBookings(b); setRooms(r); setStaffList(s); setMe(m); setDrawer(d); setPackages(pk); setRefunded(rf)
           setDrawerChecked(true); setLoading(false)
         }
       }).catch(() => {})
@@ -62,7 +65,13 @@ export default function PaymentsPage() {
     sync()
     window.addEventListener(BOOKINGS_EVENT, sync)
     window.addEventListener(DRAWER_EVENT, sync)
-    return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync); window.removeEventListener(DRAWER_EVENT, sync) }
+    window.addEventListener(REFUNDS_EVENT, sync)
+    return () => {
+      on = false
+      window.removeEventListener(BOOKINGS_EVENT, sync)
+      window.removeEventListener(DRAWER_EVENT, sync)
+      window.removeEventListener(REFUNDS_EVENT, sync)
+    }
   }, [])
 
   const collectedCents = payments.reduce((n, p) => n + p.amountCents, 0)
@@ -205,17 +214,20 @@ export default function PaymentsPage() {
             </p>
           ) : (
             payments.map((p, i) => (
-              <div key={p.code} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: i < payments.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: FAINT, minWidth: 58 }}>{p.code}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{p.client}</p>
-                  <p style={{ fontSize: 12, color: SUB, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.memo} · {PAY_LABEL[p.method] ?? p.method} · {p.when} · by {p.takenBy}
-                  </p>
-                </div>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: GREEN, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.amountCents)}</span>
-              </div>
+              <RefundRow
+                key={p.code}
+                payment={p}
+                refundedCents={refunded?.get(p.id) ?? 0}
+                staffId={me?.id ?? null}
+                refundsReady={refunded !== null}
+                last={i === payments.length - 1}
+              />
             ))
+          )}
+          {refunded === null && !loading && payments.length > 0 && (
+            <p style={{ fontSize: 11.5, color: GOLD, padding: '10px 20px', margin: 0, fontWeight: 600 }}>
+              Refunds need 0027_refunds.sql — run it in Supabase to turn on the Refund button.
+            </p>
           )}
         </div>
 

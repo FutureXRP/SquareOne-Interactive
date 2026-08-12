@@ -377,6 +377,7 @@ export async function newBookingsSince(sinceIso: string): Promise<NewBookingPeek
 }
 
 export interface PaymentRow {
+  id: string
   code: string
   client: string
   memo: string
@@ -385,22 +386,27 @@ export interface PaymentRow {
   when: string
   dateIso: string // YYYY-MM-DD local
   takenBy: string
+  accountId: string | null
+  bookingId: string | null
 }
 
 export async function getPayments(): Promise<PaymentRow[]> {
   const { data, error } = await supabase()
     .from('payments')
-    .select('code, method, amount_cents, memo, created_at, staff:taken_by(name), bookings:booking_id(client_name)')
+    .select('id, code, method, amount_cents, memo, created_at, account_id, booking_id, staff:taken_by(name), bookings:booking_id(client_name)')
     .eq('status', 'paid')
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) throw error
   interface PRow {
+    id: string
     code: string
     method: string
     amount_cents: number
     memo: string | null
     created_at: string
+    account_id: string | null
+    booking_id: string | null
     staff: { name: string } | null
     bookings: { client_name: string } | null
   }
@@ -410,6 +416,7 @@ export async function getPayments(): Promise<PaymentRow[]> {
     // member's name ("Jane Doe · Individual fitness membership").
     const memoName = r.memo?.includes(' · ') ? r.memo.split(' · ')[0] : null
     return {
+      id: r.id,
       code: r.code,
       client: r.bookings?.client_name ?? memoName ?? '—',
       memo: r.memo ?? '',
@@ -418,6 +425,8 @@ export async function getPayments(): Promise<PaymentRow[]> {
       when: d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
       dateIso: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
       takenBy: r.staff?.name ?? '—',
+      accountId: r.account_id,
+      bookingId: r.booking_id,
     }
   })
 }

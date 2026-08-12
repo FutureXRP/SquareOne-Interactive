@@ -13,8 +13,9 @@ export interface AddonConfig {
   id: string
   name: string
   blurb: string
-  priceCents: number // first hour — or the one-off price when extraHourCents is null
-  extraHourCents: number | null // per additional hour; null = charged once
+  priceCents: number // covers includedHours — or the one-off price when extraHourCents is null
+  includedHours: number // hours the base price buys (migration 0028; 1 before it)
+  extraHourCents: number | null // per hour past includedHours; null = charged once
   photoUrl: string | null
   active: boolean
   sort: number
@@ -26,6 +27,7 @@ interface Row {
   blurb: string
   price_cents: number
   extra_hour_cents?: number | null
+  included_hours?: number | null
   photo_url?: string | null
   active: boolean
   sort: number
@@ -37,6 +39,7 @@ function fromRow(r: Row): AddonConfig {
     name: r.name,
     blurb: r.blurb,
     priceCents: r.price_cents,
+    includedHours: r.included_hours ?? 1,
     extraHourCents: r.extra_hour_cents ?? null,
     photoUrl: r.photo_url ?? null,
     active: r.active,
@@ -45,11 +48,17 @@ function fromRow(r: Row): AddonConfig {
 }
 
 const BASE_COLS = 'id, name, blurb, price_cents, active, sort'
-// extra_hour_cents / photo_url arrive with migration 0021 — retry without.
-const COL_SETS = [`extra_hour_cents, photo_url, ${BASE_COLS}`, BASE_COLS]
+// extra_hour_cents / photo_url arrive with 0021, included_hours with
+// 0028 — retry with fewer columns until each has been run.
+const COL_SETS = [
+  `included_hours, extra_hour_cents, photo_url, ${BASE_COLS}`,
+  `extra_hour_cents, photo_url, ${BASE_COLS}`,
+  BASE_COLS,
+]
 
 let cache: AddonConfig[] = []
 let hasHourlyCols = false // whether 0021 columns exist, learned from the read
+let hasIncludedHours = false // whether 0028 has been run
 
 export async function getAddons(): Promise<AddonConfig[]> {
   if (!isSupabaseConfigured()) return []
@@ -57,11 +66,16 @@ export async function getAddons(): Promise<AddonConfig[]> {
     const { data, error } = await supabase().from('addons').select(cols).order('sort')
     if (!error) {
       hasHourlyCols = cols !== BASE_COLS
+      hasIncludedHours = cols.includes('included_hours')
       cache = (data as unknown as Row[]).map(fromRow)
       return cache
     }
   }
   return [] // table arrives with migration 0016
+}
+
+export function addonHoursSupported(): boolean {
+  return hasIncludedHours
 }
 
 export async function getActiveAddons(): Promise<AddonConfig[]> {
@@ -72,16 +86,19 @@ export function addonLookup(id: string): AddonConfig | null {
   return cache.find((a) => a.id === id) ?? null
 }
 
-// What this add-on costs for a rental of the given length.
+// What this add-on costs for a rental of the given length: the base
+// price covers includedHours, each hour past that adds extraHourCents.
 export function addonPriceCents(a: AddonConfig, hours: number): number {
   if (a.extraHourCents === null) return a.priceCents // one flat charge
-  return a.priceCents + a.extraHourCents * Math.max(0, hours - 1)
+  const extra = Math.max(0, Math.ceil(hours) - a.includedHours)
+  return a.priceCents + a.extraHourCents * extra
 }
 
-// "one-off" or "first hour, then $25/hr" — for chips and admin lists.
+// "$100" · "$100 first hour, then $25/hr" · "$100 for 2 hours, then $25/hr"
 export function addonPriceLabel(a: AddonConfig): string {
   if (a.extraHourCents === null) return formatCents(a.priceCents)
-  return `${formatCents(a.priceCents)} first hour, then ${formatCents(a.extraHourCents)}/hr`
+  const block = a.includedHours === 1 ? 'first hour' : `for ${a.includedHours} hours`
+  return `${formatCents(a.priceCents)} ${block}, then ${formatCents(a.extraHourCents)}/hr`
 }
 
 async function orgId(): Promise<string> {
@@ -98,12 +115,13 @@ export async function saveAddon(a: AddonConfig): Promise<boolean> {
     active: a.active,
     sort: a.sort,
     ...(hasHourlyCols ? { extra_hour_cents: a.extraHourCents, photo_url: a.photoUrl } : {}),
+    ...(hasIncludedHours ? { included_hours: a.includedHours } : {}),
   }).eq('id', a.id))
   if (ok) emit(ADDONS_EVENT)
   return ok
 }
 
-export async function addAddon(a: Omit<AddonConfig, 'sort' | 'extraHourCents' | 'photoUrl'>): Promise<boolean> {
+export async function addAddon(a: Omit<AddonConfig, 'sort' | 'extraHourCents' | 'photoUrl' | 'includedHours'>): Promise<boolean> {
   const org = await orgId()
   const sort = cache.reduce((n, x) => Math.max(n, x.sort), 0) + 1
   const ok = await tryWrite(() => supabase().from('addons').insert({

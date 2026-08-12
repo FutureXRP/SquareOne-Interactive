@@ -94,6 +94,8 @@ const revenueSummary: ReportDef = {
   run: async (from, to) => {
     const rows = await payments(from, to)
     if (!rows) return EMPTY('Could not read payments.')
+    const refunds = await refundRows(from, to)
+    const refundTotal = (refunds ?? []).reduce((n, r) => n + r.amount_cents, 0)
     const byCat = new Map<string, { cents: number; count: number }>()
     for (const p of rows) {
       const c = category(p)
@@ -119,10 +121,13 @@ const revenueSummary: ReportDef = {
           share: total > 0 ? `${Math.round((v.cents / total) * 100)}%` : '0%',
         })),
       summary: [
-        { label: 'Total collected', value: formatCents(total) },
+        { label: 'Gross collected', value: formatCents(total) },
+        ...(refundTotal > 0 ? [{ label: 'Refunded', value: `−${formatCents(refundTotal)}` }] : []),
+        { label: 'Net revenue', value: formatCents(total - refundTotal) },
         { label: 'Payments', value: String(rows.length) },
         { label: 'Average payment', value: formatCents(rows.length ? Math.round(total / rows.length) : 0) },
       ],
+      note: refundTotal > 0 ? 'The table shows gross by category; refunds are subtracted in the totals above and itemized in the Refunds report.' : undefined,
     }
   },
 }
@@ -202,6 +207,8 @@ const dailyClose: ReportDef = {
   run: async (from, to) => {
     const rows = await payments(from, to)
     if (!rows) return EMPTY('Could not read payments.')
+    const refunds = await refundRows(from, to)
+    const refundTotal = (refunds ?? []).reduce((n, r) => n + r.amount_cents, 0)
     const days = new Map<string, { card: number; cash: number; cashapp: number; other: number; count: number }>()
     for (const p of rows) {
       const d = localDate(p.created_at)
@@ -233,6 +240,10 @@ const dailyClose: ReportDef = {
         { label: 'Days with activity', value: String(days.size) },
         { label: 'Total collected', value: formatCents(total) },
         { label: 'Cash collected', value: formatCents(cashTotal) },
+        ...(refundTotal > 0 ? [
+          { label: 'Refunded in range', value: `−${formatCents(refundTotal)}` },
+          { label: 'Net', value: formatCents(total - refundTotal) },
+        ] : []),
       ],
     }
   },
@@ -318,6 +329,64 @@ const outstanding: ReportDef = {
       summary: [
         { label: 'Bookings owing', value: String(owing.length) },
         { label: 'Total outstanding', value: formatCents(dueTotal) },
+      ],
+    }
+  },
+}
+
+interface RefundQueryRow {
+  amount_cents: number; method: string; reason: string; created_at: string
+  stripe_refund_id: string | null
+  payments: { code: string; memo: string | null; bookings: { client_name: string } | null } | null
+  staff: { name: string } | null
+}
+
+async function refundRows(fromIso: string, toIso: string): Promise<RefundQueryRow[] | null> {
+  const { data, error } = await supabase()
+    .from('refunds')
+    .select('amount_cents, method, reason, created_at, stripe_refund_id, payments:payment_id(code, memo, bookings:booking_id(client_name)), staff:refunded_by(name)')
+    .gte('created_at', fromIso).lt('created_at', toIso)
+    .order('created_at', { ascending: true }).limit(5000)
+  if (error) return null
+  return data as unknown as RefundQueryRow[]
+}
+
+const refundsReport: ReportDef = {
+  id: 'refunds',
+  name: 'Refunds',
+  group: 'Money',
+  blurb: 'Every refund sent back, why, and who authorized it.',
+  run: async (from, to) => {
+    const rows = await refundRows(from, to)
+    if (!rows) return EMPTY('Refunds need 0027_refunds.sql.')
+    const byMethod = new Map<string, number>()
+    for (const r of rows) byMethod.set(r.method, (byMethod.get(r.method) ?? 0) + r.amount_cents)
+    const total = rows.reduce((n, r) => n + r.amount_cents, 0)
+    return {
+      columns: [
+        { key: 'date', label: 'Date' },
+        { key: 'receipt', label: 'Original receipt' },
+        { key: 'client', label: 'Refunded to' },
+        { key: 'what', label: 'Original payment for' },
+        { key: 'reason', label: 'Reason' },
+        { key: 'method', label: 'Back via' },
+        { key: 'staff', label: 'Authorized by' },
+        { key: 'amount', label: 'Refunded', kind: 'money' },
+      ],
+      rows: rows.map((r) => ({
+        date: stamp(r.created_at),
+        receipt: r.payments?.code ?? '—',
+        client: r.payments?.bookings?.client_name ?? (r.payments?.memo?.split(' · ')[0] ?? '—'),
+        what: r.payments?.memo ?? '—',
+        reason: r.reason || '—',
+        method: r.stripe_refund_id ? 'Card (Stripe)' : r.method,
+        staff: r.staff?.name ?? '—',
+        amount: r.amount_cents,
+      })),
+      summary: [
+        { label: 'Refunds', value: String(rows.length) },
+        { label: 'Total refunded', value: formatCents(total) },
+        ...[...byMethod.entries()].map(([m, c]) => ({ label: `Back via ${m}`, value: formatCents(c) })),
       ],
     }
   },
@@ -1255,7 +1324,7 @@ const messagesLog: ReportDef = {
 }
 
 export const REPORTS: ReportDef[] = [
-  revenueSummary, transactionRegister, byMethod, dailyClose, outstanding, cashBag,
+  revenueSummary, transactionRegister, refundsReport, byMethod, dailyClose, outstanding, cashBag,
   bookingsDetail, roomUtilization, peakDemand, packageSales, addonSales, cancellations,
   memberRoster, membershipChanges, planMix,
   attendanceDetail, attendanceDaily, memberFrequency, doorAudit,
