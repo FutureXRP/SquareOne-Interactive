@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
@@ -40,8 +41,25 @@ export default function ReportsPage() {
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Reports" sub="Live numbers straight from payments, bookings, memberships, and check-ins — refreshed as they happen." chip="live">
-        <HeroStat label="Collected" value={formatCents(data?.totalRevenueCents ?? 0)} sub={`last ${range} days`} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <HeroStat label="Collected" value={formatCents(data?.totalRevenueCents ?? 0)} sub={`last ${range} days`} />
+          <Link href="/admin/reports/library" className="sq-btn" style={{ background: '#fff', color: '#182740', textDecoration: 'none' }}>
+            Report Center →
+          </Link>
+        </div>
       </PageHero>
+
+      <Link href="/admin/reports/library" style={{ textDecoration: 'none', display: 'block', marginBottom: 16 }}>
+        <div className="sq-card" style={{ ...card, padding: '14px 20px', borderLeft: `3px solid ${BLUE}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Report Center — 26 reports, any date range</p>
+            <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>
+              Revenue, bookings, memberships, attendance, staff pay, waivers — download to CSV or print to PDF for the bookkeeper or the board.
+            </p>
+          </div>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: BLUE }}>Open →</span>
+        </div>
+      </Link>
 
       {/* Range filter */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
