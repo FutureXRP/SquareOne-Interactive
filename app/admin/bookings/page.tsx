@@ -5,10 +5,11 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getActiveRooms, roomLabel, rentalPriceCentsAt, type RoomConfig } from '@/lib/facilities-store'
-import { getMyStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
+import { getMyStaff, getStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
+import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
+  markBookingsSeen, setBookingRunBy, addonsTaken, BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -41,10 +42,13 @@ export default function AdminBookingsPage() {
   const [bookings, setBookings] = useState<StaffBooking[]>([])
   const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [me, setMe] = useState<StaffMember | null>(null)
+  const [allStaff, setAllStaff] = useState<StaffMember[]>([])
+  const [allAddons, setAllAddons] = useState<AddonConfig[]>([])
   const [showNew, setShowNew] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [payingId, setPayingId] = useState<string | null>(null)
   const [conflictMsg, setConflictMsg] = useState(false)
+  const [addonConflictMsg, setAddonConflictMsg] = useState(false)
   const [busyWrite, setBusyWrite] = useState(false)
 
   // New-booking form state
@@ -57,13 +61,16 @@ export default function AdminBookingsPage() {
   const [nbPrice, setNbPrice] = useState('')
   const [nbDeposit, setNbDeposit] = useState('') // '' = room default
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
+  const [nbAddons, setNbAddons] = useState<string[]>([])
+  const [nbRunBy, setNbRunBy] = useState('')
+  const [nbTaken, setNbTaken] = useState<string[]>([]) // extras booked elsewhere for this window
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     let on = true
     const sync = () => {
-      Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff()]).then(([b, r, m]) => {
-        if (on) { setBookings(b); setRooms(r); setMe(m) }
+      Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff(), getStaff().catch(() => []), getActiveAddons().catch(() => [])]).then(([b, r, m, s, a]) => {
+        if (on) { setBookings(b); setRooms(r); setMe(m); setAllStaff(s); setAllAddons(a) }
       }).catch(() => {})
     }
     sync()
@@ -77,8 +84,25 @@ export default function AdminBookingsPage() {
 
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
   const nbDow = nbDate ? new Date(`${nbDate}T00:00:00`).getDay() : 0
-  const autoPriceCents = room ? rentalPriceCentsAt(room, nbDow, nbStart, nbHours) : 0
+  const roomAddons = allAddons.filter((a) => room?.addonIds?.includes(a.id))
+  const pickedAddons = roomAddons.filter((a) => nbAddons.includes(a.id))
+  const nbAddonsCents = pickedAddons.reduce((n, a) => n + addonPriceCents(a, nbHours), 0)
+  const autoPriceCents = (room ? rentalPriceCentsAt(room, nbDow, nbStart, nbHours) : 0) + nbAddonsCents
   const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
+
+  // Grey out extras someone else already has for this window.
+  useEffect(() => {
+    if (!nbDate || roomAddons.length === 0 || !isSupabaseConfigured()) {
+      setNbTaken([])
+      return
+    }
+    addonsTaken(nbDate, nbStart, nbHours).then((t) => {
+      const taken = t ?? []
+      setNbTaken(taken)
+      if (taken.length > 0) setNbAddons((cur) => cur.filter((id) => !taken.includes(id)))
+    }).catch(() => setNbTaken([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nbDate, nbStart, nbHours, roomAddons.length, bookings])
   // Deposit defaults from the room; adjustable per booking (0009 required)
   const roomDepositCents = room?.depositRequired ? (room.depositCents ?? 0) : 0
   const depositCents = room?.depositCents === undefined
@@ -90,6 +114,7 @@ export default function AdminBookingsPage() {
     if (!room || !nbClient.trim() || !me || busyWrite) return
     setBusyWrite(true)
     setConflictMsg(false)
+    setAddonConflictMsg(false)
     const res = await addStaffBooking({
       roomId: room.id,
       title: nbTitle.trim() || `${room.name} rental`,
@@ -101,6 +126,8 @@ export default function AdminBookingsPage() {
       hold: nbPay === 'hold',
       createdBy: me.id,
       depositCents,
+      addonIds: nbAddons,
+      runByStaffId: nbRunBy || null,
     })
     if (res.ok && nbPay !== 'hold') {
       // Collect immediately: find the row we just made and record the payment.
@@ -111,9 +138,10 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy('')
     } else if (res.conflict) {
-      setConflictMsg(true)
+      if (res.addonConflict) setAddonConflictMsg(true)
+      else setConflictMsg(true)
     }
   }
 
@@ -209,6 +237,41 @@ export default function AdminBookingsPage() {
             )}
           </div>
 
+          {/* Reserved extras — same availability guard as the store */}
+          {roomAddons.length > 0 && (
+            <>
+              <span className="sq-label">Extras</span>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                {roomAddons.map((a) => {
+                  const on = nbAddons.includes(a.id)
+                  const gone = nbTaken.includes(a.id)
+                  return (
+                    <label key={a.id} title={gone ? 'Already booked for this time' : a.blurb} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: gone ? FAINT : INK, cursor: gone ? 'default' : 'pointer', background: gone ? '#f4f6fa' : on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 10, padding: '6px 12px', opacity: gone ? 0.75 : 1 }}>
+                      <input type="checkbox" checked={on} disabled={gone} style={{ accentColor: BLUE }}
+                        onChange={() => setNbAddons((cur) => on ? cur.filter((id) => id !== a.id) : [...cur, a.id])} />
+                      <span>
+                        <span style={{ fontWeight: 700 }}>{a.name}</span>
+                        <span style={{ color: gone ? FAINT : SUB, fontVariantNumeric: 'tabular-nums' }}> +{addonPriceLabel(a)}</span>
+                        {gone && <span style={{ display: 'block', fontSize: 10.5, color: RED, fontWeight: 600 }}>Already booked for this time</span>}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Who runs it — drives the staff payout once the booking is paid in full */}
+          {allStaff.length > 0 && (
+            <div style={{ marginBottom: 14, maxWidth: 320 }}>
+              <label className="sq-label" htmlFor="nb-runby">Run by (staff payout)</label>
+              <select id="nb-runby" className="sq-select" value={nbRunBy} onChange={(e) => setNbRunBy(e.target.value)}>
+                <option value="">— assign later —</option>
+                {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name} · {ROLE_LABEL[s.role]}</option>)}
+              </select>
+            </div>
+          )}
+
           <span className="sq-label">Payment</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
             <button onClick={() => setNbPay('hold')} style={{
@@ -224,6 +287,11 @@ export default function AdminBookingsPage() {
           {conflictMsg && (
             <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 12px' }}>
               That room is already booked for that time — the database blocked the double-booking. Pick another slot.
+            </p>
+          )}
+          {addonConflictMsg && (
+            <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 12px' }}>
+              One of the extras is already booked for that time — the database blocked it. Drop the extra or pick another slot.
             </p>
           )}
 
@@ -329,6 +397,15 @@ export default function AdminBookingsPage() {
                           <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
                             onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
                         </div>
+                        {b.runByStaffId !== undefined && allStaff.length > 0 && (
+                          <div>
+                            <label className="sq-label">Run by</label>
+                            <select className="sq-select" value={b.runByStaffId ?? ''} onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
+                              <option value="">— unassigned —</option>
+                              {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          </div>
+                        )}
                       </div>
                       <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }); setEditingId(null) }}>
                         Cancel this booking

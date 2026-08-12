@@ -34,6 +34,11 @@ export interface StaffBooking {
   note?: string
   // Deposit that locks this booking in. null = none due; undefined = column not migrated.
   depositCents?: number | null
+  // Staff payout for running this booking (migration 0023). undefined = not migrated.
+  runByStaffId?: string | null
+  payoutCents?: number | null // override; null = use the room's default
+  payoutPaidAt?: string | null
+  payoutMethod?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -70,13 +75,22 @@ interface Row {
   price_cents: number
   note: string | null
   deposit_cents?: number | null
+  run_by_staff_id?: string | null
+  payout_cents?: number | null
+  payout_paid_at?: string | null
+  payout_method?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
 
 const SELECT = 'id, code, facility_id, account_id, title, client_name, during, status, price_cents, note, staff:created_by(name), payments(amount_cents, method, status)'
-// deposit_cents arrives with migration 0009 — fall back until it's run.
-const SELECT_SETS = [`deposit_cents, ${SELECT}`, SELECT]
+// deposit_cents arrives with migration 0009, the payout columns with 0023
+// — fall back until each is run.
+const SELECT_SETS = [
+  `run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
+  `deposit_cents, ${SELECT}`,
+  SELECT,
+]
 
 function fromRow(r: Row): StaffBooking | null {
   const range = parseRange(r.during)
@@ -101,6 +115,10 @@ function fromRow(r: Row): StaffBooking | null {
     takenBy: r.staff?.name ?? 'member',
     note: r.note ?? undefined,
     depositCents: 'deposit_cents' in r ? r.deposit_cents ?? null : undefined,
+    runByStaffId: 'run_by_staff_id' in r ? (r.run_by_staff_id ?? null) : undefined,
+    payoutCents: 'payout_cents' in r ? (r.payout_cents ?? null) : undefined,
+    payoutPaidAt: 'payout_paid_at' in r ? (r.payout_paid_at ?? null) : undefined,
+    payoutMethod: 'payout_method' in r ? (r.payout_method ?? null) : undefined,
   }
 }
 
@@ -137,14 +155,16 @@ export interface NewBooking {
   createdBy: string | null // staff uuid
   accountId?: string | null
   depositCents?: number | null // omit before migration 0009
+  addonIds?: string[] // reserved extras (0022)
+  runByStaffId?: string | null // who runs the event (0023)
 }
 
 // Returns the new booking's code, or a conflict/error marker.
-export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: string } | { ok: false; conflict: boolean }> {
+export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const sb = supabase()
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
   const { fromIso, toIso } = localRange(b.date, b.startH, b.hours)
-  const { data, error } = await sb.from('bookings').insert({
+  const base = {
     org_id: (org as { id: string }).id,
     facility_id: b.roomId,
     account_id: b.accountId ?? null,
@@ -156,14 +176,89 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     hold_expires_at: b.hold ? new Date(Date.now() + 24 * 3600_000).toISOString() : null,
     created_by: b.createdBy,
     ...(b.depositCents !== undefined ? { deposit_cents: b.depositCents } : {}),
-  }).select('code').single()
-  if (error) {
-    const conflict = error.code === '23P01' // exclusion constraint: slot taken
-    if (!conflict) console.error('[bookings]', error.message)
-    return { ok: false, conflict }
+  }
+  const extras = {
+    ...(b.addonIds && b.addonIds.length > 0 ? { addon_ids: b.addonIds } : {}),
+    ...(b.runByStaffId ? { run_by_staff_id: b.runByStaffId } : {}),
+  }
+  const hasExtras = Object.keys(extras).length > 0
+  const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
+  let res = await sb.from('bookings').insert(payload).select('code').single()
+  // addon_ids / run_by_staff_id arrive with 0022/0023 — retry plain before then.
+  if (res.error && hasExtras && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
+    res = await sb.from('bookings').insert(base).select('code').single()
+  }
+  if (res.error) {
+    const conflict = res.error.code === '23P01' // exclusion constraint or addon trigger
+    if (!conflict) console.error('[bookings]', res.error.message)
+    return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict') }
   }
   emit(BOOKINGS_EVENT)
-  return { ok: true, code: (data as { code: string }).code }
+  return { ok: true, code: (res.data as { code: string }).code }
+}
+
+// ── Staff payouts (migration 0023) ───────────────────────────
+
+export async function setBookingRunBy(id: string, staffId: string | null): Promise<boolean> {
+  const { error } = await supabase().from('bookings').update({ run_by_staff_id: staffId }).eq('id', id)
+  if (error) {
+    console.error('[bookings]', error.message)
+    return false
+  }
+  emit(BOOKINGS_EVENT)
+  return true
+}
+
+export async function setBookingPayout(id: string, cents: number | null): Promise<boolean> {
+  const { error } = await supabase().from('bookings').update({ payout_cents: cents }).eq('id', id)
+  if (error) {
+    console.error('[bookings]', error.message)
+    return false
+  }
+  emit(BOOKINGS_EVENT)
+  return true
+}
+
+// Mark a payout settled ('cash' | 'cashapp'). A cash payout also comes
+// out of the cash bag (best effort — needs 0024).
+export async function markPayoutPaid(booking: StaffBooking, method: 'cash' | 'cashapp', amountCents: number, staffName: string, byStaffId: string | null): Promise<boolean> {
+  const sb = supabase()
+  const { error } = await sb.from('bookings')
+    .update({ payout_paid_at: new Date().toISOString(), payout_method: method, payout_cents: amountCents })
+    .eq('id', booking.id)
+  if (error) {
+    console.error('[bookings]', error.message)
+    return false
+  }
+  if (method === 'cash' && amountCents > 0) {
+    const { data: org } = await sb.from('organizations').select('id').limit(1).single()
+    await sb.from('cash_drawer_entries').insert({
+      org_id: (org as { id: string }).id,
+      amount_cents: -amountCents,
+      reason: `Staff payout — ${staffName} · ${booking.title} ${booking.code}`,
+      staff_id: byStaffId,
+    }) // ignore failure pre-0024
+  }
+  emit(BOOKINGS_EVENT)
+  return true
+}
+
+export async function undoPayoutPaid(booking: StaffBooking, staffName: string, byStaffId: string | null): Promise<boolean> {
+  const sb = supabase()
+  const { error } = await sb.from('bookings').update({ payout_paid_at: null, payout_method: null }).eq('id', booking.id)
+  if (error) return false
+  // A cash payout came out of the bag — put it back.
+  if (booking.payoutMethod === 'cash' && (booking.payoutCents ?? 0) > 0) {
+    const { data: org } = await sb.from('organizations').select('id').limit(1).single()
+    await sb.from('cash_drawer_entries').insert({
+      org_id: (org as { id: string }).id,
+      amount_cents: booking.payoutCents,
+      reason: `Payout undone — ${staffName} · ${booking.title} ${booking.code}`,
+      staff_id: byStaffId,
+    })
+  }
+  emit(BOOKINGS_EVENT)
+  return true
 }
 
 export async function rescheduleBooking(id: string, date: string, startH: number, hours: number): Promise<{ ok: boolean; conflict: boolean }> {
@@ -208,6 +303,15 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   if (error) {
     console.error('[payments]', error.message)
     return false
+  }
+  // Cash goes straight into the bag (best effort — needs migration 0024).
+  if (method === 'cash') {
+    await sb.from('cash_drawer_entries').insert({
+      org_id: (org as { id: string }).id,
+      amount_cents: amount,
+      reason: `Cash payment — ${booking.title} ${booking.code}`,
+      staff_id: staffId,
+    })
   }
   await supabase().from('bookings').update({ status: 'confirmed', note: null, hold_expires_at: null }).eq('id', booking.id)
   emit(BOOKINGS_EVENT)

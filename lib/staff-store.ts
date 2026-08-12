@@ -15,6 +15,8 @@ export interface StaffMember {
   name: string
   role: StaffRole
   linked: boolean
+  // $cashtag for event payouts. undefined = column not migrated (0023).
+  cashtag?: string | null
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
@@ -47,15 +49,24 @@ export function isAdminRole(role: StaffRole | undefined): boolean {
   return role === 'owner' || role === 'admin'
 }
 
+// cashtag arrives with migration 0023 — retry the select without it.
+const STAFF_COL_SETS = ['id, name, role, user_id, active, cashtag', 'id, name, role, user_id, active']
+let hasCashtagCol = false
+
 export async function getStaff(): Promise<StaffMember[]> {
-  const { data, error } = await supabase()
-    .from('staff')
-    .select('id, name, role, user_id, active')
-    .eq('active', true)
-    .order('name')
-  if (error) throw error
-  return (data as { id: string; name: string; role: StaffRole; user_id: string | null }[])
-    .map((r) => ({ id: r.id, name: r.name, role: r.role, linked: !!r.user_id }))
+  for (const cols of STAFF_COL_SETS) {
+    const { data, error } = await supabase()
+      .from('staff')
+      .select(cols)
+      .eq('active', true)
+      .order('name')
+    if (!error) {
+      hasCashtagCol = cols.includes('cashtag')
+      return (data as unknown as { id: string; name: string; role: StaffRole; user_id: string | null; cashtag?: string | null }[])
+        .map((r) => ({ id: r.id, name: r.name, role: r.role, linked: !!r.user_id, cashtag: hasCashtagCol ? (r.cashtag ?? null) : undefined }))
+    }
+  }
+  throw new Error('staff query failed')
 }
 
 // The signed-in user's own staff row — null when not staff.
@@ -66,7 +77,7 @@ export async function getMyStaff(): Promise<StaffMember | null> {
   return row ? { ...row, linked: true } : null
 }
 
-export async function patchStaff(id: string, patch: { name?: string; role?: StaffRole }): Promise<boolean> {
+export async function patchStaff(id: string, patch: { name?: string; role?: StaffRole; cashtag?: string | null }): Promise<boolean> {
   const ok = await tryWrite(() => supabase().from('staff').update(patch).eq('id', id))
   if (ok) emit(STAFF_EVENT)
   return ok
