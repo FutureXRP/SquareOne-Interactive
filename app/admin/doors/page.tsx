@@ -17,7 +17,14 @@ const RANGES = [
   { days: 1, label: 'Today' },
   { days: 7, label: 'Last 7 days' },
   { days: 30, label: 'Last 30 days' },
+  { days: 365, label: 'Last year' },
 ]
+
+function fmtMin(min: number): string {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
 
 export default function DoorsPage() {
   const [range, setRange] = useState(1)
@@ -48,6 +55,25 @@ export default function DoorsPage() {
     return hours.map((h) => ({ h, n: today.filter((c) => c.hour === h).length }))
   }, [today])
   const maxHour = Math.max(...byHour.map((b) => b.n), 1)
+
+  // Fitness-member activity: how often each member comes in, how long they
+  // stay (self check-ins + app door unlocks, grouped by person).
+  const memberActivity = useMemo(() => {
+    const byWho = new Map<string, { visits: number; totalMin: number; timed: number; last: string; inNow: boolean }>()
+    for (const c of checkIns) {
+      const memberish = c.accountId != null || c.method === 'self' || c.method === 'app unlock'
+      if (!memberish || c.outcome !== 'in') continue
+      const cur = byWho.get(c.who) ?? { visits: 0, totalMin: 0, timed: 0, last: '', inNow: false }
+      cur.visits += 1
+      if (c.durationMin) { cur.totalMin += c.durationMin; cur.timed += 1 }
+      if (!cur.last) cur.last = `${c.dateIso.slice(5).replace('-', '/')} ${c.when}` // list is newest-first
+      if (c.open) cur.inNow = true
+      byWho.set(c.who, cur)
+    }
+    return [...byWho.entries()]
+      .map(([who, v]) => ({ who, ...v, avgMin: v.timed > 0 ? Math.round(v.totalMin / v.timed) : 0 }))
+      .sort((a, b) => b.visits - a.visits)
+  }, [checkIns])
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
@@ -103,6 +129,32 @@ export default function DoorsPage() {
           </div>
         )}
       </div>
+
+      {/* Fitness member activity */}
+      {memberActivity.length > 0 && (
+        <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '13px 20px', borderBottom: `1px solid ${LINE}` }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Fitness member activity</span>
+            <span style={{ fontSize: 11.5, color: FAINT, marginLeft: 10 }}>{RANGES.find((r) => r.days === range)?.label.toLowerCase()}</span>
+          </div>
+          {memberActivity.slice(0, 15).map((mreport, i) => (
+            <div key={mreport.who} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderBottom: i < Math.min(memberActivity.length, 15) - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{mreport.who}</p>
+                <p style={{ fontSize: 11.5, color: SUB, margin: 0 }}>last in {mreport.last}</p>
+              </div>
+              {mreport.inNow && <span style={{ fontSize: 10, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 9px', borderRadius: 999 }}>in the building</span>}
+              <span style={{ fontSize: 12, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums' }}>{mreport.visits} visit{mreport.visits === 1 ? '' : 's'}</span>
+              {mreport.avgMin > 0 && <span style={{ fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>~{fmtMin(mreport.avgMin)} avg</span>}
+              {mreport.totalMin > 0 && <span style={{ fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>{fmtMin(mreport.totalMin)} total</span>}
+            </div>
+          ))}
+          <p style={{ fontSize: 11, color: FAINT, margin: 0, padding: '10px 20px' }}>
+            Counts self check-ins from the member app and door unlocks. Workout times come from members
+            checking in and out on their account page.
+          </p>
+        </div>
+      )}
 
       {/* Live log */}
       <div className="sq-card" style={card}>
