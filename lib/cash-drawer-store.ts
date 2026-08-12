@@ -106,3 +106,33 @@ export async function addDrawerEntry(amountCents: number, reason: string, staffI
   emit(DRAWER_EVENT)
   return true
 }
+
+// Fix an entry after the fact — both the amount and what it was for are
+// free text, typed. Sign is carried by amountCents (negative = out).
+export async function updateDrawerEntry(id: string, patch: { amountCents?: number; reason?: string }): Promise<boolean> {
+  const fields: { amount_cents?: number; reason?: string } = {}
+  if (patch.amountCents !== undefined) fields.amount_cents = patch.amountCents
+  if (patch.reason !== undefined) {
+    const trimmed = patch.reason.trim()
+    if (!trimmed) return false
+    fields.reason = trimmed
+  }
+  if (Object.keys(fields).length === 0) return false
+  const { error } = await supabase().from('cash_drawer_entries').update(fields).eq('id', id)
+  if (error) {
+    console.error('[cash drawer]', error.message)
+    return false
+  }
+  emit(DRAWER_EVENT)
+  return true
+}
+
+export async function deleteDrawerEntry(id: string): Promise<boolean> {
+  const { error } = await supabase().from('cash_drawer_entries').delete().eq('id', id)
+  if (error) {
+    console.error('[cash drawer]', error.message)
+    return false
+  }
+  emit(DRAWER_EVENT)
+  return true
+}
