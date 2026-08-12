@@ -11,6 +11,7 @@ export interface ClientAccount {
   id: string
   account: string
   members: number
+  people: string[] // everyone on the account, primary first
   plan: string
   flag?: string
   balanceCents: number
@@ -20,7 +21,7 @@ export interface ClientAccount {
 export async function getClients(): Promise<ClientAccount[]> {
   const sb = supabase()
   const [accountsRes, balancesRes, ledgerRes] = await Promise.all([
-    sb.from('client_accounts').select('id, name, flag, clients(id), member_subscriptions(plan_id, status, membership_plans(name))').order('name'),
+    sb.from('client_accounts').select('id, name, flag, clients(id, full_name, is_primary), member_subscriptions(plan_id, status, membership_plans(name))').order('name'),
     sb.from('account_balances').select('account_id, balance_cents'),
     sb.from('ledger_entries').select('account_id, amount_cents, reason, created_at').order('created_at', { ascending: false }).limit(200),
   ])
@@ -32,7 +33,7 @@ export async function getClients(): Promise<ClientAccount[]> {
     id: string
     name: string
     flag: string | null
-    clients: { id: string }[]
+    clients: { id: string; full_name: string; is_primary: boolean }[]
     member_subscriptions: { plan_id: string; status: string; membership_plans: { name: string } | null }[]
   }
   return (accountsRes.data as unknown as Row[]).map((r) => {
@@ -41,6 +42,7 @@ export async function getClients(): Promise<ClientAccount[]> {
       id: r.id,
       account: r.name,
       members: Math.max(r.clients.length, 1),
+      people: [...r.clients].sort((a, b) => Number(b.is_primary) - Number(a.is_primary)).map((c) => c.full_name),
       plan: sub && (sub.status === 'active' || sub.status === 'canceling') ? (sub.membership_plans?.name ?? sub.plan_id) : 'None',
       flag: r.flag ?? undefined,
       balanceCents: balances.get(r.id) ?? 0,
