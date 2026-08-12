@@ -311,6 +311,16 @@ export async function getPayments(): Promise<PaymentRow[]> {
   })
 }
 
+// Which add-on ids are already booked during this window — so the store
+// greys them out. Null when 0022_addon_conflicts.sql hasn't run yet
+// (no data to consult, nothing to grey out).
+export async function addonsTaken(date: string, startH: number, hours: number): Promise<string[] | null> {
+  const { fromIso, toIso } = localRange(date, startH, hours)
+  const { data, error } = await supabase().rpc('addons_taken', { p_from: fromIso, p_to: toIso })
+  if (error) return null
+  return (data as string[] | null) ?? []
+}
+
 // Privacy-safe availability for the public booking flow.
 export async function facilityBusy(facilityId: string, date: string): Promise<{ fromH: number; toH: number }[]> {
   const { fromIso, toIso } = localRange(date, 0, 24)
