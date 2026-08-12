@@ -11,6 +11,7 @@ import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { getPackages, type EventPackage } from '@/lib/packages-store'
 import { getStaff, getMyStaff, isAdminRole, type StaffMember } from '@/lib/staff-store'
 import { getDrawer, addDrawerEntry, setStartingBalance, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
+import { DrawerEntryRow } from '@/components/admin/DrawerEntryRow'
 import Link from 'next/link'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -281,17 +282,7 @@ export default function PaymentsPage() {
               {drawer.entries.length === 0 ? (
                 <p style={{ fontSize: 12.5, color: SUB, padding: '14px 20px', margin: 0 }}>No entries yet.</p>
               ) : (
-                drawer.entries.slice(0, 12).map((e, i) => (
-                  <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: i < Math.min(drawer.entries.length, 12) - 1 ? `1px solid ${LINE}` : 'none' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 12.5, fontWeight: 600, color: INK, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.reason}</p>
-                      <p style={{ fontSize: 11, color: FAINT, margin: 0 }}>{e.when}{e.staffName ? ` · ${e.staffName}` : ''}</p>
-                    </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: e.amountCents < 0 ? RED : GREEN, fontVariantNumeric: 'tabular-nums' }}>
-                      {e.amountCents < 0 ? '−' : '+'}{formatCents(Math.abs(e.amountCents))}
-                    </span>
-                  </div>
-                ))
+                drawer.entries.slice(0, 12).map((e) => <DrawerEntryRow key={e.id} entry={e} />)
               )}
             </>
           )}

@@ -3,8 +3,13 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getDrawerMonth, DRAWER_EVENT, type DrawerMonth } from '@/lib/cash-drawer-store'
+import { getDrawerMonth, updateDrawerEntry, deleteDrawerEntry, DRAWER_EVENT, type DrawerMonth } from '@/lib/cash-drawer-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
+
+function dollarsToCents(v: string): number {
+  const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
+}
 
 // Printable month-by-month cash bag statement for the bookkeeper:
 // opening balance, every entry with a running balance, totals, closing.
@@ -15,6 +20,12 @@ export default function CashReportPage() {
   const [report, setReport] = useState<DrawerMonth | null>(null)
   const [checked, setChecked] = useState(false)
   const [printedAt, setPrintedAt] = useState('')
+  // Fix a line before it goes to the bookkeeper — everything typed.
+  const [editId, setEditId] = useState<string | null>(null)
+  const [eAmount, setEAmount] = useState('')
+  const [eReason, setEReason] = useState('')
+  const [eOut, setEOut] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
@@ -99,11 +110,53 @@ export default function CashReportPage() {
                   {['Date', 'Entry', 'Recorded by', 'In', 'Out', 'Balance'].map((h, i) => (
                     <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', padding: '6px 8px', fontSize: 10.5, fontWeight: 700, color: INK, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                   ))}
+                  <th className="cash-report-controls" style={{ width: 1 }} />
                 </tr>
               </thead>
               <tbody>
                 {report.entries.map((e) => {
                   running += e.amountCents
+                  const isEditing = editId === e.id
+                  if (isEditing) {
+                    return (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${LINE}`, background: '#fafbfd' }}>
+                        <td style={{ padding: '7px 8px', color: SUB, whiteSpace: 'nowrap' }}>{e.when}</td>
+                        <td colSpan={4} style={{ padding: '7px 8px' }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <input className="sq-input" style={{ width: 90, padding: '6px 9px', fontSize: 12 }} inputMode="decimal" placeholder="$"
+                              value={eAmount} onChange={(ev) => setEAmount(ev.target.value)} />
+                            <input className="sq-input" style={{ flex: 1, minWidth: 160, padding: '6px 9px', fontSize: 12 }} placeholder="what was it for?"
+                              value={eReason} onChange={(ev) => setEReason(ev.target.value)} />
+                            {[[false, 'In'], [true, 'Out']].map(([isOut, label]) => (
+                              <button key={String(isOut)} onClick={() => setEOut(isOut as boolean)} style={{
+                                font: 'inherit', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                color: eOut === isOut ? '#fff' : SUB, background: eOut === isOut ? BLUE : '#fff',
+                                border: `1.5px solid ${eOut === isOut ? BLUE : LINE}`, borderRadius: 999, padding: '4px 12px',
+                              }}>{label as string}</button>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="cash-report-controls" style={{ padding: '7px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 11px', fontSize: 11 }} disabled={busy || !eAmount || !eReason.trim()}
+                            onClick={async () => {
+                              const cents = dollarsToCents(eAmount)
+                              if (cents <= 0) return
+                              setBusy(true)
+                              await updateDrawerEntry(e.id, { amountCents: eOut ? -cents : cents, reason: eReason })
+                              setBusy(false); setEditId(null)
+                            }}>Save</button>
+                          <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 11px', fontSize: 11, marginLeft: 5 }} onClick={() => setEditId(null)}>Cancel</button>
+                          <button className="sq-btn sq-btn-danger" style={{ padding: '5px 11px', fontSize: 11, marginLeft: 5 }} disabled={busy}
+                            onClick={async () => {
+                              if (!window.confirm(`Delete "${e.reason}"? The balances adjust to match.`)) return
+                              setBusy(true)
+                              await deleteDrawerEntry(e.id)
+                              setBusy(false); setEditId(null)
+                            }}>Delete</button>
+                        </td>
+                      </tr>
+                    )
+                  }
                   return (
                     <tr key={e.id} style={{ borderBottom: `1px solid ${LINE}` }}>
                       <td style={{ padding: '7px 8px', color: SUB, whiteSpace: 'nowrap' }}>{e.when}</td>
@@ -116,6 +169,15 @@ export default function CashReportPage() {
                         {e.amountCents < 0 ? formatCents(-e.amountCents) : ''}
                       </td>
                       <td style={{ padding: '7px 8px', textAlign: 'right', color: INK, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{formatCents(running)}</td>
+                      <td className="cash-report-controls" style={{ padding: '7px 8px', textAlign: 'right' }}>
+                        <button className="sq-btn sq-btn-ghost" style={{ padding: '3px 10px', fontSize: 10.5 }}
+                          onClick={() => {
+                            setEditId(e.id)
+                            setEAmount((Math.abs(e.amountCents) / 100).toFixed(2))
+                            setEReason(e.reason)
+                            setEOut(e.amountCents < 0)
+                          }}>Edit</button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -124,6 +186,7 @@ export default function CashReportPage() {
                   <td style={{ padding: '9px 8px', textAlign: 'right', fontWeight: 800, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{formatCents(report.inCents)}</td>
                   <td style={{ padding: '9px 8px', textAlign: 'right', fontWeight: 800, color: RED, fontVariantNumeric: 'tabular-nums' }}>{formatCents(report.outCents)}</td>
                   <td style={{ padding: '9px 8px', textAlign: 'right', fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(report.closingCents)}</td>
+                  <td className="cash-report-controls" />
                 </tr>
               </tbody>
             </table>
@@ -142,8 +205,9 @@ export default function CashReportPage() {
       )}
 
       <p className="cash-report-controls" style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>
-        Pick the month, then Print — the sidebar and buttons stay off the paper. Cash payments, cash payouts, deposits,
-        and corrections all appear with who recorded them and a running balance.
+        Pick the month, fix any line with Edit — amount and description are both free text — then Print. The sidebar,
+        Edit buttons, and controls stay off the paper. Cash payments, cash payouts, deposits, and corrections all appear
+        with who recorded them and a running balance.
       </p>
     </div>
   )
