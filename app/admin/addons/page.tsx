@@ -5,7 +5,7 @@ import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getAddons, saveAddon, addAddon, deleteAddon, addonSlug, type AddonConfig } from '@/lib/addons-store'
+import { getAddons, saveAddon, addAddon, deleteAddon, uploadAddonPhoto, addonSlug, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -20,6 +20,8 @@ export default function AddonsAdminPage() {
   const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadFailed, setUploadFailed] = useState(false)
 
   const debouncedSave = useDebouncedSave(async (a: AddonConfig) => {
     await saveAddon(a)
@@ -82,10 +84,14 @@ export default function AddonsAdminPage() {
               background: editingId === a.id ? '#eef4fb' : 'transparent', border: 'none',
               padding: '13px 18px', borderBottom: i < addons.length - 1 ? `1px solid ${LINE}` : 'none',
             }}>
+              {a.photoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={a.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+              )}
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: editingId === a.id ? BLUE : INK }}>{a.name}</span>
                 <span style={{ display: 'block', fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>
-                  {formatCents(a.priceCents)} · {roomsOffering(a.id).length || 'no'} room{roomsOffering(a.id).length === 1 ? '' : 's'}
+                  {addonPriceLabel(a)} · {roomsOffering(a.id).length || 'no'} room{roomsOffering(a.id).length === 1 ? '' : 's'}
                 </span>
               </span>
               {a.active
@@ -105,15 +111,61 @@ export default function AddonsAdminPage() {
         {/* Editor */}
         {editing ? (
           <div className="sq-card" style={{ ...card, padding: '20px 24px', alignSelf: 'start' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
+            <div style={{ marginBottom: 14 }}>
+              <label className="sq-label" htmlFor="a-name">Add-on name</label>
+              <input id="a-name" className="sq-input" value={editing.name} onChange={(e) => patch(editing.id, { name: e.target.value })} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 6 }}>
               <div>
-                <label className="sq-label" htmlFor="a-name">Add-on name</label>
-                <input id="a-name" className="sq-input" value={editing.name} onChange={(e) => patch(editing.id, { name: e.target.value })} />
-              </div>
-              <div>
-                <label className="sq-label" htmlFor="a-price">Price ($, one-off)</label>
+                <label className="sq-label" htmlFor="a-price">First hour ($)</label>
                 <input id="a-price" className="sq-input" inputMode="decimal" defaultValue={(editing.priceCents / 100).toFixed(2)} key={`price-${editing.id}`}
                   onBlur={(e) => patch(editing.id, { priceCents: dollarsToCents(e.target.value) })} />
+              </div>
+              <div>
+                <label className="sq-label" htmlFor="a-extra">Each additional hour ($)</label>
+                <input id="a-extra" className="sq-input" inputMode="decimal" placeholder="blank = charged once"
+                  defaultValue={editing.extraHourCents === null ? '' : (editing.extraHourCents / 100).toFixed(2)} key={`extra-${editing.id}`}
+                  onBlur={(e) => patch(editing.id, { extraHourCents: e.target.value.trim() === '' ? null : dollarsToCents(e.target.value) })} />
+              </div>
+            </div>
+            <p style={{ fontSize: 11.5, color: FAINT, margin: '0 0 14px', lineHeight: 1.5 }}>
+              {editing.extraHourCents === null
+                ? 'Charged once per booking no matter how long the rental is. Set an additional-hour rate to price it like the inflatable — $100 the first hour, $25 each hour after.'
+                : `A 3-hour rental pays ${formatCents(editing.priceCents + editing.extraHourCents * 2)} for this add-on. Clear the field to charge once per booking instead.`}
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
+              {editing.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={editing.photoUrl} alt={editing.name} style={{ width: 84, height: 84, borderRadius: 12, objectFit: 'cover', border: `1px solid ${LINE}` }} />
+              ) : (
+                <div style={{ width: 84, height: 84, borderRadius: 12, background: '#eef2f8', border: `1px dashed #c3cede`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, color: FAINT, textAlign: 'center', padding: 6 }}>no photo yet</div>
+              )}
+              <div>
+                <label className="sq-label" style={{ display: 'block' }}>Photo (shown to shoppers)</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12, cursor: 'pointer' }}>
+                    {uploading ? 'Uploading…' : editing.photoUrl ? 'Replace photo' : 'Upload photo'}
+                    <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading} onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ''
+                      if (!file) return
+                      setUploading(true)
+                      setUploadFailed(false)
+                      const url = await uploadAddonPhoto(editing.id, file)
+                      setUploading(false)
+                      if (url) patch(editing.id, { photoUrl: url })
+                      else setUploadFailed(true)
+                    }} />
+                  </label>
+                  {editing.photoUrl && (
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => patch(editing.id, { photoUrl: null })}>Remove</button>
+                  )}
+                </div>
+                <p style={{ fontSize: 11, color: uploadFailed ? '#b23f33' : FAINT, margin: '6px 0 0' }}>
+                  {uploadFailed ? "Upload failed — photos need the room-photos bucket (0005) and a photo under 5 MB." : 'JPG or PNG up to 5 MB — appears on the booking page next to the name.'}
+                </p>
               </div>
             </div>
 

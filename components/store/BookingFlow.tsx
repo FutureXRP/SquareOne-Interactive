@@ -5,9 +5,9 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, rentalPriceCents, rentalPriceCentsAt, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
-import { getActiveAddons, type AddonConfig } from '@/lib/addons-store'
+import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
-import { facilityBusy } from '@/lib/staff-bookings-store'
+import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
@@ -33,8 +33,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [pendingWaivers, setPendingWaivers] = useState<RequiredWaiver[]>([])
   const [addons, setAddons] = useState<AddonConfig[]>([])
   const [picked, setPicked] = useState<string[]>([])
+  const [takenAddons, setTakenAddons] = useState<string[]>([]) // booked elsewhere for the chosen window
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
+  const [addonConflict, setAddonConflict] = useState(false)
   const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
 
   // Dates come from the real clock, so this renders client-side only.
@@ -81,6 +83,22 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   }, [facilityId, day])
 
   useEffect(() => { loadBusy() }, [loadBusy])
+
+  // Once a start time is picked, find add-ons someone else already has
+  // for that window (there's one inflatable) and grey them out.
+  const loadTaken = useCallback(() => {
+    if (!day || startH == null || addons.length === 0 || !isSupabaseConfigured()) {
+      setTakenAddons([])
+      return
+    }
+    addonsTaken(day.iso, startH, hours).then((t) => {
+      const taken = t ?? []
+      setTakenAddons(taken)
+      if (taken.length > 0) setPicked((cur) => cur.filter((id) => !taken.includes(id)))
+    }).catch(() => setTakenAddons([]))
+  }, [day, startH, hours, addons.length])
+
+  useEffect(() => { loadTaken() }, [loadTaken])
 
   // With 48-hour notice the first day or two can't be booked — land the
   // picker on the first day that actually can.
@@ -144,7 +162,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   // rate); before that, show the base-rate estimate.
   const hasRules = (f.rateRules?.length ?? 0) > 0
   const pickedAddons = addons.filter((a) => picked.includes(a.id))
-  const addonsCents = pickedAddons.reduce((n, a) => n + a.priceCents, 0)
+  const addonsCents = pickedAddons.reduce((n, a) => n + addonPriceCents(a, hours), 0)
   const priceCents = (day && startH != null
     ? rentalPriceCentsAt(f, day.dow, startH, hours)
     : rentalPriceCents(f, hours)) + addonsCents
@@ -157,19 +175,25 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     if (!day || startH == null || requesting) return
     setRequesting(true)
     setConflict(false)
+    setAddonConflict(false)
     const note = pickedAddons.length > 0
-      ? `Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(a.priceCents)})`).join(', ')}`
+      ? `Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(addonPriceCents(a, hours))})`).join(', ')}`
       : undefined
     const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
-      f.depositCents === undefined ? undefined : depositCents, note)
+      f.depositCents === undefined ? undefined : depositCents, note, picked)
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {
       setConfirmed({ code: res.code, startH, hours, priceCents })
     } else if (res.conflict) {
-      setConflict(true)
-      setStartH(null)
-      loadBusy() // someone else took it — refresh availability
+      if (res.addonConflict) {
+        setAddonConflict(true)
+        loadTaken() // an extra was just booked out from under us — grey it
+      } else {
+        setConflict(true)
+        setStartH(null)
+        loadBusy() // someone else took the slot — refresh availability
+      }
     }
   }
 
@@ -257,17 +281,29 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         {addons.length > 0 && (
           <>
             <p className="sq-label">Add extras (optional)</p>
+            {addonConflict && (
+              <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 10px' }}>
+                One of your extras was just booked for that time — it&apos;s greyed out below.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
               {addons.map((a) => {
                 const on = picked.includes(a.id)
+                const gone = takenAddons.includes(a.id)
                 return (
-                  <label key={a.id} title={a.blurb} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 10, padding: '7px 13px' }}>
-                    <input type="checkbox" checked={on} style={{ accentColor: BLUE }}
+                  <label key={a.id} title={gone ? 'Already booked for this time' : a.blurb} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12.5, color: gone ? FAINT : INK, cursor: gone ? 'default' : 'pointer', background: gone ? '#f4f6fa' : on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 10, padding: '7px 13px', opacity: gone ? 0.75 : 1 }}>
+                    <input type="checkbox" checked={on} disabled={gone} style={{ accentColor: BLUE }}
                       onChange={() => setPicked((cur) => on ? cur.filter((id) => id !== a.id) : [...cur, a.id])} />
+                    {a.photoUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={a.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', flexShrink: 0, filter: gone ? 'grayscale(1)' : 'none' }} />
+                    )}
                     <span>
                       <span style={{ fontWeight: 700 }}>{a.name}</span>
-                      <span style={{ color: SUB, fontVariantNumeric: 'tabular-nums' }}> +{formatCents(a.priceCents)}</span>
-                      {a.blurb && <span style={{ display: 'block', fontSize: 10.5, color: FAINT }}>{a.blurb}</span>}
+                      <span style={{ color: gone ? FAINT : SUB, fontVariantNumeric: 'tabular-nums' }}> +{addonPriceLabel(a)}</span>
+                      {gone
+                        ? <span style={{ display: 'block', fontSize: 10.5, color: RED, fontWeight: 600 }}>Already booked for this time</span>
+                        : a.blurb && <span style={{ display: 'block', fontSize: 10.5, color: FAINT }}>{a.blurb}</span>}
                     </span>
                   </label>
                 )

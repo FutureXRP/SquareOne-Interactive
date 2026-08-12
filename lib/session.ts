@@ -180,8 +180,8 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   })
 }
 
-export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string):
-  Promise<{ ok: true; code: string } | { ok: false; conflict: boolean }> {
+export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[]):
+  Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
   const sb = supabase()
@@ -189,7 +189,7 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   const [y, mo, d] = date.split('-').map(Number)
   const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
   const to = new Date(from.getTime() + hours * 3600_000)
-  const { data, error } = await sb.from('bookings').insert({
+  const base = {
     org_id: (org as { id: string }).id,
     facility_id: roomId,
     account_id: profile.accountId,
@@ -201,14 +201,21 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     hold_expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
     ...(depositCents !== undefined ? { deposit_cents: depositCents } : {}),
     ...(note ? { note } : {}),
-  }).select('code').single()
-  if (error) {
-    const conflict = error.code === '23P01'
-    if (!conflict) console.error('[session]', error.message)
-    return { ok: false, conflict }
+  }
+  const withAddons = addonIds && addonIds.length > 0
+  const payload = (withAddons ? { ...base, addon_ids: addonIds } : base) as typeof base
+  let res = await sb.from('bookings').insert(payload).select('code').single()
+  // addon_ids arrives with 0022 — before it runs, retry the plain insert.
+  if (res.error && withAddons && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
+    res = await sb.from('bookings').insert(base).select('code').single()
+  }
+  if (res.error) {
+    const conflict = res.error.code === '23P01'
+    if (!conflict) console.error('[session]', res.error.message)
+    return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict') }
   }
   emit(SESSION_EVENT)
-  return { ok: true, code: (data as { code: string }).code }
+  return { ok: true, code: (res.data as { code: string }).code }
 }
 
 // ── Waivers ──────────────────────────────────────────────────
