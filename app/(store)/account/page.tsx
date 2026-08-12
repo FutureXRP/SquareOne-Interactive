@@ -11,6 +11,7 @@ import { changePlanBilled, cancelBilled, openBillingPortal } from '@/lib/billing
 import { isSupabaseConfigured, emit } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { DoorUnlock } from '@/components/store/DoorUnlock'
+import { VisitCard } from '@/components/store/VisitCard'
 import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
 
 export default function AccountOverview() {
@@ -78,6 +79,8 @@ export default function AccountOverview() {
           <div>
             {/* Fitness door — appears with a current membership, gone when it ends */}
             {plan && profile.status !== 'none' && <DoorUnlock memberName={profile.name} />}
+            {/* Self check-in / check-out with workout time */}
+            {plan && profile.status !== 'none' && <VisitCard accountId={profile.accountId} memberName={profile.name} />}
 
             {/* Membership status */}
             <div className="sq-grid-2" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
