@@ -12,6 +12,7 @@ import { isSupabaseConfigured, emit } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { DoorUnlock } from '@/components/store/DoorUnlock'
 import { VisitCard } from '@/components/store/VisitCard'
+import { FamilyCard } from '@/components/store/FamilyCard'
 import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
 
 export default function AccountOverview() {
@@ -156,6 +157,9 @@ export default function AccountOverview() {
                 ))}
               </div>
             </div>
+
+            {/* Family — everyone sharing this login, each with their own check-in */}
+            <FamilyCard accountId={profile.accountId} />
 
             {/* Upcoming bookings */}
             <div className="sq-card" style={{ ...card, marginBottom: 24 }}>

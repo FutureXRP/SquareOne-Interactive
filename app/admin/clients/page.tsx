@@ -79,7 +79,9 @@ export default function ClientsPage() {
                     <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{draft.name}</p>
                     {draft.flag && <span style={{ fontSize: 10, fontWeight: 700, color: RED, background: '#fae7e4', padding: '1px 8px', borderRadius: 999 }}>{draft.flag}</span>}
                   </div>
-                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{c.members} member{c.members > 1 ? 's' : ''} · {c.plan === 'None' ? 'no membership' : `${c.plan} plan`}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                    {c.people.length > 1 ? c.people.join(', ') : `${c.members} member${c.members > 1 ? 's' : ''}`} · {c.plan === 'None' ? 'no membership' : `${c.plan} plan`}
+                  </p>
                 </div>
                 <span style={{ fontSize: 13.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: bal > 0 ? RED : bal < 0 ? GREEN : FAINT, minWidth: 74, textAlign: 'right' }}>
                   {bal === 0 ? '—' : bal < 0 ? `+${formatCents(-bal)}` : formatCents(bal)}

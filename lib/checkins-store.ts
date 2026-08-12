@@ -79,6 +79,7 @@ export interface MyVisit {
   id: string
   atIso: string
   when: string
+  who: string
 }
 
 export interface MyVisitStats {
@@ -87,33 +88,35 @@ export interface MyVisitStats {
   lastVisit: string | null
 }
 
-// The member's currently-open visit (checked in within the last 16 hours,
-// not yet checked out). Null when the visit columns aren't migrated.
-export async function getMyOpenVisit(accountId: string): Promise<MyVisit | null> {
+// The account's currently-open visits — one per person in the building
+// (checked in within the last 16 hours, not yet checked out). Null when
+// the visit columns aren't migrated.
+export async function getMyOpenVisits(accountId: string): Promise<MyVisit[] | null> {
   const since = new Date(Date.now() - 16 * 3600_000).toISOString()
   const { data, error } = await supabase()
     .from('check_ins')
-    .select('id, at, checked_out_at')
+    .select('id, at, who, checked_out_at')
     .eq('account_id', accountId)
     .is('checked_out_at', null)
     .gte('at', since)
-    .order('at', { ascending: false })
-    .limit(1)
-  if (error || !data || data.length === 0) return null
-  const r = data[0] as { id: string; at: string }
-  return {
+    .order('at', { ascending: true })
+    .limit(20)
+  if (error) return null
+  return (data as { id: string; at: string; who: string }[]).map((r) => ({
     id: r.id,
     atIso: r.at,
+    who: r.who,
     when: new Date(r.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-  }
+  }))
 }
 
-export async function memberCheckIn(accountId: string, name: string): Promise<boolean> {
+export async function memberCheckIn(accountId: string, name: string, clientId?: string): Promise<boolean> {
   const { data: org, error: orgErr } = await supabase().from('organizations').select('id').limit(1).single()
   if (orgErr) return false
   const { error } = await supabase().from('check_ins').insert({
     org_id: (org as { id: string }).id,
     account_id: accountId,
+    ...(clientId ? { client_id: clientId } : {}),
     who: name,
     context: 'Fitness membership · self check-in',
     entry_point: 'Member app',
