@@ -283,15 +283,22 @@ export interface SignedWaiver {
 }
 
 export async function getMyWaivers(): Promise<SignedWaiver[]> {
-  const { data, error } = await supabase()
-    .from('form_submissions')
-    .select('form_id, participant, signed_at, forms(name)')
-    .order('signed_at', { ascending: false })
-  if (error) throw error
-  interface Row { form_id: string; participant: string; signed_at: string; forms: { name: string } | null }
-  return (data as unknown as Row[]).map((r) => ({
+  // form_name is the name we stored at signing (0034); the live form name
+  // is the fallback for anything signed before that.
+  const sets = [
+    'form_id, participant, signed_at, form_name, forms(name)',
+    'form_id, participant, signed_at, forms(name)',
+  ]
+  interface Row { form_id: string; participant: string; signed_at: string; form_name?: string | null; forms: { name: string } | null }
+  let rows: Row[] | null = null
+  for (const cols of sets) {
+    const res = await supabase().from('form_submissions').select(cols).order('signed_at', { ascending: false })
+    if (!res.error) { rows = res.data as unknown as Row[]; break }
+  }
+  if (!rows) throw new Error('waivers query failed')
+  return rows.map((r) => ({
     formId: r.form_id,
-    formName: r.forms?.name ?? r.form_id,
+    formName: r.form_name || r.forms?.name || r.form_id,
     participant: r.participant,
     signedOn: new Date(r.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   }))
@@ -303,7 +310,16 @@ export async function hasWaiver(formId: string): Promise<boolean> {
   return (data as unknown[]).length > 0
 }
 
-export async function signWaiver(formId: string, signedBy: string, participant: string, responses?: Record<string, string[]>): Promise<boolean> {
+// `snapshot` is the waiver exactly as it appeared on screen. Stored with
+// the signature so the record survives later edits to the form — what they
+// agreed to is what we keep.
+export async function signWaiver(
+  formId: string,
+  signedBy: string,
+  participant: string,
+  responses?: Record<string, string[]>,
+  snapshot?: { name: string; terms: string[] },
+): Promise<boolean> {
   const profile = await getProfile()
   const base = {
     form_id: formId,
@@ -313,11 +329,22 @@ export async function signWaiver(formId: string, signedBy: string, participant: 
     signature: signedBy,
   }
   const withResponses = responses && Object.keys(responses).length > 0
-  const payload = (withResponses ? { ...base, responses } : base) as typeof base
-  let { error } = await supabase().from('form_submissions').insert(payload)
-  // responses column arrives with migration 0013 — never lose a signature over it
-  if (error && withResponses && error.code === 'PGRST204') {
-    ;({ error } = await supabase().from('form_submissions').insert(base))
+  // Each extra column arrives with its own migration (responses 0013,
+  // the snapshot 0034); a missing one must never cost us a signature.
+  const attempts = [
+    {
+      ...base,
+      ...(withResponses ? { responses } : {}),
+      ...(snapshot ? { form_name: snapshot.name, signed_terms: snapshot.terms } : {}),
+    },
+    { ...base, ...(withResponses ? { responses } : {}) },
+    base,
+  ]
+  let error: { code?: string; message: string } | null = null
+  for (const payload of attempts) {
+    const res = await supabase().from('form_submissions').insert(payload as typeof base)
+    error = res.error
+    if (!error || (error.code !== 'PGRST204' && error.code !== '42703')) break
   }
   if (error) {
     console.error('[session]', error.message)

@@ -1,15 +1,16 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { signWaiver } from '@/lib/session'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import type { WaiverDef } from '@/lib/waiver-defs'
+import type { RequiredWaiver } from '@/lib/waivers-live'
 
 // Inline waiver signing step, embedded in the flows that require it
-// (fitness membership signup, facility rental booking). Writes a real
-// form_submissions row.
+// (fitness membership signup, facility rental booking). Everything on
+// screen — the title, the paragraphs, the questions — comes from the form
+// staff built on the Forms & Waivers tab. Writes a real form_submissions
+// row against the signer's account.
 export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }: {
-  def: WaiverDef
+  def: RequiredWaiver
   onSigned: () => void
   compact?: boolean
   defaultName?: string
@@ -19,31 +20,7 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
   const [signature, setSignature] = useState('')
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [terms, setTerms] = useState<string[]>(def.terms)
-  const [title, setTitle] = useState(def.name)
-  const [multis, setMultis] = useState<{ label: string; options: string[]; required: boolean }[]>([])
   const [choices, setChoices] = useState<Record<string, string[]>>({})
-
-  // The signed terms and choice questions come from the live form (editable
-  // in the dashboard); the built-in text is only the fallback.
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return
-    let on = true
-    supabase().from('forms').select('name, fields').eq('id', def.id).maybeSingle().then(({ data }) => {
-      if (!on || !data) return
-      const row = data as { name: string; fields: { type: string; content?: string; label: string; required?: boolean; options?: string[] }[] }
-      setTitle(row.name || def.name)
-      const fields = Array.isArray(row.fields) ? row.fields : []
-      const paras = fields
-        .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
-        .map((f) => (f.content as string).trim())
-      if (paras.length > 0) setTerms(paras)
-      setMultis(fields
-        .filter((f) => f.type === 'multi' && Array.isArray(f.options) && f.options.length > 0)
-        .map((f) => ({ label: f.label, options: f.options as string[], required: !!f.required })))
-    })
-    return () => { on = false }
-  }, [def.id, def.name])
 
   const toggleChoice = (label: string, option: string) => {
     setChoices((cur) => {
@@ -54,13 +31,15 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
     })
   }
 
-  const multisOk = multis.every((m) => !m.required || (choices[m.label]?.length ?? 0) > 0)
-  const canSign = signer.trim().length > 0 && agreed && multisOk && signature.trim().toLowerCase() === signer.trim().toLowerCase()
+  const choicesOk = def.choices.every((m) => !m.required || (choices[m.label]?.length ?? 0) > 0)
+  const canSign = signer.trim().length > 0 && agreed && choicesOk && signature.trim().toLowerCase() === signer.trim().toLowerCase()
 
   const sign = async () => {
     setSaving(true)
     setFailed(false)
-    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), choices)
+    // The snapshot is what keeps this signature meaningful later: the
+    // waiver as it read today, not as the form may read next year.
+    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), choices, { name: def.name, terms: def.terms })
     setSaving(false)
     if (ok) onSigned()
     else setFailed(true)
@@ -68,11 +47,11 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
 
   return (
     <div className="sq-card" style={{ ...card, padding: compact ? '18px 20px' : '22px 26px' }}>
-      <p style={{ fontSize: 14.5, fontWeight: 800, color: INK, margin: '0 0 2px' }}>{title}</p>
+      <p style={{ fontSize: 14.5, fontWeight: 800, color: INK, margin: '0 0 2px' }}>{def.name}</p>
       <p style={{ fontSize: 12, color: FAINT, margin: '0 0 12px' }}>{def.context} · takes about a minute</p>
 
       <div style={{ maxHeight: compact ? 150 : undefined, overflowY: compact ? 'auto' : undefined, paddingRight: compact ? 6 : 0, marginBottom: 14 }}>
-        {terms.map((t, i) => (
+        {def.terms.map((t, i) => (
           <p key={i} style={{ fontSize: 12.5, color: SUB, lineHeight: 1.6, margin: '0 0 10px', paddingLeft: 16, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 0, top: 6, width: 6, height: 6, background: `${BLUE}30`, border: `1.5px solid ${BLUE}`, borderRadius: 2, transform: 'rotate(45deg)' }} />
             {t}
@@ -80,7 +59,7 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
         ))}
       </div>
 
-      {multis.map((m) => (
+      {def.choices.map((m) => (
         <div key={m.label} style={{ marginBottom: 12 }}>
           <span className="sq-label">{m.label}{m.required ? '' : ' (optional)'}</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
