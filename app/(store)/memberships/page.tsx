@@ -1,4 +1,4 @@
-import { PlanCards } from '@/components/store/PlanCards'
+import { PlanPicker } from '@/components/store/PlanPicker'
 import { ContentText } from '@/components/store/FooterNav'
 import { INK, SUB, FAINT, LINE } from '@/lib/theme'
 
@@ -22,7 +22,7 @@ export default function MembershipsPage() {
       </div>
 
       <div style={{ maxWidth: 760, margin: '0 auto 44px' }}>
-        <PlanCards />
+        <PlanPicker />
       </div>
 
       <div style={{ maxWidth: 640, margin: '0 auto' }}>

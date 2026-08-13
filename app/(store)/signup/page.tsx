@@ -16,6 +16,7 @@ function SignupForm() {
   const router = useRouter()
   const params = useSearchParams()
   const planParam = params.get('plan')
+  const promoCode = params.get('code') ?? undefined
   const [plan, setPlan] = useState<EditablePlan | null>(null)
 
   const [name, setName] = useState('')
@@ -45,7 +46,7 @@ function SignupForm() {
       const due = await unsignedRequiredWaivers({ planId: planParam })
       if (due.length === 0) {
         // Card first when Stripe is live; otherwise activate directly.
-        if (await startMembershipCheckout(planParam)) return
+        if (await startMembershipCheckout(planParam, promoCode)) return
         await choosePlan(planParam)
         router.replace('/account/billing?welcome=1')
         return
@@ -54,7 +55,7 @@ function SignupForm() {
     }
     route()
     return () => { on = false }
-  }, [planParam, router])
+  }, [planParam, promoCode, router])
 
   const canSubmit = name.trim() && /.+@.+\..+/.test(email) && password.length >= 8 && !submitting
 
@@ -79,7 +80,7 @@ function SignupForm() {
     if (plan) {
       // Stripe live: collect the card now and let the subscription activate
       // the membership. Otherwise activate directly (pay at the desk).
-      if (await startMembershipCheckout(plan.id)) return
+      if (await startMembershipCheckout(plan.id, promoCode)) return
       await choosePlan(plan.id)
     }
     router.push('/account/billing?welcome=1')

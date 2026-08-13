@@ -31,6 +31,8 @@ const nav = [
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3.5" width="13" height="9" rx="1.8" stroke="currentColor" strokeWidth="1.5"/><circle cx="5" cy="7.2" r="1.4" stroke="currentColor" strokeWidth="1.2"/><path d="M8.5 6.4h4.2M8.5 8.8h4.2M3.4 10.4h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg> },
   { href: '/admin/programs', label: 'Programs',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/><path d="M6.5 5.5l4 2.5-4 2.5v-5z" fill="currentColor"/></svg> },
+  { href: '/admin/coupons', label: 'Coupons',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 5.5A1.5 1.5 0 013.5 4h9A1.5 1.5 0 0114 5.5v1a1.5 1.5 0 000 3v1a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 10.5v-1a1.5 1.5 0 000-3v-1z" stroke="currentColor" strokeWidth="1.4"/><path d="M6.5 6.5l3 3M6.6 6.6h.01M9.4 9.4h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg> },
   { href: '/admin/payments', label: 'Payments',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M1.5 6.5h13" stroke="currentColor" strokeWidth="1.5"/><circle cx="11.5" cy="9.5" r="1" fill="currentColor"/></svg> },
   { href: '/admin/doors', label: 'Check-ins & Doors',

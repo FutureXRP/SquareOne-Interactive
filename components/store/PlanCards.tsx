@@ -6,8 +6,10 @@ import { getActivePlans, PLANS_EVENT, type EditablePlan } from '@/lib/plans-stor
 import { useLive } from '@/lib/use-live'
 
 // Membership plan cards — read live from the admin-editable plans catalog.
-export function PlanCards({ showFeatures = true }: { showFeatures?: boolean }) {
+// An applied promo code rides along to signup on the join link.
+export function PlanCards({ showFeatures = true, promoCode }: { showFeatures?: boolean; promoCode?: string }) {
   const { data: plans } = useLive<EditablePlan[]>(getActivePlans, [PLANS_EVENT], [])
+  const suffix = promoCode ? `&code=${encodeURIComponent(promoCode)}` : ''
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: showFeatures ? 18 : 14 }}>
@@ -29,7 +31,7 @@ export function PlanCards({ showFeatures = true }: { showFeatures?: boolean }) {
               ))}
             </ul>
           )}
-          <Link href={`/signup?plan=${p.id}`} className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%', marginTop: 'auto' }}>Choose {p.name}</Link>
+          <Link href={`/signup?plan=${p.id}${suffix}`} className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%', marginTop: 'auto' }}>Choose {p.name}</Link>
         </div>
       ))}
     </div>

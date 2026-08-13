@@ -39,9 +39,9 @@ async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; 
 
 // Card-first membership signup: redirects to Stripe Checkout.
 // Returns false when Stripe isn't live so callers can fall back.
-export async function startMembershipCheckout(planId: string): Promise<boolean> {
+export async function startMembershipCheckout(planId: string, couponCode?: string): Promise<boolean> {
   if (!(await billingConfigured())) return false
-  const res = await authedPost('/api/billing/checkout', { planId })
+  const res = await authedPost('/api/billing/checkout', { planId, couponCode })
   if (res.ok && res.url) {
     window.location.assign(res.url)
     return true
