@@ -5,7 +5,10 @@
 
 import { supabase } from '@/lib/supabase'
 
-export type NotifyKind = 'booking.hold' | 'booking.confirmed' | 'booking.canceled' | 'payment.receipt' | 'refund.issued'
+export type NotifyKind =
+  | 'booking.hold' | 'booking.confirmed' | 'booking.canceled'
+  | 'payment.receipt' | 'refund.issued'
+  | 'membership.canceled' | 'membership.resumed'
 
 export async function notify(kind: NotifyKind, id: string): Promise<void> {
   try {
