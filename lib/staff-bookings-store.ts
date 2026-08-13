@@ -285,6 +285,7 @@ export async function rescheduleBooking(id: string, date: string, startH: number
     return { ok: false, conflict }
   }
   emit(BOOKINGS_EVENT)
+  notify('booking.rescheduled', id)
   return { ok: true, conflict: false }
 }
 
@@ -296,6 +297,11 @@ export async function updateBookingFields(id: string, patch: { price_cents?: num
   }
   emit(BOOKINGS_EVENT)
   if (patch.status === 'canceled') notify('booking.canceled', id)
+  // A price or detail change the customer should know about. Status-only
+  // updates are covered above; a contact-email edit isn't news to them.
+  else if (patch.price_cents !== undefined || patch.title !== undefined || patch.deposit_cents !== undefined) {
+    notify('booking.updated', id)
+  }
   return true
 }
 
@@ -331,15 +337,18 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   }
   await supabase().from('bookings').update({ status: 'confirmed', note: null, hold_expires_at: null }).eq('id', booking.id)
   emit(BOOKINGS_EVENT)
-  // Receipt, plus a confirmation once the booking is paid in full.
+  // One email that reads as a deposit receipt or a paid-in-full
+  // confirmation, whichever this payment made true.
   const paymentId = (paymentRow as { id: string } | null)?.id
-  if (paymentId) notify('payment.receipt', paymentId)
-  if (booking.paidCents + amount >= booking.priceCents) notify('booking.confirmed', booking.id)
+  if (paymentId) notify('booking.payment', paymentId)
   return true
 }
 
 // Hard-delete a booking row (payments/ledger keep their records, unlinked).
 export async function deleteBooking(id: string): Promise<boolean> {
+  // Send first — once the row is gone the server has nothing left to
+  // build the email from.
+  await notify('booking.deleted', id)
   const { error } = await supabase().from('bookings').delete().eq('id', id)
   if (error) {
     console.error('[bookings]', error.message)

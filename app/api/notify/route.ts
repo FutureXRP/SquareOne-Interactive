@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
-  bookingHeld, bookingConfirmed, bookingCanceled, paymentReceipt, refundIssued,
+  bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
+  bookingRemoved, bookingPayment, paymentReceipt, refundIssued,
   membershipCanceled, membershipResumed, type BookingFacts,
 } from '@/lib/server/emails'
 
@@ -106,14 +107,38 @@ export async function POST(req: Request) {
   if (!kind || !id) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 
   try {
-    if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled') {
+    if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled'
+      || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted') {
       const resolved = await bookingFacts(id)
       if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
       const body =
         kind === 'booking.hold' ? bookingHeld(resolved.facts)
         : kind === 'booking.confirmed' ? bookingConfirmed(resolved.facts)
+        : kind === 'booking.rescheduled' ? bookingRescheduled(resolved.facts)
+        : kind === 'booking.updated' ? bookingUpdated(resolved.facts)
+        : kind === 'booking.deleted' ? bookingRemoved(resolved.facts)
         : bookingCanceled(resolved.facts)
       await sendAndLog(kind, resolved.to.email, body, { accountId: resolved.b.account_id, bookingId: resolved.b.id })
+      return NextResponse.json({ ok: true })
+    }
+
+    // A payment against a booking: one email that reads as a deposit
+    // receipt or a paid-in-full confirmation, depending on what's left.
+    if (kind === 'booking.payment') {
+      const { data } = await serviceDb()
+        .from('payments')
+        .select('code, amount_cents, method, booking_id')
+        .eq('id', id)
+        .maybeSingle()
+      const p = data as { code: string; amount_cents: number; method: string; booking_id: string | null } | null
+      if (!p?.booking_id) return NextResponse.json({ ok: true, skipped: 'not_a_booking_payment' })
+      const resolved = await bookingFacts(p.booking_id)
+      if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
+      await sendAndLog('booking.payment', resolved.to.email, bookingPayment(resolved.facts, {
+        amountCents: p.amount_cents,
+        method: PAY_LABEL[p.method] ?? p.method,
+        code: p.code,
+      }), { accountId: resolved.b.account_id, bookingId: resolved.b.id })
       return NextResponse.json({ ok: true })
     }
 

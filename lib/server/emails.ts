@@ -140,6 +140,104 @@ export function bookingCanceled(b: BookingFacts): EmailBody {
   }
 }
 
+// One email covers both halves of paying for a booking: a deposit that
+// locks the slot in, and the payment that settles it. The wording flips
+// on whether anything is still owed.
+export function bookingPayment(b: BookingFacts, pay: { amountCents: number; method: string; code: string }): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  const settled = owed === 0
+  return {
+    subject: settled
+      ? `Paid in full — ${b.room} on ${b.date}`
+      : `Deposit received — ${b.room} on ${b.date}`,
+    html: shell(
+      settled ? `You're all set, ${b.name.split(' ')[0]}` : `Deposit received — you're locked in`,
+      `<p style="margin:0 0 6px;">${settled
+        ? 'Your booking is paid in full and the room is yours.'
+        : `Thanks — your deposit is in and the room is held for you. The rest is due before your event.`}</p>
+       ${detailRows([
+         ['Receipt', pay.code],
+         ['Paid now', `${money(pay.amountCents)} by ${pay.method}`],
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+         ['Booking total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+         ...(settled ? [] : [['Still due', money(owed)] as [string, string]]),
+       ])}
+       <p style="margin:0;">${settled
+         ? 'Come a few minutes early so we can get you settled. Anyone in your party without a signed waiver can do it at the door.'
+         : 'You can pay the balance any time before your event — online or at the front desk.'}</p>`,
+      { label: 'View my booking', href: siteLink('/account') },
+    ),
+  }
+}
+
+export function bookingRescheduled(b: BookingFacts): EmailBody {
+  return {
+    subject: `Moved — ${b.room} is now ${b.date}`,
+    html: shell(
+      'Your booking has moved',
+      `<p style="margin:0 0 6px;">Here's where it stands now:</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['New date', b.date],
+         ['New time', b.time],
+         ['Total', money(b.priceCents)],
+         ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
+       ])}
+       <p style="margin:0;">Anything you've already paid moves with it. If this isn't what you expected,
+       reply to this email or call the front desk and we'll sort it out.</p>`,
+      { label: 'View my booking', href: siteLink('/account') },
+    ),
+  }
+}
+
+export function bookingUpdated(b: BookingFacts): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  return {
+    subject: `Updated — ${b.room} on ${b.date}`,
+    html: shell(
+      'Your booking was updated',
+      `<p style="margin:0 0 6px;">We changed something on your booking. Here it is as it stands now:</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ['Total', money(b.priceCents)],
+         ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
+         ...(owed > 0 ? [['Still due', money(owed)] as [string, string]] : []),
+       ])}
+       <p style="margin:0;">If any of that looks wrong, reply and we'll fix it.</p>`,
+      { label: 'View my booking', href: siteLink('/account') },
+    ),
+  }
+}
+
+export function bookingRemoved(b: BookingFacts): EmailBody {
+  return {
+    subject: `Removed — ${b.room} on ${b.date}`,
+    html: shell(
+      'Your booking has been removed',
+      `<p style="margin:0 0 6px;">This booking is no longer on our calendar:</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ...(b.paidCents > 0 ? [['Paid', money(b.paidCents)] as [string, string]] : []),
+       ])}
+       ${b.paidCents > 0
+         ? `<p style="margin:0 0 6px;">You paid ${money(b.paidCents)}. If a refund is owed we'll send it back
+            to how you paid, and you'll get a separate email confirming it.</p>`
+         : ''}
+       <p style="margin:0;">If this was a mistake, reply right away and we'll get you back on the calendar.</p>`,
+      { label: 'Book another time', href: siteLink('/facilities') },
+    ),
+  }
+}
+
 export function paymentReceipt(o: {
   name: string; amountCents: number; method: string; what: string; code: string
   balanceCents?: number
