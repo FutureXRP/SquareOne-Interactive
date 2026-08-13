@@ -284,6 +284,103 @@ export function refundIssued(o: {
   }
 }
 
+// ── Tours & scheduled events ─────────────────────────────────
+
+export interface EventFacts {
+  kind: string // "Facility tour"
+  title: string
+  date: string // "Saturday, August 23"
+  time: string // "2 PM – 3 PM"
+  guestName: string
+  partySize: number | null
+  room: string | null
+  notes: string
+  staffName: string
+}
+
+function eventRows(e: EventFacts, forStaff: boolean): [string, string][] {
+  return [
+    ['What', e.title],
+    ['When', `${e.date}, ${e.time}`],
+    ...(e.room ? [['Where', e.room] as [string, string]] : []),
+    ...(forStaff && e.guestName ? [['Who’s coming', e.guestName] as [string, string]] : []),
+    ...(forStaff && e.partySize ? [['Party size', String(e.partySize)] as [string, string]] : []),
+    ...(forStaff && e.notes ? [['Notes', e.notes] as [string, string]] : []),
+  ]
+}
+
+// To the staff member: you're running this.
+export function eventAssigned(e: EventFacts): EmailBody {
+  return {
+    subject: `You're running: ${e.title} — ${e.date}`,
+    html: shell(
+      `You're on for this one, ${e.staffName.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">You've been assigned a ${e.kind.toLowerCase()}.</p>
+       ${detailRows(eventRows(e, true))}
+       <p style="margin:0;">We'll send you a reminder the day before. If you can't make it, tell a manager
+       so it can be reassigned.</p>`,
+      { label: 'Open the calendar', href: siteLink('/admin/calendar') },
+    ),
+  }
+}
+
+export function eventReminderStaff(e: EventFacts, whenPhrase: string): EmailBody {
+  return {
+    subject: `Reminder — ${e.title} ${whenPhrase}`,
+    html: shell(
+      `${e.title} is ${whenPhrase}`,
+      `<p style="margin:0 0 6px;">A quick heads-up: you're running this ${whenPhrase}.</p>
+       ${detailRows(eventRows(e, true))}
+       <p style="margin:0;">Arrive a few minutes early so they aren't waiting at the door.</p>`,
+      { label: 'Open the calendar', href: siteLink('/admin/calendar') },
+    ),
+  }
+}
+
+// To the visitor: your tour is booked.
+export function eventGuestConfirmed(e: EventFacts): EmailBody {
+  return {
+    subject: `Your visit is booked — ${e.date}`,
+    html: shell(
+      `See you soon, ${e.guestName.split(' ')[0] || 'there'}`,
+      `<p style="margin:0 0 6px;">Your ${e.kind.toLowerCase()} of SquareOne Interactive is on the calendar.</p>
+       ${detailRows(eventRows(e, false))}
+       <p style="margin:0 0 6px;">${e.staffName ? `${e.staffName} will meet you at the front desk.` : 'A member of our team will meet you at the front desk.'}
+       Come as you are — there's nothing to bring and nothing to pay.</p>
+       <p style="margin:0;">Need to move it or can't make it? Just reply to this email.</p>`,
+      { label: 'See rooms & pricing', href: siteLink('/facilities') },
+    ),
+  }
+}
+
+export function eventGuestReminder(e: EventFacts, whenPhrase: string): EmailBody {
+  return {
+    subject: `Reminder — your visit is ${whenPhrase}`,
+    html: shell(
+      `Your visit is ${whenPhrase}`,
+      `<p style="margin:0 0 6px;">Looking forward to showing you around.</p>
+       ${detailRows(eventRows(e, false))}
+       <p style="margin:0;">${e.staffName ? `${e.staffName} will meet you at the front desk.` : 'We’ll meet you at the front desk.'}
+       If something's come up, reply and we'll find another time.</p>`,
+    ),
+  }
+}
+
+export function eventMoved(e: EventFacts, forStaff: boolean): EmailBody {
+  return {
+    subject: `Moved — ${e.title} is now ${e.date}`,
+    html: shell(
+      forStaff ? 'An assignment moved' : 'Your visit has moved',
+      `<p style="margin:0 0 6px;">Here's where it stands now:</p>
+       ${detailRows(eventRows(e, forStaff))}
+       <p style="margin:0;">${forStaff
+         ? 'Your reminder will follow the new time.'
+         : "If that doesn't work for you, reply and we'll find another slot."}</p>`,
+      forStaff ? { label: 'Open the calendar', href: siteLink('/admin/calendar') } : undefined,
+    ),
+  }
+}
+
 export function membershipWelcome(o: { name: string; plan: string }): EmailBody {
   return {
     subject: 'Welcome to SquareOne Interactive — your membership is active',

@@ -10,6 +10,7 @@ export type NotifyKind =
   | 'booking.rescheduled' | 'booking.updated' | 'booking.deleted'
   | 'booking.payment' | 'payment.receipt' | 'refund.issued'
   | 'membership.canceled' | 'membership.resumed'
+  | 'event.assigned' | 'event.guest_confirmed' | 'event.moved'
 
 export async function notify(kind: NotifyKind, id: string): Promise<void> {
   try {

@@ -8,6 +8,8 @@ import { roomLabel } from '@/lib/facilities-store'
 import { getStaffBookings, getPayments, isoDate, BOOKINGS_EVENT, type StaffBooking, type PaymentRow } from '@/lib/staff-bookings-store'
 import { getClients, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
 import { getInsideNow, CHECKINS_EVENT } from '@/lib/checkins-store'
+import { getMyAssignments, KIND_COLOR, EVENTS_EVENT, type StaffEvent } from '@/lib/events-store'
+import { getMyStaff } from '@/lib/staff-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 function SectionLabel({ children, meta }: { children: string; meta?: string }) {
@@ -43,6 +45,8 @@ export default function TodayPage() {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [clients, setClients] = useState<ClientAccount[]>([])
   const [inside, setInside] = useState<{ count: number; names: string[] } | null>(null)
+  const [mine, setMine] = useState<StaffEvent[]>([])
+  const [myName, setMyName] = useState('')
 
   useEffect(() => {
     setNow(new Date())
@@ -53,7 +57,17 @@ export default function TodayPage() {
         if (on) { setBookings(b); setPayments(p); setClients(c); setInside(ins) }
       }).catch(() => {})
     }
+    // What this staff member personally is running today.
+    const syncMine = () => {
+      getMyStaff().then((s) => {
+        if (!on || !s) return
+        setMyName(s.name)
+        getMyAssignments(s.id, 1).then((list) => { if (on) setMine(list) }).catch(() => {})
+      }).catch(() => {})
+    }
     sync()
+    syncMine()
+    window.addEventListener(EVENTS_EVENT, syncMine)
     window.addEventListener(BOOKINGS_EVENT, sync)
     window.addEventListener(CLIENTS_EVENT, sync)
     window.addEventListener(CHECKINS_EVENT, sync)
@@ -63,6 +77,7 @@ export default function TodayPage() {
       window.removeEventListener(BOOKINGS_EVENT, sync)
       window.removeEventListener(CLIENTS_EVENT, sync)
       window.removeEventListener(CHECKINS_EVENT, sync)
+      window.removeEventListener(EVENTS_EVENT, syncMine)
       window.clearInterval(poll)
     }
   }, [])
@@ -131,6 +146,34 @@ export default function TodayPage() {
           }
         />
       </div>
+
+      {/* What you personally are running today */}
+      {mine.length > 0 && (
+        <div style={{ marginBottom: 30 }}>
+          <SectionLabel meta={`${mine.length} assigned to you`}>You&apos;re running today</SectionLabel>
+          <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
+            {mine.map((e, i) => (
+              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: i < mine.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 999, background: KIND_COLOR[e.kind], flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums', minWidth: 118 }}>{e.timeLabel}</span>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>{e.title}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                    {e.guestName || 'No guest name'}
+                    {e.partySize ? ` · party of ${e.partySize}` : ''}
+                    {e.guestPhone ? ` · ${e.guestPhone}` : ''}
+                    {e.notes ? ` · ${e.notes}` : ''}
+                  </p>
+                </div>
+                <Link href="/admin/calendar" style={{ fontSize: 12.5, fontWeight: 700, color: BLUE, textDecoration: 'none' }}>Calendar →</Link>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 11.5, color: FAINT, margin: '8px 0 0' }}>
+            {myName ? `Assigned to ${myName}` : 'Assigned to you'} — reminders go out the day before.
+          </p>
+        </div>
+      )}
 
       {/* Needs a person */}
       <div style={{ marginBottom: 32 }}>
