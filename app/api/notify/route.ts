@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
-import { bookingHeld, bookingConfirmed, bookingCanceled, paymentReceipt, refundIssued, type BookingFacts } from '@/lib/server/emails'
+import {
+  bookingHeld, bookingConfirmed, bookingCanceled, paymentReceipt, refundIssued,
+  membershipCanceled, membershipResumed, type BookingFacts,
+} from '@/lib/server/emails'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -164,6 +167,34 @@ export async function POST(req: Request) {
         what: r.payments?.memo ?? 'your booking',
         reason: r.reason,
       }), { accountId: r.account_id, bookingId: r.booking_id })
+      return NextResponse.json({ ok: true })
+    }
+
+    // Membership cancel/resume when Stripe isn't in the loop — the billing
+    // route handles it otherwise. Resolved from the signed-in user, so a
+    // browser can only ever trigger this for its own account.
+    if (kind === 'membership.canceled' || kind === 'membership.resumed') {
+      const db = serviceDb()
+      const { data } = await db.from('clients')
+        .select('account_id, full_name, email')
+        .eq('user_id', user)
+        .maybeSingle()
+      const me = data as { account_id: string; full_name: string; email: string | null } | null
+      if (!me?.email) return NextResponse.json({ ok: true, skipped: 'no_email' })
+      const { data: sub } = await db.from('member_subscriptions')
+        .select('current_period_end').eq('account_id', me.account_id).maybeSingle()
+      const ends = (sub as { current_period_end: string | null } | null)?.current_period_end
+      const endsOn = ends
+        ? new Date(`${ends}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null
+      await sendAndLog(
+        kind,
+        me.email,
+        kind === 'membership.resumed'
+          ? membershipResumed({ name: me.full_name })
+          : membershipCanceled({ name: me.full_name, endsOn }),
+        { accountId: me.account_id },
+      )
       return NextResponse.json({ ok: true })
     }
 

@@ -132,11 +132,13 @@ export async function choosePlan(planId: string): Promise<boolean> {
 export async function cancelMembership() {
   await supabase().rpc('cancel_my_membership')
   emit(SESSION_EVENT)
+  notify('membership.canceled', 'me') // only reached when Stripe isn't live
 }
 
 export async function resumeMembership() {
   await supabase().rpc('resume_my_membership')
   emit(SESSION_EVENT)
+  notify('membership.resumed', 'me')
 }
 
 export function setCard(card: ProfileCard) {
