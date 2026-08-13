@@ -6,6 +6,7 @@ import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { signInAuth } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { NOT_CONFIGURED_MSG } from '@/lib/use-live'
+import { ForgotPassword } from '@/components/store/ForgotPassword'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -47,6 +48,7 @@ export default function LoginPage() {
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
         {error && <p style={{ fontSize: 12, color: '#cf4436', fontWeight: 600, margin: '10px 0 0', textAlign: 'center' }}>{error}</p>}
+        <ForgotPassword defaultEmail={email} />
         <p style={{ fontSize: 12, color: FAINT, margin: '12px 0 0', textAlign: 'center' }}>
           New to SquareOne? <Link href="/signup" style={{ color: BLUE, fontWeight: 600 }}>Create a profile</Link>
         </p>
