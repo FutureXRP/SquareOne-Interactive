@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
-import { stripe, stripeConfigured, serviceDb, sendEmail } from '@/lib/server/billing'
+import { stripe, stripeConfigured, serviceDb, sendEmail, sendAndLog } from '@/lib/server/billing'
+import {
+  membershipWelcome, membershipCanceled, membershipEnded, membershipResumed, renewalReceipt, paymentFailed,
+} from '@/lib/server/emails'
 
 // Stripe webhook — keeps member_subscriptions in sync with what actually
 // happens to the card: subscription created, plan changed, payment failed,
@@ -51,22 +54,50 @@ async function recordInvoicePayment(invoice: Stripe.Invoice): Promise<void> {
   })
 }
 
+// The member's own email + name, for the confirmation emails below.
+async function memberContact(accountId: string): Promise<{ email: string; name: string } | null> {
+  const { data } = await serviceDb()
+    .from('clients')
+    .select('full_name, email, is_primary')
+    .eq('account_id', accountId)
+    .order('is_primary', { ascending: false })
+    .limit(1)
+  const row = (data as { full_name: string; email: string | null }[] | null)?.[0]
+  return row?.email ? { email: row.email, name: row.full_name } : null
+}
+
 async function upsertSubscription(sub: Stripe.Subscription): Promise<void> {
   const accountId = sub.metadata.account_id
   const planId = sub.metadata.plan_id
   if (!accountId) return
   const db = serviceDb()
+  const status = statusOf(sub)
   const row = {
-    status: statusOf(sub),
+    status,
     stripe_subscription_id: sub.id,
     current_period_end: periodEnd(sub),
     ...(planId ? { plan_id: planId } : {}),
   }
-  const { data: existing } = await db.from('member_subscriptions').select('id').eq('account_id', accountId).maybeSingle()
+  const { data: existing } = await db.from('member_subscriptions').select('id, status').eq('account_id', accountId).maybeSingle()
+  const wasStatus = (existing as { status: string } | null)?.status
   if (existing) {
     await db.from('member_subscriptions').update(row).eq('account_id', accountId)
   } else if (planId) {
     await db.from('member_subscriptions').insert({ account_id: accountId, ...row })
+  }
+
+  // Tell the member when the state of their membership actually changes.
+  if (!wasStatus || wasStatus === status) return
+  const to = await memberContact(accountId)
+  if (!to) return
+  if (status === 'canceling') {
+    const ends = periodEnd(sub)
+    const endsOn = ends ? new Date(`${ends}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
+    await sendAndLog('membership.canceled', to.email, membershipCanceled({ name: to.name, endsOn }), { accountId })
+  } else if (status === 'canceled') {
+    await sendAndLog('membership.ended', to.email, membershipEnded({ name: to.name }), { accountId })
+  } else if (status === 'active' && wasStatus === 'canceling') {
+    await sendAndLog('membership.resumed', to.email, membershipResumed({ name: to.name }), { accountId })
   }
 }
 
@@ -101,16 +132,14 @@ export async function POST(req: Request) {
           // Stripe's own receipt email covers the payment itself).
           const email = session.customer_details?.email
           if (email) {
-            await sendEmail(
-              email,
-              'Welcome to SquareOne Interactive — your membership is active',
-              `<p>Hi ${session.customer_details?.name ?? 'there'},</p>
-               <p>Your fitness membership is active. Your member code is on your account page —
-               scan it at the door any time we're open.</p>
-               <p>Manage your plan, card, or cancellation any time from
-               <a href="${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account">your account</a>.</p>
-               <p>— SquareOne Interactive, part of SquareOne Compassion</p>`,
-            )
+            const planId = sub.metadata.plan_id
+            const { data: plan } = planId
+              ? await serviceDb().from('membership_plans').select('name').eq('id', planId).maybeSingle()
+              : { data: null }
+            await sendAndLog('membership.welcome', email, membershipWelcome({
+              name: session.customer_details?.name ?? 'there',
+              plan: (plan as { name: string } | null)?.name ?? 'Fitness',
+            }), { accountId: sub.metadata.account_id ?? null })
           }
         }
         break
@@ -121,9 +150,53 @@ export async function POST(req: Request) {
         break
       // Membership charges land in our payments ledger too — add the
       // invoice.paid event to the Stripe webhook destination.
-      case 'invoice.paid':
+      case 'invoice.paid': {
         await recordInvoicePayment(event.data.object)
+        // Renewals get a receipt; the first invoice is covered by the
+        // welcome email that goes out at checkout.
+        const invoice = event.data.object
+        if (invoice.billing_reason === 'subscription_cycle') {
+          const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id
+          if (customerId) {
+            const { data: acct } = await serviceDb()
+              .from('client_accounts').select('id').eq('stripe_customer_id', customerId).maybeSingle()
+            const accountId = (acct as { id: string } | null)?.id
+            if (accountId) {
+              const to = await memberContact(accountId)
+              if (to) {
+                const line = invoice.lines?.data?.[0]
+                const ends = invoice.period_end ? new Date(invoice.period_end * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
+                await sendAndLog('membership.renewed', to.email, renewalReceipt({
+                  name: to.name,
+                  plan: line?.description ?? 'Fitness membership',
+                  amountCents: invoice.amount_paid ?? 0,
+                  nextOn: ends,
+                }), { accountId })
+              }
+            }
+          }
+        }
         break
+      }
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object
+        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id
+        if (customerId) {
+          const { data: acct } = await serviceDb()
+            .from('client_accounts').select('id').eq('stripe_customer_id', customerId).maybeSingle()
+          const accountId = (acct as { id: string } | null)?.id
+          if (accountId) {
+            const to = await memberContact(accountId)
+            if (to) {
+              await sendAndLog('membership.payment_failed', to.email, paymentFailed({
+                name: to.name,
+                amountCents: invoice.amount_due ?? 0,
+              }), { accountId })
+            }
+          }
+        }
+        break
+      }
     }
   } catch (e) {
     console.error('[billing/webhook]', e)

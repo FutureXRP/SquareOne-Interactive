@@ -5,6 +5,7 @@
 // carts); saved cards stay local until Stripe arrives.
 
 import { supabase, emit, isSupabaseConfigured } from '@/lib/supabase'
+import { notify } from '@/lib/notify-client'
 
 export const SESSION_EVENT = 'sq-session'
 
@@ -204,10 +205,10 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   }
   const withAddons = addonIds && addonIds.length > 0
   const payload = (withAddons ? { ...base, addon_ids: addonIds } : base) as typeof base
-  let res = await sb.from('bookings').insert(payload).select('code').single()
+  let res = await sb.from('bookings').insert(payload).select('id, code').single()
   // addon_ids arrives with 0022 — before it runs, retry the plain insert.
   if (res.error && withAddons && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
-    res = await sb.from('bookings').insert(base).select('code').single()
+    res = await sb.from('bookings').insert(base).select('id, code').single()
   }
   if (res.error) {
     const conflict = res.error.code === '23P01'
@@ -215,7 +216,9 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict') }
   }
   emit(SESSION_EVENT)
-  return { ok: true, code: (res.data as { code: string }).code }
+  const row = res.data as { id: string; code: string }
+  notify('booking.hold', row.id) // confirmation email, never blocks the booking
+  return { ok: true, code: row.code }
 }
 
 // ── Waivers ──────────────────────────────────────────────────

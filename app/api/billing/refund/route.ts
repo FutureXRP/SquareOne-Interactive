@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { stripe, stripeConfigured, serviceDb } from '@/lib/server/billing'
+import { stripe, stripeConfigured, serviceDb, sendAndLog } from '@/lib/server/billing'
+import { refundIssued } from '@/lib/server/emails'
 import { createClient } from '@supabase/supabase-js'
 
 // Refunds a card payment through Stripe and records it. Cash and Cash App
@@ -119,6 +120,25 @@ export async function POST(req: Request) {
       message: insertErr.message,
       stripeRefundId,
     }, { status: 500 })
+  }
+
+  // Tell the customer their money is coming back.
+  if (p.account_id) {
+    const { data: people } = await db.from('clients')
+      .select('full_name, email, is_primary')
+      .eq('account_id', p.account_id)
+      .order('is_primary', { ascending: false }).limit(1)
+    const person = (people as { full_name: string; email: string | null }[] | null)?.[0]
+    if (person?.email) {
+      const { data: pay } = await db.from('payments').select('memo').eq('id', p.id).maybeSingle()
+      await sendAndLog('refund.issued', person.email, refundIssued({
+        name: person.full_name,
+        amountCents,
+        method: p.method,
+        what: (pay as { memo: string | null } | null)?.memo ?? 'your booking',
+        reason: reason ?? '',
+      }), { accountId: p.account_id, bookingId: p.booking_id })
+    }
   }
 
   return NextResponse.json({ ok: true, stripeRefundId })
