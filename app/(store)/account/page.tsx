@@ -2,10 +2,11 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
-import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
-import { formatCents, formatHour } from '@/lib/format'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
+import { formatCents } from '@/lib/format'
 import { getPlan, getActivePlans, type EditablePlan } from '@/lib/plans-store'
-import { getRooms, roomLabel } from '@/lib/facilities-store'
+import { getRooms, type RoomConfig } from '@/lib/facilities-store'
+import { MyBookingsCard } from '@/components/store/MyBookingsCard'
 import { getMyBookings, getMyWaivers, choosePlan, cancelMembership, resumeMembership, SESSION_EVENT, type MemberBooking, type SignedWaiver } from '@/lib/session'
 import { changePlanBilled, cancelBilled, openBillingPortal } from '@/lib/billing-client'
 import { isSupabaseConfigured, emit } from '@/lib/supabase'
@@ -17,6 +18,7 @@ import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
 
 export default function AccountOverview() {
   const [bookings, setBookings] = useState<MemberBooking[]>([])
+  const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [waivers, setWaivers] = useState<SignedWaiver[]>([])
   const [plans, setPlans] = useState<EditablePlan[]>([])
   const [signingFitness, setSigningFitness] = useState(false)
@@ -28,7 +30,7 @@ export default function AccountOverview() {
     let on = true
     const sync = () => {
       Promise.all([getMyBookings(), getMyWaivers(), getRooms().catch(() => []), getActivePlans().catch(() => [])])
-        .then(([b, w, , p]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w); setPlans(p) } })
+        .then(([b, w, r, p]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w); setRooms(r); setPlans(p) } })
         .catch(() => {})
     }
     sync()
@@ -161,33 +163,8 @@ export default function AccountOverview() {
             {/* Family — everyone sharing this login, each with their own check-in */}
             <FamilyCard accountId={profile.accountId} />
 
-            {/* Upcoming bookings */}
-            <div className="sq-card" style={{ ...card, marginBottom: 24 }}>
-              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>My bookings</span>
-                <Link href="/facilities" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Book a room →</Link>
-              </div>
-              {bookings.length === 0 ? (
-                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Nothing booked yet — grab a room for your next get-together.</p>
-              ) : (
-                bookings.slice(0, 3).map((b, i) => {
-                  const zone = roomLabel(b.roomId)
-                  return (
-                    <div key={b.code} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
-                      <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{zone.name}</p>
-                        <p style={{ fontSize: 12, color: SUB, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}</p>
-                      </div>
-                      {b.status === 'hold'
-                        ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — pay deposit</span>
-                        : <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Confirmed</span>}
-                      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
-                    </div>
-                  )
-                })
-              )}
-            </div>
+            {/* Bookings — open one to see where it stands, pay, move it, or cancel */}
+            <MyBookingsCard bookings={bookings} rooms={rooms} onChanged={() => emit(SESSION_EVENT)} />
 
             {/* Waivers — one for the fitness center, one for rentals */}
             <div className="sq-card" style={card}>

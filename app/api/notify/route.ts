@@ -3,11 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
-  bookingRemoved, bookingPayment, paymentReceipt, refundIssued,
+  bookingRemoved, bookingPayment, bookingApproved, paymentReceipt, refundIssued,
   membershipCanceled, membershipResumed,
-  eventAssigned, eventGuestConfirmed, eventMoved, type BookingFacts,
+  eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
 import { eventFacts } from '@/lib/server/event-facts'
+import { bookingFacts, recipientFor } from '@/lib/server/booking-facts'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -31,76 +32,6 @@ async function callerId(req: Request): Promise<string | null> {
   return data?.user?.id ?? null
 }
 
-// The address we write to: the booking's own contact email first (walk-ins
-// booked at the desk), otherwise the account holder's.
-async function recipientFor(accountId: string | null, contactEmail: string | null): Promise<{ email: string; name: string } | null> {
-  if (contactEmail) return { email: contactEmail, name: '' }
-  if (!accountId) return null
-  const { data } = await serviceDb()
-    .from('clients')
-    .select('full_name, email, is_primary')
-    .eq('account_id', accountId)
-    .order('is_primary', { ascending: false })
-    .limit(1)
-  const row = (data as { full_name: string; email: string | null }[] | null)?.[0]
-  return row?.email ? { email: row.email, name: row.full_name } : null
-}
-
-function parseRange(during: string): { from: Date; to: Date } | null {
-  const m = /^[[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(during)
-  if (!m) return null
-  return { from: new Date(m[1]), to: new Date(m[2]) }
-}
-
-function hour(d: Date): string {
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined, timeZone: 'America/Chicago' })
-}
-
-interface BookingRecord {
-  id: string; code: string; title: string; client_name: string; during: string
-  price_cents: number; status: string; account_id: string | null
-  deposit_cents?: number | null
-  contact_email?: string | null
-  note?: string | null
-  facilities: { name: string } | null
-  payments: { amount_cents: number; status: string }[]
-}
-
-async function bookingFacts(bookingId: string): Promise<{ b: BookingRecord; facts: BookingFacts; to: { email: string; name: string } } | null> {
-  const sets = [
-    'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, facilities:facility_id(name), payments(amount_cents, status)',
-    'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, note, facilities:facility_id(name), payments(amount_cents, status)',
-    'id, code, title, client_name, during, price_cents, status, account_id, facilities:facility_id(name), payments(amount_cents, status)',
-  ]
-  let b: BookingRecord | null = null
-  for (const cols of sets) {
-    const { data, error } = await serviceDb().from('bookings').select(cols).eq('id', bookingId).maybeSingle()
-    if (!error && data) { b = data as unknown as BookingRecord; break }
-  }
-  if (!b) return null
-  const to = await recipientFor(b.account_id, b.contact_email ?? null)
-  if (!to) return null
-  const range = parseRange(b.during)
-  const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
-  const addons = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : undefined
-  return {
-    b,
-    to,
-    facts: {
-      code: b.code,
-      room: b.facilities?.name ?? 'Your room',
-      what: b.title,
-      date: range ? range.from.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' }) : '—',
-      time: range ? `${hour(range.from)} – ${hour(range.to)}` : '—',
-      priceCents: b.price_cents,
-      paidCents: paid,
-      depositCents: b.deposit_cents ?? null,
-      name: to.name || b.client_name,
-      addons,
-    },
-  }
-}
-
 export async function POST(req: Request) {
   const user = await callerId(req)
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -110,11 +41,13 @@ export async function POST(req: Request) {
 
   try {
     if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled'
-      || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted') {
+      || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted'
+      || kind === 'booking.approved') {
       const resolved = await bookingFacts(id)
       if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
       const body =
         kind === 'booking.hold' ? bookingHeld(resolved.facts)
+        : kind === 'booking.approved' ? bookingApproved(resolved.facts)
         : kind === 'booking.confirmed' ? bookingConfirmed(resolved.facts)
         : kind === 'booking.rescheduled' ? bookingRescheduled(resolved.facts)
         : kind === 'booking.updated' ? bookingUpdated(resolved.facts)

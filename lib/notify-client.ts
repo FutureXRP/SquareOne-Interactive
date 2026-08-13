@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 export type NotifyKind =
   | 'booking.hold' | 'booking.confirmed' | 'booking.canceled'
   | 'booking.rescheduled' | 'booking.updated' | 'booking.deleted'
+  | 'booking.approved'
   | 'booking.payment' | 'payment.receipt' | 'refund.issued'
   | 'membership.canceled' | 'membership.resumed'
   | 'event.assigned' | 'event.guest_confirmed' | 'event.moved'
