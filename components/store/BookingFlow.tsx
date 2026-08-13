@@ -8,6 +8,7 @@ import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/
 import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
 import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
+import { checkCoupon, couponDiscountCents, couponLabel, couponMessage, recordRedemption, type Coupon } from '@/lib/coupons-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
@@ -37,6 +38,11 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [addonConflict, setAddonConflict] = useState(false)
+  // Promo code applied to this rental
+  const [promo, setPromo] = useState('')
+  const [coupon, setCoupon] = useState<Coupon | null>(null)
+  const [promoError, setPromoError] = useState<string | null>(null)
+  const [promoBusy, setPromoBusy] = useState(false)
   const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
 
   // Dates come from the real clock, so this renders client-side only.
@@ -163,27 +169,52 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const hasRules = (f.rateRules?.length ?? 0) > 0
   const pickedAddons = addons.filter((a) => picked.includes(a.id))
   const addonsCents = pickedAddons.reduce((n, a) => n + addonPriceCents(a, hours), 0)
-  const priceCents = (day && startH != null
+  const grossCents = (day && startH != null
     ? rentalPriceCentsAt(f, day.dow, startH, hours)
     : rentalPriceCents(f, hours)) + addonsCents
+  const discountCents = coupon ? couponDiscountCents(coupon, grossCents) : 0
+  const priceCents = grossCents - discountCents
   const firstHourCents = f.firstHourCents ?? f.perHourCents
   const splitRate = firstHourCents !== f.perHourCents
   // Deposit that locks the booking in (undefined until migration 0009 runs)
   const depositCents = f.depositRequired && (f.depositCents ?? 0) > 0 ? Math.min(f.depositCents as number, priceCents) : null
+
+  const applyPromo = async () => {
+    const typed = promo.trim().toUpperCase()
+    if (!typed || promoBusy) return
+    setPromoBusy(true)
+    setPromoError(null)
+    const res = await checkCoupon(typed, 'rentals')
+    setPromoBusy(false)
+    if (res.ok) setCoupon(res.coupon)
+    else { setCoupon(null); setPromoError(couponMessage(res)) }
+  }
 
   const placeHold = async () => {
     if (!day || startH == null || requesting) return
     setRequesting(true)
     setConflict(false)
     setAddonConflict(false)
-    const note = pickedAddons.length > 0
-      ? `Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(addonPriceCents(a, hours))})`).join(', ')}`
-      : undefined
+    const parts: string[] = []
+    if (pickedAddons.length > 0) {
+      parts.push(`Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(addonPriceCents(a, hours))})`).join(', ')}`)
+    }
+    if (coupon && discountCents > 0) parts.push(`Code ${coupon.code} −${formatCents(discountCents)}`)
+    const note = parts.length > 0 ? parts.join(' · ') : undefined
     const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
       f.depositCents === undefined ? undefined : depositCents, note, picked)
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {
+      // Log the claim so caps and one-per-household hold.
+      if (coupon && discountCents > 0) {
+        recordRedemption({
+          code: coupon.code,
+          bookingId: res.id,
+          discountCents,
+          note: `${f.name} rental ${res.code}`,
+        }).catch(() => {})
+      }
       setConfirmed({ code: res.code, startH, hours, priceCents })
     } else if (res.conflict) {
       if (res.addonConflict) {
@@ -384,9 +415,45 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
               <span style={{ fontSize: 12.5, fontWeight: 600, color: INK, textAlign: 'right' }}>{v}</span>
             </div>
           ))}
+          {/* Promo code */}
+          {coupon ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '9px 0', borderBottom: `1px solid ${LINE}` }}>
+              <span style={{ fontSize: 12.5, color: GREEN, fontWeight: 700 }}>
+                <span style={{ fontFamily: 'DM Mono, monospace' }}>{coupon.code}</span>
+                <span style={{ color: FAINT, fontWeight: 500 }}> · {couponLabel(coupon)}</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>−{formatCents(discountCents)}</span>
+                <button onClick={() => { setCoupon(null); setPromo(''); setPromoError(null) }}
+                  style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 14, lineHeight: 1 }}
+                  aria-label="Remove code">×</button>
+              </span>
+            </div>
+          ) : (
+            <div style={{ padding: '9px 0', borderBottom: `1px solid ${LINE}` }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="sq-input"
+                  style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: 12, fontFamily: 'DM Mono, monospace', textTransform: 'uppercase' }}
+                  placeholder="Promo code"
+                  value={promo}
+                  onChange={(e) => { setPromo(e.target.value); setPromoError(null) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') applyPromo() }}
+                />
+                <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12 }} disabled={promoBusy || !promo.trim()} onClick={applyPromo}>
+                  {promoBusy ? '…' : 'Apply'}
+                </button>
+              </div>
+              {promoError && <p style={{ fontSize: 11, color: RED, margin: '5px 0 0', fontWeight: 600 }}>{promoError}</p>}
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 14px' }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Total</span>
             <span style={{ textAlign: 'right' }}>
+              {discountCents > 0 && (
+                <span style={{ display: 'block', fontSize: 12.5, color: FAINT, textDecoration: 'line-through', fontVariantNumeric: 'tabular-nums' }}>{formatCents(grossCents)}</span>
+              )}
               <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(priceCents)}</span>
               {depositCents != null && (
                 <span style={{ display: 'block', fontSize: 11.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>{formatCents(depositCents)} deposit locks it in</span>

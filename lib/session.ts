@@ -182,7 +182,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
 }
 
 export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[]):
-  Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
+  Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
   const sb = supabase()
@@ -218,7 +218,7 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   emit(SESSION_EVENT)
   const row = res.data as { id: string; code: string }
   notify('booking.hold', row.id) // confirmation email, never blocks the booking
-  return { ok: true, code: row.code }
+  return { ok: true, code: row.code, id: row.id }
 }
 
 // ── Waivers ──────────────────────────────────────────────────
