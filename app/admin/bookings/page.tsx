@@ -382,6 +382,9 @@ export default function AdminBookingsPage() {
                             onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
                         )}
                       </span>
+                    ) : b.standingId ? (
+                      // Put here by a standing reservation on the Calendar tab.
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '2px 10px', borderRadius: 999 }}>Standing group</span>
                     ) : isInReview(b) ? (
                       // Booked by a customer and waiting on one of us to say yes.
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>

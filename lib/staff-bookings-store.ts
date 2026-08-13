@@ -44,6 +44,8 @@ export interface StaffBooking {
   packageId?: string | null
   // Staff sign-off (migration 0033). null = still a reservation in review.
   approvedAt?: string | null
+  // Set when a standing reservation put this on the calendar (0035).
+  standingId?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -86,6 +88,7 @@ interface Row {
   payout_method?: string | null
   package_id?: string | null
   approved_at?: string | null
+  standing_id?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -94,6 +97,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -130,6 +134,7 @@ function fromRow(r: Row): StaffBooking | null {
     payoutMethod: 'payout_method' in r ? (r.payout_method ?? null) : undefined,
     packageId: 'package_id' in r ? (r.package_id ?? null) : undefined,
     approvedAt: 'approved_at' in r ? (r.approved_at ?? null) : undefined,
+    standingId: 'standing_id' in r ? (r.standing_id ?? null) : undefined,
   }
 }
 

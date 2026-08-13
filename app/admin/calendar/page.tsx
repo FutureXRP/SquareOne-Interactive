@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
-import { roomLabel, getActiveRooms } from '@/lib/facilities-store'
+import { roomLabel, getActiveRooms, type RoomConfig } from '@/lib/facilities-store'
+import { StandingReservations } from '@/components/admin/StandingReservations'
 import { getStaffBookings, BOOKINGS_EVENT, type StaffBooking } from '@/lib/staff-bookings-store'
 import {
   getEvents, addEvent, patchEvent, deleteEvent, KIND_LABEL, KIND_COLOR, STATUS_LABEL,
   EVENTS_EVENT, type StaffEvent, type EventKind, type EventStatus,
 } from '@/lib/events-store'
-import { getStaff, getMyStaff, type StaffMember } from '@/lib/staff-store'
+import { getStaff, getMyStaff, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
 import { isSupabaseConfigured, supabase as supabaseClient } from '@/lib/supabase'
 
 const START_TIMES = Array.from({ length: 30 }, (_, i) => 7 + i * 0.5) // 7 AM – 9:30 PM
@@ -31,6 +32,7 @@ export default function CalendarPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth()) // 0-11
   const [bookings, setBookings] = useState<StaffBooking[]>([])
+  const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [events, setEvents] = useState<StaffEvent[] | null>(null)
   const [staff, setStaffList] = useState<StaffMember[]>([])
@@ -57,7 +59,7 @@ export default function CalendarPage() {
     let on = true
     const sync = () => {
       Promise.all([getStaffBookings(), getActiveRooms()])
-        .then(([b]) => { if (on) setBookings(b.filter((x) => x.status === 'hold' || x.status === 'confirmed')) })
+        .then(([b, r]) => { if (on) { setBookings(b.filter((x) => x.status === 'hold' || x.status === 'confirmed')); setRooms(r) } })
         .catch(() => {})
       // Tours and events for the month on screen, plus a margin either side.
       const from = isoOf(year, month, 1)
@@ -142,6 +144,9 @@ export default function CalendarPage() {
       <PageHero title="Calendar" sub="Bookings, tours, and scheduled events on one calendar — click a day to see it all, or to schedule a tour." chip={`${monthCount} this month`}>
         <HeroStat label="On the books" value={String(bookings.length)} sub="holds + confirmed" />
       </PageHero>
+
+      {/* Standing groups first — they're what the rest of the schedule fits around */}
+      <StandingReservations rooms={rooms} canEdit={!!me && CAN_BOOK.includes(me.role)} />
 
       <div className="sq-card" style={{ ...card, padding: '16px 18px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
