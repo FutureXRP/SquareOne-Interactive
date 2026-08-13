@@ -6,7 +6,7 @@ import { formatCents } from '@/lib/format'
 import { getProducts, productLookup, PRODUCTS_EVENT, type ProductConfig } from '@/lib/products-store'
 import { useLive } from '@/lib/use-live'
 import { clearCart, getCart, setCartQty, SESSION_EVENT, type CartItem } from '@/lib/session'
-import { findCoupon, couponDiscountCents, type Coupon } from '@/lib/coupons-store'
+import { checkCoupon, couponDiscountCents, type Coupon } from '@/lib/coupons-store'
 
 export default function CartPage() {
   const { data: products } = useLive<ProductConfig[]>(getProducts, [PRODUCTS_EVENT], [])
@@ -32,9 +32,9 @@ export default function CartPage() {
 
   const applyCoupon = async () => {
     try {
-      const found = await findCoupon(code)
-      setCoupon(found)
-      setCouponError(!found && code.trim() !== '')
+      const res = await checkCoupon(code, 'shop')
+      setCoupon(res.ok ? res.coupon : null)
+      setCouponError(!res.ok && code.trim() !== '')
     } catch {
       setCoupon(null)
       setCouponError(true)

@@ -181,38 +181,21 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Coupons */}
+          {/* Coupons now have their own tab */}
           <div className="sq-card" style={card}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
               <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Coupons</span>
-              <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={addCoupon}>+ New coupon</button>
             </div>
-            {coupons.map((c, i) => (
-              <div key={c.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 20px', borderBottom: i < coupons.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
-                <input className="sq-input" style={{ width: 118, fontFamily: 'DM Mono, monospace', fontSize: 12, textTransform: 'uppercase' }} value={c.code}
-                  onChange={(e) => patchCoupon(c.code, { code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} />
-                <select className="sq-select" style={{ width: 'auto', padding: '7px 10px', fontSize: 12 }} value={c.kind} onChange={(e) => patchCoupon(c.code, { kind: e.target.value as Coupon['kind'] })}>
-                  <option value="percent">% off</option>
-                  <option value="amount">$ off</option>
-                </select>
-                {c.kind === 'percent' ? (
-                  <input className="sq-input" style={{ width: 64 }} type="number" min={1} max={100} value={c.value} onChange={(e) => patchCoupon(c.code, { value: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })} />
-                ) : (
-                  <input className="sq-input" style={{ width: 84 }} inputMode="decimal" defaultValue={(c.value / 100).toFixed(2)} key={`cv-${c.code}`}
-                    onBlur={(e) => patchCoupon(c.code, { value: dollarsToCents(e.target.value) })} />
-                )}
-                <input className="sq-input" style={{ flex: 1, minWidth: 140, fontSize: 12 }} value={c.note} onChange={(e) => patchCoupon(c.code, { note: e.target.value })} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: c.active ? GREEN : SUB, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={c.active} onChange={(e) => patchCoupon(c.code, { active: e.target.checked })} style={{ accentColor: BLUE }} />
-                  live
-                </label>
-                <button aria-label={`Remove ${c.code}`} onClick={() => removeCoupon(c.code)} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1 }}>×</button>
-              </div>
-            ))}
-            <p style={{ fontSize: 11, color: FAINT, margin: 0, padding: '10px 20px' }}>
-              Shoppers enter codes in the store cart — e.g. {coupons.filter((c) => c.active).map((c) => c.code).join(', ') || 'none live yet'}.
-              Coupon support at membership signup and booking checkout arrives with Stripe.
-            </p>
+            <div style={{ padding: '14px 20px' }}>
+              <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 10px', lineHeight: 1.55 }}>
+                Discount codes, special pricing, and free months of membership moved to their own tab, where you can
+                also set expiry dates, usage caps, and which plans a code applies to.
+                {coupons.length > 0 && ` ${coupons.filter((c) => c.active).length} of ${coupons.length} live right now.`}
+              </p>
+              <Link href="/admin/coupons" className="sq-btn sq-btn-primary" style={{ padding: '8px 16px', fontSize: 12.5, textDecoration: 'none' }}>
+                Open Coupons
+              </Link>
+            </div>
           </div>
 
           {/* Staff */}
