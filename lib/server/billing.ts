@@ -146,21 +146,40 @@ export async function sendAndLog(
   }
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+export const DEFAULT_FROM = 'SquareOne Interactive <onboarding@resend.dev>'
+
+// Sends through Resend and *throws with Resend's own words* when it
+// refuses. Silently ignoring the response is how a broken sender looks
+// healthy: the API answers 403 "domain is not verified" with a 200-shaped
+// fetch, so the status has to be checked explicitly.
+export async function sendEmail(to: string, subject: string, html: string): Promise<string> {
   const key = process.env.RESEND_API_KEY
-  if (!key || !to) return
+  if (!key) throw new Error('RESEND_API_KEY is not set on this deployment.')
+  if (!to) throw new Error('No recipient address.')
+
+  let res: Response
   try {
-    await fetch('https://api.resend.com/emails', {
+    res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM || 'SquareOne Interactive <onboarding@resend.dev>',
+        from: process.env.RESEND_FROM || DEFAULT_FROM,
         to: [to],
         subject,
         html,
       }),
     })
   } catch (e) {
-    console.error('[email]', e)
+    throw new Error(`Could not reach Resend: ${e instanceof Error ? e.message : 'network error'}`)
   }
+
+  const text = await res.text()
+  let body: { id?: string; message?: string; name?: string } = {}
+  try { body = JSON.parse(text) as typeof body } catch { /* non-JSON error page */ }
+
+  if (!res.ok) {
+    const detail = body.message || text.slice(0, 300) || res.statusText
+    throw new Error(`Resend refused it (${res.status}): ${detail}`)
+  }
+  return body.id ?? ''
 }
