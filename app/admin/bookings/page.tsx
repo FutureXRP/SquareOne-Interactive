@@ -48,6 +48,7 @@ export default function AdminBookingsPage() {
   const [showNew, setShowNew] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [payingId, setPayingId] = useState<string | null>(null)
+  const [payAmount, setPayAmount] = useState('') // blank = the whole balance
   const [conflictMsg, setConflictMsg] = useState(false)
   const [addonConflictMsg, setAddonConflictMsg] = useState(false)
   const [busyWrite, setBusyWrite] = useState(false)
@@ -377,8 +378,13 @@ export default function AdminBookingsPage() {
                             onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
                         )}
                       </span>
-                    ) : b.status === 'hold' ? (
+                    ) : b.status === 'hold' && b.paidCents === 0 ? (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
+                    ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
+                      // A deposit locks the slot in, but it isn't paid in full.
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
+                        Deposit paid · {formatCents(b.priceCents - b.paidCents)} due
+                      </span>
                     ) : (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>
                         {b.payMethod ? `Paid · ${PAY_LABEL[b.payMethod] ?? b.payMethod}` : 'Confirmed'}
@@ -388,19 +394,70 @@ export default function AdminBookingsPage() {
                     {b.status !== 'canceled' && canBook && (
                       <span style={{ display: 'flex', gap: 6 }}>
                         {b.paidCents < b.priceCents && b.priceCents > 0 && (
-                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setPayingId(isPaying ? null : b.id); setEditingId(null) }}>Take payment</button>
+                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => {
+                            setPayingId(isPaying ? null : b.id)
+                            setEditingId(null)
+                            // Open on the deposit when the room asks for one.
+                            const due = b.depositCents && b.depositCents > 0
+                              ? Math.min(Math.max(b.depositCents - b.paidCents, 0), b.priceCents - b.paidCents)
+                              : 0
+                            setPayAmount(due > 0 && due < b.priceCents - b.paidCents ? (due / 100).toFixed(2) : '')
+                          }}>{b.paidCents > 0 ? 'Take balance' : 'Take payment'}</button>
                         )}
                         <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setEditingId(isEditing ? null : b.id); setPayingId(null) }}>{isEditing ? 'Close' : 'Edit'}</button>
                       </span>
                     )}
                   </div>
 
-                  {isPaying && me && (
-                    <div style={{ padding: '4px 18px 16px 39px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Collect {formatCents(b.priceCents - b.paidCents)} by</span>
-                      <PayButtons disabled={busyWrite} onPick={async (m) => { setBusyWrite(true); await recordPayment(b, m, me.id); setBusyWrite(false); setPayingId(null) }} />
-                    </div>
-                  )}
+                  {isPaying && me && (() => {
+                    // Take the whole balance, the deposit, or any amount typed.
+                    const remaining = b.priceCents - b.paidCents
+                    const depositDue = b.depositCents && b.depositCents > 0
+                      ? Math.min(Math.max(b.depositCents - b.paidCents, 0), remaining)
+                      : 0
+                    const typed = payAmount.trim() === '' ? null : dollarsToCents(payAmount)
+                    const amount = Math.min(typed ?? remaining, remaining)
+                    const leftAfter = remaining - amount
+                    return (
+                      <div style={{ padding: '4px 18px 16px 39px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 9 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Collect</span>
+                          <input
+                            className="sq-input"
+                            style={{ width: 108, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }}
+                            inputMode="decimal"
+                            placeholder={(remaining / 100).toFixed(2)}
+                            value={payAmount}
+                            onChange={(e) => setPayAmount(e.target.value)}
+                          />
+                          {depositDue > 0 && depositDue < remaining && (
+                            <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
+                              onClick={() => setPayAmount((depositDue / 100).toFixed(2))}>
+                              Deposit {formatCents(depositDue)}
+                            </button>
+                          )}
+                          <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
+                            onClick={() => setPayAmount((remaining / 100).toFixed(2))}>
+                            Full {formatCents(remaining)}
+                          </button>
+                        </div>
+                        <PayButtons disabled={busyWrite || amount <= 0} onPick={async (m) => {
+                          setBusyWrite(true)
+                          await recordPayment(b, m, me.id, amount)
+                          setBusyWrite(false)
+                          setPayingId(null)
+                          setPayAmount('')
+                        }} />
+                        <p style={{ fontSize: 11.5, color: leftAfter > 0 ? GOLD : SUB, margin: '8px 0 0', lineHeight: 1.5 }}>
+                          {amount <= 0
+                            ? 'Enter an amount to collect.'
+                            : leftAfter > 0
+                              ? `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the slot is locked in.`
+                              : `Taking ${formatCents(amount)} — paid in full.`}
+                        </p>
+                      </div>
+                    )
+                  })()}
 
                   {isEditing && (
                     <div style={{ padding: '4px 18px 16px 39px' }}>
