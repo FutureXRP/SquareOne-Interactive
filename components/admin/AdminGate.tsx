@@ -8,6 +8,7 @@ import { getMyStaff, STAFF_EVENT, type StaffMember } from '@/lib/staff-store'
 import { isSignedIn, signInAuth, signOut, SESSION_EVENT } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { NOT_CONFIGURED_MSG } from '@/lib/use-live'
+import { ForgotPassword } from '@/components/store/ForgotPassword'
 
 type GateState =
   | { kind: 'loading' }
@@ -72,7 +73,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
   if (state.kind === 'staff') {
     return (
       <div className="sq-shell" style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar staffName={state.me.name} onSignOut={() => signOut()} />
+        <Sidebar staffName={state.me.name} staffRole={state.me.role} onSignOut={() => signOut()} />
         <main style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1 }}>{children}</div>
           <footer style={{ background: NAVY, color: 'rgba(255,255,255,0.62)', marginTop: 30 }}>
@@ -153,6 +154,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
         {error && <p style={{ fontSize: 12, color: '#cf4436', fontWeight: 600, margin: '10px 0 0', textAlign: 'center' }}>{error}</p>}
+        <ForgotPassword defaultEmail={email} />
       </form>
       <p style={{ fontSize: 11.5, color: FAINT, margin: '14px 0 0', textAlign: 'center' }}>
         Looking for the gym? <Link href="/" style={{ color: '#2f6db8', fontWeight: 600 }}>Visit the store</Link>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { AdminOnly } from '@/components/admin/AdminOnly'
 
 interface EmailCheck { label: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }
 interface DomainRow { name: string; status: string; region: string }
@@ -80,6 +81,7 @@ export default function EmailHealthPage() {
   const failures = (log ?? []).filter((l) => !l.ok)
 
   return (
+    <AdminOnly>
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1000, margin: '0 auto' }}>
       <PageHero
         title="Email health"
@@ -230,5 +232,6 @@ export default function EmailHealthPage() {
         most &quot;I already set it&quot; cases.
       </p>
     </div>
+    </AdminOnly>
   )
 }

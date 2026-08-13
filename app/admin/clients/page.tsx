@@ -1,11 +1,13 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, deleteClientAccount, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
 import { useLive } from '@/lib/use-live'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { ResetPasswordButton } from '@/components/admin/ResetPasswordButton'
+import { getMyStaff, isAdminRole, type StaffRole } from '@/lib/staff-store'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -18,6 +20,9 @@ export default function ClientsPage() {
   const [drafts, setDrafts] = useState<Record<string, { name?: string; flag?: string }>>({})
   const [adjAmount, setAdjAmount] = useState('')
   const [adjReason, setAdjReason] = useState('')
+  const [myRole, setMyRole] = useState<StaffRole | undefined>(undefined)
+
+  useEffect(() => { getMyStaff().then((me) => setMyRole(me?.role)).catch(() => {}) }, [])
 
   const debouncedPatch = useDebouncedSave(async (p: { id: string; name?: string; flag?: string | null }) => {
     await patchClientAccount(p.id, { name: p.name, flag: p.flag })
@@ -109,6 +114,20 @@ export default function ClientsPage() {
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, 1)}>Charge</button>
                     <button className="sq-btn sq-btn-primary" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, -1)}>Credit / payment</button>
                   </div>
+                  {/* Locked out? Owners and admins can help them back in. */}
+                  {isAdminRole(myRole) && (
+                    <div style={{ marginBottom: 12 }}>
+                      <span className="sq-label">Account access</span>
+                      {c.loginClientId ? (
+                        <ResetPasswordButton clientId={c.loginClientId} name={c.loginName ?? draft.name} />
+                      ) : (
+                        <p style={{ fontSize: 11.5, color: FAINT, margin: 0, lineHeight: 1.5 }}>
+                          Nobody on this account has a login yet — they sign up in the store to create one.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5, marginBottom: 10 }} onClick={() => removeAccount(c.id, draft.name)}>Delete account</button>
                   {c.recent.length > 0 && (
                     <div style={{ fontSize: 11.5, color: SUB }}>

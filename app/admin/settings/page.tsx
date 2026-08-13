@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { StaffManager } from '@/components/admin/StaffManager'
+import { PermissionsMatrix } from '@/components/admin/PermissionsMatrix'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getSiteConfig, saveSiteConfig, type SiteConfig, type Closure } from '@/lib/site-config-store'
@@ -200,6 +201,10 @@ export default function SettingsPage() {
 
           {/* Staff */}
           <StaffManager />
+
+          <div style={{ marginTop: 16 }}>
+            <PermissionsMatrix />
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

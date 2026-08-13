@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { isAdminRole, ROLE_LABEL, type StaffRole } from '@/lib/staff-store'
 import { Logo } from '@/components/Logo'
 import { newBookingsSince, bookingsSeenAt, BOOKINGS_EVENT, SEEN_EVENT } from '@/lib/staff-bookings-store'
 
@@ -55,9 +56,19 @@ const nav = [
 
 
 
-export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOut?: () => void }) {
+// Tabs whose contents only Owners and Admins can change. Managers and
+// Staff still see them — read-only — so a small lock is honest without
+// hiding how the place is set up.
+const STRUCTURAL = new Set([
+  '/admin/rooms', '/admin/addons', '/admin/packages', '/admin/content', '/admin/shop',
+  '/admin/memberships', '/admin/programs', '/admin/coupons', '/admin/forms',
+  '/admin/messages', '/admin/email', '/admin/settings',
+])
+
+export function Sidebar({ staffName, staffRole, onSignOut }: { staffName?: string; staffRole?: StaffRole; onSignOut?: () => void }) {
   const pathname = usePathname()
   const [newBookings, setNewBookings] = useState(0)
+  const canEditAll = isAdminRole(staffRole)
 
   // New-booking notifications: poll for bookings created since this device
   // last opened the Bookings tab, so store requests surface without a refresh.
@@ -97,6 +108,11 @@ export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOu
             }}>
               <span style={{ color: active ? '#2f6db8' : '#94a6bd', display: 'flex', flexShrink: 0 }}>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
+              {!canEditAll && staffRole && STRUCTURAL.has(item.href) && (
+                <span title="View only for your role" style={{ color: '#b9c5d6', display: 'flex', flexShrink: 0 }}>
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.6"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" strokeWidth="1.6"/></svg>
+                </span>
+              )}
               {item.href === '/admin/bookings' && newBookings > 0 && (
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: '#cf4436', borderRadius: 999, minWidth: 17, height: 17, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
                   {newBookings > 9 ? '9+' : newBookings}
@@ -113,7 +129,11 @@ export function Sidebar({ staffName, onSignOut }: { staffName?: string; onSignOu
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 12.5, fontWeight: 600, color: '#33415e', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{staffName ?? (isSupabaseConfigured() ? 'Live' : 'Not connected')}</p>
-            <p style={{ fontSize: 11, color: '#94a6bd', margin: 0 }}>{staffName ? 'signed in · staff' : isSupabaseConfigured() ? 'Supabase connected' : 'env vars missing'}</p>
+            <p style={{ fontSize: 11, color: '#94a6bd', margin: 0 }}>
+              {staffName
+                ? (staffRole ? `${ROLE_LABEL[staffRole]}${canEditAll ? ' · full access' : ' · day-to-day'}` : 'signed in · staff')
+                : isSupabaseConfigured() ? 'Supabase connected' : 'env vars missing'}
+            </p>
           </div>
         </div>
         {onSignOut && (

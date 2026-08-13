@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import {
-  getStaff, patchStaff, addStaff, removeStaff, linkStaffLogin,
+  getStaff, getMyStaff, patchStaff, addStaff, removeStaff, linkStaffLogin, isAdminRole,
   ROLE_LABEL, ROLE_ACCESS, ASSIGNABLE_ROLES, STAFF_EVENT, type StaffMember, type StaffRole,
 } from '@/lib/staff-store'
+import { ResetPasswordButton } from '@/components/admin/ResetPasswordButton'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -16,6 +17,7 @@ export function StaffManager() {
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [linkEmail, setLinkEmail] = useState('')
   const [linkResult, setLinkResult] = useState<'ok' | 'missing' | null>(null)
+  const [myRole, setMyRole] = useState<StaffRole | undefined>(undefined)
 
   const debouncedName = useDebouncedSave(async (p: { id: string; name: string }) => {
     await patchStaff(p.id, { name: p.name })
@@ -28,7 +30,10 @@ export function StaffManager() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     let on = true
-    const sync = () => { getStaff().then((s) => { if (on) setStaff(s) }).catch(() => {}) }
+    const sync = () => {
+      getStaff().then((s) => { if (on) setStaff(s) }).catch(() => {})
+      getMyStaff().then((me) => { if (on) setMyRole(me?.role) }).catch(() => {})
+    }
     sync()
     window.addEventListener(STAFF_EVENT, sync)
     return () => { on = false; window.removeEventListener(STAFF_EVENT, sync) }
@@ -71,6 +76,11 @@ export function StaffManager() {
             <button aria-label={`Remove ${s.name}`} onClick={() => removeStaff(s.id)} style={{ font: 'inherit', cursor: 'pointer', border: 'none', background: 'transparent', color: FAINT, fontSize: 15, lineHeight: 1, marginLeft: 'auto' }}>×</button>
           </div>
           <span style={{ fontSize: 11, color: FAINT, display: 'block', paddingLeft: 40, marginTop: 3 }}>{ROLE_ACCESS[s.role]}</span>
+          {s.linked && isAdminRole(myRole) && (
+            <div style={{ paddingLeft: 40, marginTop: 6 }}>
+              <ResetPasswordButton staffId={s.id} name={s.name} compact />
+            </div>
+          )}
           {s.cashtag !== undefined && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 40, marginTop: 6 }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: SUB }}>$</span>
