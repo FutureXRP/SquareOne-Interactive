@@ -73,3 +73,16 @@ export async function cancelBilled(resume = false): Promise<boolean> {
   if (res.ok) emit(SESSION_EVENT)
   return res.ok
 }
+
+// A member paying for their own booking — deposit or balance — without
+// anyone at the desk. Returns false when Stripe isn't live on this
+// deployment so the caller can tell them to call instead.
+export async function startBookingCheckout(bookingId: string, which: 'deposit' | 'balance'): Promise<boolean> {
+  if (!(await billingConfigured())) return false
+  const res = await authedPost('/api/billing/booking-checkout', { bookingId, which })
+  if (res.ok && res.url) {
+    window.location.assign(res.url)
+    return true
+  }
+  return false
+}

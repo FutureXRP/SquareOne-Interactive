@@ -118,6 +118,38 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
   }
 }
 
+// Staff signed off on a reservation that was sitting in review. This is
+// the email the customer has actually been waiting for — a person looked
+// at their request and said yes.
+export function bookingApproved(b: BookingFacts): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  const due = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : owed
+  return {
+    subject: `Approved — ${b.room} on ${b.date}`,
+    html: shell(
+      `Your reservation is approved, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">One of our team looked over your request and the room is yours.</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['What', b.what],
+         ['When', `${b.date}, ${b.time}`],
+         ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+         ['Total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+         ...(owed > 0 ? [['Balance due', money(owed)] as [string, string]] : []),
+       ])}
+       ${owed > 0
+         ? `<p style="margin:0 0 6px;">You can pay ${due > 0 && due < owed ? `the ${money(due)} deposit` : 'the balance'}
+            right from your account — no need to call or wait until you get here.</p>`
+         : `<p style="margin:0 0 6px;">You're paid in full, so there's nothing left to do but show up.</p>`}
+       <p style="margin:10px 0 0;">Come a few minutes early so we can get you settled. Anyone in your party
+       without a signed waiver can take care of it at the door.</p>`,
+      { label: owed > 0 ? 'Pay my balance' : 'View my booking', href: siteLink('/account') },
+    ),
+  }
+}
+
 export function bookingCanceled(b: BookingFacts): EmailBody {
   return {
     subject: `Canceled — ${b.room} on ${b.date}`,

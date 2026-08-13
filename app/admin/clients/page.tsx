@@ -7,6 +7,7 @@ import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, de
 import { useLive } from '@/lib/use-live'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { ResetPasswordButton } from '@/components/admin/ResetPasswordButton'
+import { AccountWaivers } from '@/components/admin/AccountWaivers'
 import { getMyStaff, isAdminRole, type StaffRole } from '@/lib/staff-store'
 
 function dollarsToCents(v: string): number {
@@ -114,6 +115,9 @@ export default function ClientsPage() {
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, 1)}>Charge</button>
                     <button className="sq-btn sq-btn-primary" style={{ padding: '7px 13px', fontSize: 11.5 }} onClick={() => recordAdjustment(c.id, -1)}>Credit / payment</button>
                   </div>
+                  {/* Every waiver this account has signed, kept until deleted */}
+                  <AccountWaivers accountId={c.id} canDelete={isAdminRole(myRole)} />
+
                   {/* Locked out? Owners and admins can help them back in. */}
                   {isAdminRole(myRole) && (
                     <div style={{ marginBottom: 12 }}>

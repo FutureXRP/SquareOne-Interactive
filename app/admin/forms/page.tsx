@@ -206,6 +206,14 @@ export default function FormsPage() {
                   : <span style={{ fontSize: 10, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '1px 8px', borderRadius: 999 }}>draft</span>}
               </div>
               <p style={{ fontSize: 11.5, color: SUB, margin: 0 }}>{f.linkedTo} · {f.submissions} signed</p>
+              {/* The store shows exactly the paragraphs written here and nothing
+                  else — an empty waiver collects nothing, so say so plainly. */}
+              {f.status === 'active' && f.assignTo !== 'none'
+                && !f.fields.some((fl) => fl.type === 'paragraph' && fl.content?.trim()) && (
+                <p style={{ fontSize: 11, fontWeight: 600, color: '#b07818', margin: '5px 0 0', lineHeight: 1.45 }}>
+                  No waiver text yet — add an info paragraph and nobody will be asked to sign this.
+                </p>
+              )}
             </button>
           ))}
         </div>

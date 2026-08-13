@@ -10,7 +10,8 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking,
+  BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
@@ -156,6 +157,8 @@ export default function AdminBookingsPage() {
   const onBooksCents = active.reduce((n, b) => n + b.priceCents, 0)
   const collectedCents = bookings.reduce((n, b) => n + b.paidCents, 0)
   const holds = active.filter((b) => b.status === 'hold')
+  // Customer-made reservations nobody has signed off on yet.
+  const inReview = active.filter(isInReview)
 
   const byDate = useMemo(() => {
     const groups = new Map<string, StaffBooking[]>()
@@ -175,6 +178,7 @@ export default function AdminBookingsPage() {
       <PageHero title="Bookings" sub="Create bookings for people, reschedule, and take payment by card, cash, or Cash App — right from the desk." chip={`${holds.length} holds open`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <HeroStat label="On the books" value={formatCents(onBooksCents)} sub={`${formatCents(collectedCents)} collected`} />
+          <HeroStat label="In review" value={String(inReview.length)} sub={inReview.length === 1 ? 'waiting on us' : 'waiting on us'} />
           <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={() => setShowNew((v) => !v)}>
             {showNew ? 'Close' : '+ New booking'}
           </button>
@@ -378,6 +382,14 @@ export default function AdminBookingsPage() {
                             onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
                         )}
                       </span>
+                    ) : b.standingId ? (
+                      // Put here by a standing reservation on the Calendar tab.
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '2px 10px', borderRadius: 999 }}>Standing group</span>
+                    ) : isInReview(b) ? (
+                      // Booked by a customer and waiting on one of us to say yes.
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
+                        In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ''}
+                      </span>
                     ) : b.status === 'hold' && b.paidCents === 0 ? (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
                     ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
@@ -393,6 +405,10 @@ export default function AdminBookingsPage() {
                     <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
                     {b.status !== 'canceled' && canBook && (
                       <span style={{ display: 'flex', gap: 6 }}>
+                        {isInReview(b) && (
+                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }}
+                            onClick={() => approveBooking(b.id, me?.id ?? null)}>Confirm reservation</button>
+                        )}
                         {b.paidCents < b.priceCents && b.priceCents > 0 && (
                           <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => {
                             setPayingId(isPaying ? null : b.id)

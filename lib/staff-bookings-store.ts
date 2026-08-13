@@ -42,6 +42,10 @@ export interface StaffBooking {
   payoutMethod?: string | null
   // The party package this booking sells (migration 0026). undefined = not migrated.
   packageId?: string | null
+  // Staff sign-off (migration 0033). null = still a reservation in review.
+  approvedAt?: string | null
+  // Set when a standing reservation put this on the calendar (0035).
+  standingId?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -83,6 +87,8 @@ interface Row {
   payout_paid_at?: string | null
   payout_method?: string | null
   package_id?: string | null
+  approved_at?: string | null
+  standing_id?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -91,6 +97,8 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
+  `approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `deposit_cents, ${SELECT}`,
@@ -125,7 +133,15 @@ function fromRow(r: Row): StaffBooking | null {
     payoutPaidAt: 'payout_paid_at' in r ? (r.payout_paid_at ?? null) : undefined,
     payoutMethod: 'payout_method' in r ? (r.payout_method ?? null) : undefined,
     packageId: 'package_id' in r ? (r.package_id ?? null) : undefined,
+    approvedAt: 'approved_at' in r ? (r.approved_at ?? null) : undefined,
+    standingId: 'standing_id' in r ? (r.standing_id ?? null) : undefined,
   }
+}
+
+// A booking nobody has signed off on yet. Undefined approvedAt means the
+// review migration hasn't run, so nothing is "in review".
+export function isInReview(b: StaffBooking): boolean {
+  return b.approvedAt === null && b.status !== 'canceled'
 }
 
 export async function getStaffBookings(): Promise<StaffBooking[]> {
@@ -190,6 +206,9 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     ...(b.runByStaffId ? { run_by_staff_id: b.runByStaffId } : {}),
     ...(b.packageId ? { package_id: b.packageId } : {}),
     ...(b.contactEmail ? { contact_email: b.contactEmail } : {}),
+    // A staff member writing the booking is the sign-off; only what
+    // customers book themselves waits in review.
+    ...(b.createdBy ? { approved_at: new Date().toISOString(), approved_by: b.createdBy } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
@@ -210,6 +229,21 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   // by recordPayment right after.
   if (b.hold) notify('booking.hold', row.id)
   return { ok: true, code: row.code }
+}
+
+// Staff sign-off on a reservation. This is what turns "in review" into a
+// confirmed booking for the customer.
+export async function approveBooking(id: string, staffId: string | null): Promise<boolean> {
+  const { error } = await supabase().from('bookings')
+    .update({ approved_at: new Date().toISOString(), approved_by: staffId })
+    .eq('id', id)
+  if (error) {
+    console.error('[bookings]', error.message)
+    return false
+  }
+  emit(BOOKINGS_EVENT)
+  notify('booking.approved', id)
+  return true
 }
 
 // ── Staff payouts (migration 0023) ───────────────────────────

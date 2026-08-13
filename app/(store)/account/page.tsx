@@ -2,10 +2,11 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
-import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
-import { formatCents, formatHour } from '@/lib/format'
+import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
+import { formatCents } from '@/lib/format'
 import { getPlan, getActivePlans, type EditablePlan } from '@/lib/plans-store'
-import { getRooms, roomLabel } from '@/lib/facilities-store'
+import { getRooms, type RoomConfig } from '@/lib/facilities-store'
+import { MyBookingsCard } from '@/components/store/MyBookingsCard'
 import { getMyBookings, getMyWaivers, choosePlan, cancelMembership, resumeMembership, SESSION_EVENT, type MemberBooking, type SignedWaiver } from '@/lib/session'
 import { changePlanBilled, cancelBilled, openBillingPortal } from '@/lib/billing-client'
 import { isSupabaseConfigured, emit } from '@/lib/supabase'
@@ -13,13 +14,15 @@ import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { DoorUnlock } from '@/components/store/DoorUnlock'
 import { VisitCard } from '@/components/store/VisitCard'
 import { FamilyCard } from '@/components/store/FamilyCard'
-import { FITNESS_WAIVER, WAIVERS } from '@/lib/waiver-defs'
+import { getAllWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 
 export default function AccountOverview() {
   const [bookings, setBookings] = useState<MemberBooking[]>([])
+  const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [waivers, setWaivers] = useState<SignedWaiver[]>([])
   const [plans, setPlans] = useState<EditablePlan[]>([])
-  const [signingFitness, setSigningFitness] = useState(false)
+  const [allWaivers, setAllWaivers] = useState<RequiredWaiver[]>([])
+  const [signingId, setSigningId] = useState<string | null>(null)
   const [changingPlan, setChangingPlan] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -27,8 +30,8 @@ export default function AccountOverview() {
     if (!isSupabaseConfigured()) return
     let on = true
     const sync = () => {
-      Promise.all([getMyBookings(), getMyWaivers(), getRooms().catch(() => []), getActivePlans().catch(() => [])])
-        .then(([b, w, , p]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w); setPlans(p) } })
+      Promise.all([getMyBookings(), getMyWaivers(), getRooms().catch(() => []), getActivePlans().catch(() => []), getAllWaivers().catch(() => [])])
+        .then(([b, w, r, p, aw]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w); setRooms(r); setPlans(p); setAllWaivers(aw) } })
         .catch(() => {})
     }
     sync()
@@ -161,45 +164,26 @@ export default function AccountOverview() {
             {/* Family — everyone sharing this login, each with their own check-in */}
             <FamilyCard accountId={profile.accountId} />
 
-            {/* Upcoming bookings */}
-            <div className="sq-card" style={{ ...card, marginBottom: 24 }}>
-              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>My bookings</span>
-                <Link href="/facilities" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Book a room →</Link>
-              </div>
-              {bookings.length === 0 ? (
-                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>Nothing booked yet — grab a room for your next get-together.</p>
-              ) : (
-                bookings.slice(0, 3).map((b, i) => {
-                  const zone = roomLabel(b.roomId)
-                  return (
-                    <div key={b.code} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < Math.min(bookings.length, 3) - 1 ? `1px solid ${LINE}` : 'none' }}>
-                      <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{zone.name}</p>
-                        <p style={{ fontSize: 12, color: SUB, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}</p>
-                      </div>
-                      {b.status === 'hold'
-                        ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — pay deposit</span>
-                        : <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Confirmed</span>}
-                      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
-                    </div>
-                  )
-                })
-              )}
-            </div>
+            {/* Bookings — open one to see where it stands, pay, move it, or cancel */}
+            <MyBookingsCard bookings={bookings} rooms={rooms} onChanged={() => emit(SESSION_EVENT)} />
 
-            {/* Waivers — one for the fitness center, one for rentals */}
+            {/* Waivers — the live forms staff publish, and where this member stands on each */}
             <div className="sq-card" style={card}>
               <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}` }}>
                 <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Waivers</span>
                 <span style={{ fontSize: 11.5, color: FAINT, marginLeft: 10 }}>signed as part of joining or booking</span>
               </div>
-              {WAIVERS.map((def, i) => {
+              {allWaivers.length === 0 ? (
+                <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>
+                  Nothing to sign right now — we&rsquo;ll ask when a membership or booking needs it.
+                </p>
+              ) : allWaivers.map((def, i) => {
                 const signed = waivers.find((w) => w.formId === def.id)
-                const fitnessNeeded = def.id === FITNESS_WAIVER.id && !signed && !!profile.planId
+                // Only fitness waivers can be caught up here; rental waivers
+                // belong to a specific booking.
+                const canSignNow = !signed && def.context.startsWith('Required with a gym membership') && !!profile.planId
                 return (
-                  <div key={def.id} style={{ borderBottom: i < WAIVERS.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+                  <div key={def.id} style={{ borderBottom: i < allWaivers.length - 1 ? `1px solid ${LINE}` : 'none' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px' }}>
                       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: signed ? GREEN : '#c3cede' }}><rect x="1.5" y="1.5" width="13" height="13" rx="4" fill={signed ? '#e5f2ea' : '#eef2f8'}/><path d="M4.8 8.3l2.2 2.2 4.2-4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -208,19 +192,17 @@ export default function AccountOverview() {
                       </div>
                       {signed ? (
                         <span style={{ fontSize: 12, color: FAINT }}>{signed.signedOn}</span>
-                      ) : fitnessNeeded ? (
-                        <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 12 }} onClick={() => setSigningFitness((v) => !v)}>
-                          {signingFitness ? 'Hide' : 'Sign now'}
+                      ) : canSignNow ? (
+                        <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 12 }} onClick={() => setSigningId(signingId === def.id ? null : def.id)}>
+                          {signingId === def.id ? 'Hide' : 'Sign now'}
                         </button>
                       ) : (
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>
-                          {def.id === FITNESS_WAIVER.id ? 'signed at signup' : 'signed when booking'}
-                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>not signed yet</span>
                       )}
                     </div>
-                    {fitnessNeeded && signingFitness && (
+                    {canSignNow && signingId === def.id && (
                       <div style={{ padding: '0 20px 16px' }}>
-                        <WaiverPanel def={FITNESS_WAIVER} compact defaultName={profile.name} onSigned={() => setSigningFitness(false)} />
+                        <WaiverPanel def={def} compact defaultName={profile.name} onSigned={() => setSigningId(null)} />
                       </div>
                     )}
                   </div>

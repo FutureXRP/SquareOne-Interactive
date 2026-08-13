@@ -148,37 +148,60 @@ export function setCard(card: ProfileCard) {
 
 // ── Member bookings ──────────────────────────────────────────
 export interface MemberBooking {
+  id: string
   code: string
   roomId: string
+  title: string
   date: string
   startH: number
   hours: number
   priceCents: number
+  paidCents: number
+  depositCents: number | null
   status: string
+  // null = still a reservation in review; undefined = 0033 not run yet
+  approvedAt?: string | null
+  note?: string | null
 }
 
 export async function getMyBookings(): Promise<MemberBooking[]> {
   // RLS scopes this to the member's own account.
-  const { data, error } = await supabase()
-    .from('bookings')
-    .select('code, facility_id, during, price_cents, status')
-    .order('during', { ascending: false })
-    .limit(20)
-  if (error) throw error
-  interface Row { code: string; facility_id: string; during: string; price_cents: number; status: string }
-  return (data as Row[]).flatMap((r) => {
+  const sets = [
+    'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, payments(amount_cents, status)',
+    'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, payments(amount_cents, status)',
+    'id, code, facility_id, title, during, price_cents, status, payments(amount_cents, status)',
+  ]
+  interface Row {
+    id: string; code: string; facility_id: string; title?: string; during: string
+    price_cents: number; status: string; note?: string | null
+    deposit_cents?: number | null; approved_at?: string | null
+    payments: { amount_cents: number; status: string }[]
+  }
+  let rows: Row[] | null = null
+  for (const cols of sets) {
+    const res = await supabase().from('bookings').select(cols).order('during', { ascending: false }).limit(20)
+    if (!res.error) { rows = res.data as unknown as Row[]; break }
+  }
+  if (!rows) throw new Error('bookings query failed')
+  return rows.flatMap((r) => {
     const m = /^[\[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(r.during)
     if (!m) return []
     const from = new Date(m[1])
     const to = new Date(m[2])
     return [{
+      id: r.id,
       code: r.code,
       roomId: r.facility_id,
+      title: r.title ?? 'Room rental',
       date: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`,
       startH: from.getHours() + from.getMinutes() / 60,
       hours: (to.getTime() - from.getTime()) / 3600_000,
       priceCents: r.price_cents,
+      paidCents: (r.payments ?? []).filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0),
+      depositCents: r.deposit_cents ?? null,
       status: r.status,
+      approvedAt: 'approved_at' in r ? (r.approved_at ?? null) : undefined,
+      note: r.note ?? null,
     }]
   })
 }
@@ -223,6 +246,34 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   return { ok: true, code: row.code, id: row.id }
 }
 
+// ── My bookings: cancel and move ─────────────────────────────
+
+export async function cancelMyBooking(id: string): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase().rpc('member_cancel_booking', { p_id: id })
+  if (error) return { ok: false, error: error.message }
+  emit(SESSION_EVENT)
+  notify('booking.canceled', id)
+  return { ok: true }
+}
+
+export async function rescheduleMyBooking(id: string, date: string, startH: number, hours: number):
+  Promise<{ ok: boolean; conflict?: boolean; error?: string }> {
+  const [y, mo, d] = date.split('-').map(Number)
+  const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const to = new Date(from.getTime() + hours * 3600_000)
+  const { error } = await supabase().rpc('member_reschedule_booking', {
+    p_id: id, p_from: from.toISOString(), p_to: to.toISOString(),
+  })
+  if (error) {
+    // The exclusion constraint means somebody else holds that slot.
+    if (error.code === '23P01' || error.message.includes('conflict')) return { ok: false, conflict: true }
+    return { ok: false, error: error.message }
+  }
+  emit(SESSION_EVENT)
+  notify('booking.rescheduled', id)
+  return { ok: true }
+}
+
 // ── Waivers ──────────────────────────────────────────────────
 export interface SignedWaiver {
   formId: string
@@ -232,15 +283,22 @@ export interface SignedWaiver {
 }
 
 export async function getMyWaivers(): Promise<SignedWaiver[]> {
-  const { data, error } = await supabase()
-    .from('form_submissions')
-    .select('form_id, participant, signed_at, forms(name)')
-    .order('signed_at', { ascending: false })
-  if (error) throw error
-  interface Row { form_id: string; participant: string; signed_at: string; forms: { name: string } | null }
-  return (data as unknown as Row[]).map((r) => ({
+  // form_name is the name we stored at signing (0034); the live form name
+  // is the fallback for anything signed before that.
+  const sets = [
+    'form_id, participant, signed_at, form_name, forms(name)',
+    'form_id, participant, signed_at, forms(name)',
+  ]
+  interface Row { form_id: string; participant: string; signed_at: string; form_name?: string | null; forms: { name: string } | null }
+  let rows: Row[] | null = null
+  for (const cols of sets) {
+    const res = await supabase().from('form_submissions').select(cols).order('signed_at', { ascending: false })
+    if (!res.error) { rows = res.data as unknown as Row[]; break }
+  }
+  if (!rows) throw new Error('waivers query failed')
+  return rows.map((r) => ({
     formId: r.form_id,
-    formName: r.forms?.name ?? r.form_id,
+    formName: r.form_name || r.forms?.name || r.form_id,
     participant: r.participant,
     signedOn: new Date(r.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   }))
@@ -252,7 +310,16 @@ export async function hasWaiver(formId: string): Promise<boolean> {
   return (data as unknown[]).length > 0
 }
 
-export async function signWaiver(formId: string, signedBy: string, participant: string, responses?: Record<string, string[]>): Promise<boolean> {
+// `snapshot` is the waiver exactly as it appeared on screen. Stored with
+// the signature so the record survives later edits to the form — what they
+// agreed to is what we keep.
+export async function signWaiver(
+  formId: string,
+  signedBy: string,
+  participant: string,
+  responses?: Record<string, string[]>,
+  snapshot?: { name: string; terms: string[] },
+): Promise<boolean> {
   const profile = await getProfile()
   const base = {
     form_id: formId,
@@ -262,11 +329,22 @@ export async function signWaiver(formId: string, signedBy: string, participant: 
     signature: signedBy,
   }
   const withResponses = responses && Object.keys(responses).length > 0
-  const payload = (withResponses ? { ...base, responses } : base) as typeof base
-  let { error } = await supabase().from('form_submissions').insert(payload)
-  // responses column arrives with migration 0013 — never lose a signature over it
-  if (error && withResponses && error.code === 'PGRST204') {
-    ;({ error } = await supabase().from('form_submissions').insert(base))
+  // Each extra column arrives with its own migration (responses 0013,
+  // the snapshot 0034); a missing one must never cost us a signature.
+  const attempts = [
+    {
+      ...base,
+      ...(withResponses ? { responses } : {}),
+      ...(snapshot ? { form_name: snapshot.name, signed_terms: snapshot.terms } : {}),
+    },
+    { ...base, ...(withResponses ? { responses } : {}) },
+    base,
+  ]
+  let error: { code?: string; message: string } | null = null
+  for (const payload of attempts) {
+    const res = await supabase().from('form_submissions').insert(payload as typeof base)
+    error = res.error
+    if (!error || (error.code !== 'PGRST204' && error.code !== '42703')) break
   }
   if (error) {
     console.error('[session]', error.message)

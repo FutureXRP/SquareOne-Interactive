@@ -1,17 +1,30 @@
 'use client'
-// Which waivers a store flow must collect, driven by the assignment rules
-// staff set on the Forms & Waivers tab. Falls back to the two built-in
-// waivers when Supabase (or the assignment migration) isn't available yet.
+// Waivers, start to finish, from the Forms & Waivers tab and nowhere else.
+// The name, the paragraphs people actually agree to, the questions, where
+// it's required, and how often — every word of it is what staff wrote on
+// that page. There is deliberately no built-in waiver text in the codebase
+// to fall back on: if no form is assigned to a flow, that flow collects no
+// waiver rather than quietly presenting language nobody approved.
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { FITNESS_WAIVER, RENTAL_WAIVER, type WaiverDef } from '@/lib/waiver-defs'
 
 export type WaiverFrequency = 'once' | 'annual' | 'every_time'
 // 'fitness' = fitness signup, any plan; { planId } filters plan-targeted
 // waivers; { roomId } is a rental booking for that room.
 export type WaiverTarget = 'fitness' | { planId: string } | { roomId: string }
 
-export interface RequiredWaiver extends WaiverDef {
+export interface WaiverChoice {
+  label: string
+  options: string[]
+  required: boolean
+}
+
+export interface RequiredWaiver {
+  id: string
+  name: string
+  context: string
+  terms: string[]
+  choices: WaiverChoice[]
   frequency: WaiverFrequency
 }
 
@@ -21,10 +34,19 @@ export const FREQUENCY_NOTE: Record<WaiverFrequency, string> = {
   every_time: 'signed with every booking',
 }
 
+interface FormField {
+  type: string
+  label?: string
+  content?: string
+  required?: boolean
+  options?: string[]
+}
+
 interface FormRow {
   id: string
   name: string
-  fields: { type: string; content?: string }[]
+  fields: FormField[]
+  assign_to?: string
   assign_room_ids: string[] | null
   assign_plan_ids?: string[] | null
   frequency: WaiverFrequency
@@ -32,54 +54,73 @@ interface FormRow {
 
 const isFitness = (t: WaiverTarget) => t === 'fitness' || 'planId' in t
 
-function toRequired(r: FormRow, target: WaiverTarget): RequiredWaiver {
-  const paras = (Array.isArray(r.fields) ? r.fields : [])
-    .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
-    .map((f) => (f.content as string).trim())
-  const builtin = isFitness(target) ? FITNESS_WAIVER : RENTAL_WAIVER
+// A form row becomes exactly what the store shows — paragraphs in the
+// order staff arranged them, multi-select questions with their options.
+export function toWaiver(r: FormRow, where?: string): RequiredWaiver {
+  const fields = Array.isArray(r.fields) ? r.fields : []
+  const frequency = r.frequency ?? 'once'
   return {
     id: r.id,
     name: r.name,
-    context: `${isFitness(target) ? 'Required with a gym membership' : 'Required with this rental'} · ${FREQUENCY_NOTE[r.frequency]}`,
-    terms: paras.length > 0 ? paras : builtin.terms,
-    frequency: r.frequency ?? 'once',
+    context: [where, FREQUENCY_NOTE[frequency]].filter(Boolean).join(' · '),
+    terms: fields
+      .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
+      .map((f) => (f.content as string).trim()),
+    choices: fields
+      .filter((f) => f.type === 'multi' && Array.isArray(f.options) && f.options.length > 0)
+      .map((f) => ({ label: f.label ?? '', options: f.options as string[], required: !!f.required })),
+    frequency,
   }
 }
 
-function builtinFor(target: WaiverTarget): RequiredWaiver[] {
-  const def = isFitness(target) ? FITNESS_WAIVER : RENTAL_WAIVER
-  return [{ ...def, frequency: 'once' }]
+// assign_plan_ids arrives with 0017 and frequency/assign_to with 0004 —
+// each select falls back to the last shape that worked.
+const COL_SETS = [
+  'id, name, fields, assign_to, assign_room_ids, assign_plan_ids, frequency',
+  'id, name, fields, assign_to, assign_room_ids, frequency',
+  'id, name, fields',
+]
+
+async function activeForms(assignTo?: 'fitness' | 'rentals'): Promise<FormRow[] | null> {
+  for (const cols of COL_SETS) {
+    let q = supabase().from('forms').select(cols).eq('status', 'active')
+    // assign_to only exists from 0004 on; the bare select can't filter on it.
+    if (assignTo && cols.includes('assign_to')) q = q.eq('assign_to', assignTo)
+    const { data, error } = await q.order('id')
+    if (!error) return data as unknown as FormRow[]
+  }
+  return null
 }
 
-// Every active form assigned to this flow, in stable order.
+// Every active waiver assigned to this flow, in stable order.
 export async function getRequiredWaivers(target: WaiverTarget): Promise<RequiredWaiver[]> {
-  if (!isSupabaseConfigured()) return builtinFor(target)
-  // assign_plan_ids arrives with migration 0017 — retry without it.
-  let res: { data: unknown; error: unknown } = await supabase()
-    .from('forms')
-    .select('id, name, fields, assign_room_ids, assign_plan_ids, frequency')
-    .eq('status', 'active')
-    .eq('assign_to', isFitness(target) ? 'fitness' : 'rentals')
-    .order('id')
-  if (res.error) {
-    res = await supabase()
-      .from('forms')
-      .select('id, name, fields, assign_room_ids, frequency')
-      .eq('status', 'active')
-      .eq('assign_to', isFitness(target) ? 'fitness' : 'rentals')
-      .order('id')
-  }
-  // Column missing means the assignment migration hasn't run — keep the
-  // built-in behavior so waivers are never silently skipped.
-  if (res.error) return builtinFor(target)
-  let rows = res.data as unknown as FormRow[]
+  if (!isSupabaseConfigured()) return []
+  const fitness = isFitness(target)
+  let rows = await activeForms(fitness ? 'fitness' : 'rentals')
+  if (!rows) return []
+  // Rooms and plans can each narrow a waiver to specific ones; an empty
+  // list means "everywhere in this flow".
   if (typeof target === 'object' && 'roomId' in target) {
     rows = rows.filter((r) => !r.assign_room_ids || r.assign_room_ids.length === 0 || r.assign_room_ids.includes(target.roomId))
   }
   if (typeof target === 'object' && 'planId' in target) {
     rows = rows.filter((r) => !r.assign_plan_ids || r.assign_plan_ids.length === 0 || r.assign_plan_ids.includes(target.planId))
   }
-  return rows.map((r) => toRequired(r, target))
+  return rows.map((r) => toWaiver(r, fitness ? 'Required with a gym membership' : 'Required with this rental'))
+}
+
+// Every active waiver on the books, whatever flow it belongs to — what the
+// member's account page lists so they can see where they stand on each.
+export async function getAllWaivers(): Promise<RequiredWaiver[]> {
+  if (!isSupabaseConfigured()) return []
+  const rows = await activeForms()
+  if (!rows) return []
+  return rows.map((r) => toWaiver(
+    r,
+    r.assign_to === 'fitness' ? 'Required with a gym membership'
+      : r.assign_to === 'rentals' ? 'Required with a rental'
+      : undefined,
+  ))
 }
 
 // Does this signer still owe a signature, given the form's frequency?
@@ -98,9 +139,10 @@ async function needsSignature(w: RequiredWaiver): Promise<boolean> {
   return Date.now() - signedMs > 365 * 24 * 60 * 60 * 1000
 }
 
-// The waivers this flow still has to collect right now.
+// The waivers this flow still has to collect right now. A form with no
+// paragraphs has nothing to agree to, so it isn't put in front of anyone.
 export async function unsignedRequiredWaivers(target: WaiverTarget): Promise<RequiredWaiver[]> {
-  const required = await getRequiredWaivers(target)
+  const required = (await getRequiredWaivers(target)).filter((w) => w.terms.length > 0)
   const due: RequiredWaiver[] = []
   for (const w of required) {
     if (await needsSignature(w)) due.push(w)
