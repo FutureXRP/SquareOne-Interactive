@@ -22,7 +22,7 @@ export interface Coupon {
   freeMonths?: number
   maxRedemptions?: number | null
   oncePerAccount?: boolean
-  expiresOn?: string | null // YYYY-MM-DD
+  expiresOn?: string | null // YYYY-MM-DD — required once 0031 has run
   planIds?: string[]
   redeemed?: number // count, filled by getCoupons
 }
@@ -71,6 +71,34 @@ export async function getCoupons(): Promise<Coupon[]> {
   throw new Error('coupons query failed')
 }
 
+// Every coupon carries an end date. A code with no expiry set yet gets
+// the default window rather than living forever.
+export const DEFAULT_EXPIRY_DAYS = 90
+
+export function defaultExpiry(days = DEFAULT_EXPIRY_DAYS): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function isExpired(c: Coupon): boolean {
+  if (!c.expiresOn) return false
+  return c.expiresOn < defaultExpiry(0)
+}
+
+// "expires in 12 days" · "expired Aug 2" — for the admin list.
+export function expiryLabel(c: Coupon): string {
+  if (!c.expiresOn) return 'no end date yet'
+  const when = new Date(`${c.expiresOn}T12:00:00`)
+  const days = Math.round((when.getTime() - Date.now()) / 86_400_000)
+  const pretty = when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (days < 0) return `expired ${pretty}`
+  if (days === 0) return 'expires today'
+  if (days === 1) return 'expires tomorrow'
+  if (days <= 30) return `expires in ${days} days`
+  return `expires ${pretty}`
+}
+
 export async function upsertCoupon(c: Coupon, previousCode?: string): Promise<boolean> {
   const sb = supabase()
   if (previousCode && previousCode !== c.code) {
@@ -89,7 +117,8 @@ export async function upsertCoupon(c: Coupon, previousCode?: string): Promise<bo
     ...(c.freeMonths !== undefined ? { free_months: c.freeMonths } : {}),
     ...(c.maxRedemptions !== undefined ? { max_redemptions: c.maxRedemptions } : {}),
     ...(c.oncePerAccount !== undefined ? { once_per_account: c.oncePerAccount } : {}),
-    ...(c.expiresOn !== undefined ? { expires_on: c.expiresOn } : {}),
+    // Never write a null end date — the column is required after 0031.
+    ...(c.expiresOn !== undefined ? { expires_on: c.expiresOn || defaultExpiry() } : {}),
     ...(c.planIds !== undefined ? { plan_ids: c.planIds } : {}),
   }))
   if (ok) emit(COUPONS_EVENT)

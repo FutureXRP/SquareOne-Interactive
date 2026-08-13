@@ -6,6 +6,7 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme
 import { formatCents } from '@/lib/format'
 import {
   getCoupons, upsertCoupon, deleteCoupon, getRedemptions, couponLabel,
+  defaultExpiry, expiryLabel, isExpired,
   COUPONS_EVENT, type Coupon, type CouponContext, type Redemption,
 } from '@/lib/coupons-store'
 import { getPlans, type EditablePlan } from '@/lib/plans-store'
@@ -52,6 +53,7 @@ export default function CouponsAdminPage() {
 
   const editing = coupons.find((c) => c.code === editingCode) ?? null
   const migrated = editing ? editing.appliesTo !== undefined : coupons.some((c) => c.appliesTo !== undefined)
+  const expired = editing ? isExpired(editing) : false
 
   const patch = (code: string, p: Partial<Coupon>) => {
     setCoupons((cur) => {
@@ -82,7 +84,7 @@ export default function CouponsAdminPage() {
       freeMonths: 0,
       maxRedemptions: null,
       oncePerAccount: true,
-      expiresOn: null,
+      expiresOn: defaultExpiry(), // every code ends — 90 days unless changed
       planIds: [],
       ...preset,
     }
@@ -125,6 +127,7 @@ export default function CouponsAdminPage() {
             freeMonths: 1,
             appliesTo: 'memberships',
             oncePerAccount: true,
+            expiresOn: defaultExpiry(90),
             note: 'One free month for members moving from the old system',
             active: true,
           })}>
@@ -151,11 +154,17 @@ export default function CouponsAdminPage() {
                 {(c.freeMonths ?? 0) > 0 && (
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '1px 8px', borderRadius: 999 }}>free months</span>
                 )}
+                {isExpired(c) && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: RED, background: '#fae7e4', padding: '1px 8px', borderRadius: 999 }}>expired</span>
+                )}
               </div>
               <span style={{ display: 'block', fontSize: 11.5, color: SUB }}>
                 {couponLabel(c)}
                 {c.redeemed !== undefined && ` · used ${c.redeemed}${c.maxRedemptions ? ` of ${c.maxRedemptions}` : ''}`}
               </span>
+              {c.expiresOn !== undefined && (
+                <span style={{ display: 'block', fontSize: 11, color: isExpired(c) ? RED : FAINT, marginTop: 1 }}>{expiryLabel(c)}</span>
+              )}
             </button>
           ))}
           {coupons.length === 0 && (
@@ -296,10 +305,16 @@ export default function CouponsAdminPage() {
                       }} />
                   </div>
                   <div>
-                    <label className="sq-label" htmlFor="c-exp">Expires on</label>
-                    <input id="c-exp" type="date" className="sq-input"
+                    <label className="sq-label" htmlFor="c-exp">
+                      Expires on <span style={{ color: RED }}>*</span>
+                    </label>
+                    <input id="c-exp" type="date" className="sq-input" required
+                      style={{ borderColor: !editing.expiresOn ? RED : undefined }}
                       value={editing.expiresOn ?? ''}
-                      onChange={(e) => patch(editing.code, { expiresOn: e.target.value || null })} />
+                      onChange={(e) => patch(editing.code, { expiresOn: e.target.value || defaultExpiry() })} />
+                    <p style={{ fontSize: 10.5, color: expired ? RED : FAINT, margin: '4px 0 0', fontWeight: expired ? 700 : 400 }}>
+                      {expiryLabel(editing)}
+                    </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 9 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: SUB, cursor: 'pointer' }}>
@@ -316,6 +331,13 @@ export default function CouponsAdminPage() {
               <p style={{ fontSize: 11.5, color: GOLD, fontWeight: 600, margin: '12px 0 0', lineHeight: 1.55 }}>
                 Free months, expiry dates, usage caps, and where a code applies all need 0030_coupons.sql —
                 run it in Supabase to unlock them. Percent and dollar-off codes work today.
+              </p>
+            )}
+
+            {expired && editing.active && (
+              <p style={{ fontSize: 12, color: RED, fontWeight: 700, margin: '12px 0 0' }}>
+                This code is past its end date — shoppers get &quot;that code has expired&quot; even though it&apos;s switched on.
+                Push the date out to bring it back.
               </p>
             )}
 
@@ -360,9 +382,10 @@ export default function CouponsAdminPage() {
       </div>
 
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 14, lineHeight: 1.6 }}>
-        Codes are never listed publicly — a shopper has to know the code, and the database re-checks it at checkout,
-        so an expired or used-up code can&apos;t be forced through. <span style={{ color: RED }}>Deleting</span> a code
-        stops future use but doesn&apos;t take back what people already claimed.
+        Every code carries an end date — new ones start at 90 days out, and you can move it any time. Codes are never
+        listed publicly: a shopper has to know the code, and the database re-checks it at checkout, so an expired or
+        used-up code can&apos;t be forced through. <span style={{ color: RED }}>Deleting</span> a code stops future use
+        but doesn&apos;t take back what people already claimed.
       </p>
     </div>
     </AdminOnly>
