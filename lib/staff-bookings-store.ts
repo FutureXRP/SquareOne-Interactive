@@ -4,6 +4,7 @@
 // from here. Money is integer cents.
 
 import { supabase, emit } from '@/lib/supabase'
+import { notify } from '@/lib/notify-client'
 
 export const BOOKINGS_EVENT = 'sq-staff-bookings'
 
@@ -163,6 +164,7 @@ export interface NewBooking {
   addonIds?: string[] // reserved extras (0022)
   runByStaffId?: string | null // who runs the event (0023)
   packageId?: string | null // party package this booking sells (0026)
+  contactEmail?: string | null // where the guest's confirmation goes (0029)
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -187,13 +189,15 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     ...(b.addonIds && b.addonIds.length > 0 ? { addon_ids: b.addonIds } : {}),
     ...(b.runByStaffId ? { run_by_staff_id: b.runByStaffId } : {}),
     ...(b.packageId ? { package_id: b.packageId } : {}),
+    ...(b.contactEmail ? { contact_email: b.contactEmail } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
-  let res = await sb.from('bookings').insert(payload).select('code').single()
-  // addon_ids / run_by_staff_id arrive with 0022/0023 — retry plain before then.
+  let res = await sb.from('bookings').insert(payload).select('id, code').single()
+  // addon_ids / run_by_staff_id / contact_email arrive with 0022/0023/0029
+  // — retry plain before then.
   if (res.error && hasExtras && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
-    res = await sb.from('bookings').insert(base).select('code').single()
+    res = await sb.from('bookings').insert(base).select('id, code').single()
   }
   if (res.error) {
     const conflict = res.error.code === '23P01' // exclusion constraint or addon trigger
@@ -201,7 +205,11 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict') }
   }
   emit(BOOKINGS_EVENT)
-  return { ok: true, code: (res.data as { code: string }).code }
+  const row = res.data as { id: string; code: string }
+  // Holds email a "we're holding it" note; paid bookings get confirmed
+  // by recordPayment right after.
+  if (b.hold) notify('booking.hold', row.id)
+  return { ok: true, code: row.code }
 }
 
 // ── Staff payouts (migration 0023) ───────────────────────────
@@ -280,13 +288,14 @@ export async function rescheduleBooking(id: string, date: string, startH: number
   return { ok: true, conflict: false }
 }
 
-export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null }): Promise<boolean> {
+export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null }): Promise<boolean> {
   const { error } = await supabase().from('bookings').update(patch).eq('id', id)
   if (error) {
     console.error('[bookings]', error.message)
     return false
   }
   emit(BOOKINGS_EVENT)
+  if (patch.status === 'canceled') notify('booking.canceled', id)
   return true
 }
 
@@ -298,7 +307,7 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   const amount = Math.min(amountCents ?? remaining, remaining)
   if (amount <= 0) return false
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
-  const { error } = await sb.from('payments').insert({
+  const { data: paymentRow, error } = await sb.from('payments').insert({
     org_id: (org as { id: string }).id,
     booking_id: booking.id,
     method,
@@ -306,7 +315,7 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
     amount_cents: amount,
     memo: `${booking.title} · ${booking.code}`,
     taken_by: staffId,
-  })
+  }).select('id').single()
   if (error) {
     console.error('[payments]', error.message)
     return false
@@ -322,6 +331,10 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   }
   await supabase().from('bookings').update({ status: 'confirmed', note: null, hold_expires_at: null }).eq('id', booking.id)
   emit(BOOKINGS_EVENT)
+  // Receipt, plus a confirmation once the booking is paid in full.
+  const paymentId = (paymentRow as { id: string } | null)?.id
+  if (paymentId) notify('payment.receipt', paymentId)
+  if (booking.paidCents + amount >= booking.priceCents) notify('booking.confirmed', booking.id)
   return true
 }
 

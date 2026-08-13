@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { stripe, stripeConfigured, getCaller, ensurePlanPrice, subscriptionIdFor, serviceDb } from '@/lib/server/billing'
+import { stripe, stripeConfigured, getCaller, ensurePlanPrice, subscriptionIdFor, serviceDb, sendAndLog } from '@/lib/server/billing'
+import { membershipChanged } from '@/lib/server/emails'
 
 // Upgrades or downgrades the member's fitness plan. With an active Stripe
 // subscription the price swaps with proration; either way the database plan
@@ -27,9 +28,28 @@ export async function POST(req: Request) {
         }
       }
     }
-    await serviceDb().from('member_subscriptions')
+    const db = serviceDb()
+    await db.from('member_subscriptions')
       .update({ plan_id: planId, status: 'active' })
       .eq('account_id', caller.accountId)
+
+    // Confirmation of the change, with the new price.
+    const { data: plan } = await db.from('membership_plans')
+      .select('name, price_cents, period').eq('id', planId).maybeSingle()
+    const { data: people } = await db.from('clients')
+      .select('full_name, email, is_primary')
+      .eq('account_id', caller.accountId)
+      .order('is_primary', { ascending: false }).limit(1)
+    const person = (people as { full_name: string; email: string | null }[] | null)?.[0]
+    const p = plan as { name: string; price_cents: number; period: string } | null
+    if (person?.email && p) {
+      await sendAndLog('membership.changed', person.email, membershipChanged({
+        name: person.full_name,
+        plan: p.name,
+        priceCents: p.price_cents,
+        period: p.period,
+      }), { accountId: caller.accountId })
+    }
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error('[billing/change-plan]', e)

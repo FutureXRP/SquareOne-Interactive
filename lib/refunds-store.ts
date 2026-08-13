@@ -5,6 +5,7 @@
 // and recorded here (cash also leaves the cash bag). Needs 0027.
 
 import { supabase, emit } from '@/lib/supabase'
+import { notify } from '@/lib/notify-client'
 
 export const REFUNDS_EVENT = 'sq-refunds'
 
@@ -102,7 +103,7 @@ export async function refundPayment(
   // Cash / Cash App / check / ACH — money handed back in person.
   const { data: org, error: orgErr } = await sb.from('organizations').select('id').limit(1).single()
   if (orgErr) return { ok: false, reason: 'failed', message: orgErr.message }
-  const { error } = await sb.from('refunds').insert({
+  const { data: refundRow, error } = await sb.from('refunds').insert({
     org_id: (org as { id: string }).id,
     payment_id: payment.id,
     account_id: payment.accountId ?? null,
@@ -111,7 +112,7 @@ export async function refundPayment(
     method: payment.method,
     reason,
     refunded_by: staffId,
-  })
+  }).select('id').single()
   if (error) {
     if (error.code === '42P01') return { ok: false, reason: 'not_migrated' }
     if (error.message.includes('refund_exceeds_payment')) return { ok: false, reason: 'too_much' }
@@ -128,6 +129,8 @@ export async function refundPayment(
       staff_id: staffId,
     })
   }
+  const refundId = (refundRow as { id: string } | null)?.id
+  if (refundId) notify('refund.issued', refundId)
   emit(REFUNDS_EVENT)
   return { ok: true, viaStripe: false }
 }

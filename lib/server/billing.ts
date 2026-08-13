@@ -110,6 +110,42 @@ export function siteUrl(req: Request): string {
 
 // Optional welcome/confirmation email via Resend — silently skipped until
 // RESEND_API_KEY (and optionally RESEND_FROM) are set.
+// Sends and writes a row to email_log so staff can answer "did they get
+// it?" without digging through Resend. Logging is best effort — a missing
+// email_log table (pre-0029) never blocks the send.
+export async function sendAndLog(
+  kind: string,
+  to: string,
+  body: { subject: string; html: string },
+  meta: { accountId?: string | null; bookingId?: string | null } = {},
+): Promise<void> {
+  if (!to) return
+  let ok = true
+  let error: string | null = null
+  try {
+    await sendEmail(to, body.subject, body.html)
+  } catch (e) {
+    ok = false
+    error = e instanceof Error ? e.message : 'send failed'
+  }
+  try {
+    const db = serviceDb()
+    const { data: org } = await db.from('organizations').select('id').limit(1).single()
+    await db.from('email_log').insert({
+      org_id: (org as { id: string }).id,
+      kind,
+      to_email: to,
+      subject: body.subject,
+      ok,
+      error,
+      account_id: meta.accountId ?? null,
+      booking_id: meta.bookingId ?? null,
+    })
+  } catch {
+    // email_log arrives with 0029 — never let logging break a send
+  }
+}
+
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
   const key = process.env.RESEND_API_KEY
   if (!key || !to) return

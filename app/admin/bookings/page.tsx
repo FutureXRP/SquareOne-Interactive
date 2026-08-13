@@ -65,6 +65,7 @@ export default function AdminBookingsPage() {
   const [nbAddons, setNbAddons] = useState<string[]>([])
   const [nbRunBy, setNbRunBy] = useState('')
   const [nbPackage, setNbPackage] = useState('')
+  const [nbEmail, setNbEmail] = useState('')
   const [nbTaken, setNbTaken] = useState<string[]>([]) // extras booked elsewhere for this window
   const [packages, setPackages] = useState<EventPackage[]>([])
 
@@ -132,6 +133,7 @@ export default function AdminBookingsPage() {
       addonIds: nbAddons,
       runByStaffId: nbRunBy || null,
       packageId: nbPackage || null,
+      contactEmail: nbEmail.trim() || null,
     })
     if (res.ok && nbPay !== 'hold') {
       // Collect immediately: find the row we just made and record the payment.
@@ -142,7 +144,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage('')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail('')
     } else if (res.conflict) {
       if (res.addonConflict) setAddonConflictMsg(true)
       else setConflictMsg(true)
@@ -203,6 +205,10 @@ export default function AdminBookingsPage() {
             <div>
               <label className="sq-label" htmlFor="nb-title">What is it? (optional)</label>
               <input id="nb-title" className="sq-input" value={nbTitle} onChange={(e) => setNbTitle(e.target.value)} placeholder="Birthday party" />
+            </div>
+            <div>
+              <label className="sq-label" htmlFor="nb-email">Their email (for the confirmation)</label>
+              <input id="nb-email" type="email" className="sq-input" value={nbEmail} onChange={(e) => setNbEmail(e.target.value)} placeholder="parent@email.com" />
             </div>
             {packages.length > 0 && (
               <div>

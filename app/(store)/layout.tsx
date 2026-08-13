@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { StoreHeader } from '@/components/store/StoreHeader'
 import { FooterInfo } from '@/components/store/FooterInfo'
 import { FooterVisit, ContentText } from '@/components/store/FooterNav'
+import { StaffLink } from '@/components/store/StaffLink'
 import { NAVY } from '@/lib/theme'
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,12 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
                 </span>
               ))}
             </div>
-            <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}><ContentText k="footer.tagline" fallback="part of SquareOne Compassion · a 501(c)(3)" /></span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px 16px', flexWrap: 'wrap' }}>
+              <Link href="/terms" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none' }}>Terms of Service</Link>
+              <Link href="/privacy" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none' }}>Privacy Policy</Link>
+              <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}><ContentText k="footer.tagline" fallback="part of SquareOne Compassion · a 501(c)(3)" /></span>
+              <StaffLink />
+            </div>
           </div>
         </div>
       </footer>
