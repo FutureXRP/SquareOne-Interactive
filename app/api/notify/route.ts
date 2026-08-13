@@ -4,8 +4,10 @@ import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
   bookingRemoved, bookingPayment, paymentReceipt, refundIssued,
-  membershipCanceled, membershipResumed, type BookingFacts,
+  membershipCanceled, membershipResumed,
+  eventAssigned, eventGuestConfirmed, eventMoved, type BookingFacts,
 } from '@/lib/server/emails'
+import { eventFacts } from '@/lib/server/event-facts'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -192,6 +194,26 @@ export async function POST(req: Request) {
         what: r.payments?.memo ?? 'your booking',
         reason: r.reason,
       }), { accountId: r.account_id, bookingId: r.booking_id })
+      return NextResponse.json({ ok: true })
+    }
+
+    // Tours and scheduled events: the staff member who's running it, and
+    // the visitor who's coming in.
+    if (kind === 'event.assigned' || kind === 'event.guest_confirmed' || kind === 'event.moved') {
+      const resolved = await eventFacts(id)
+      if (!resolved) return NextResponse.json({ ok: true, skipped: 'not_found' })
+      const { e, facts, staffEmail, guestEmail } = resolved
+      if (kind === 'event.assigned' && staffEmail) {
+        await sendAndLog('event.assigned', staffEmail, eventAssigned(facts), {})
+      }
+      if (kind === 'event.guest_confirmed' && guestEmail) {
+        await sendAndLog('event.guest_confirmed', guestEmail, eventGuestConfirmed(facts), {})
+      }
+      if (kind === 'event.moved') {
+        if (staffEmail) await sendAndLog('event.moved', staffEmail, eventMoved(facts, true), {})
+        if (guestEmail) await sendAndLog('event.moved', guestEmail, eventMoved(facts, false), {})
+      }
+      void e
       return NextResponse.json({ ok: true })
     }
 
