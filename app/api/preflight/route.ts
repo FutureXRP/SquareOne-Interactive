@@ -115,12 +115,35 @@ export async function POST(req: Request) {
       fix: 'Set NEXT_PUBLIC_SITE_URL to the address customers actually type, then redeploy.',
     })
   } else {
-    const matches = !origin || site.replace(/\/$/, '') === origin.replace(/\/$/, '')
-    add({
-      group: 'Site', label: 'Site address', status: matches ? 'ok' : 'warn',
-      detail: matches ? `Set to ${site}.` : `Set to ${site}, but you are looking at this page on ${origin}.`,
-      fix: matches ? undefined : 'Point NEXT_PUBLIC_SITE_URL at the address customers use, so payment redirects and email links land there.',
-    })
+    // This one is easy to fill in wrongly, and the failure is expensive:
+    // everything else is built by appending a path to it, so a scheme-less
+    // value or a stray path silently corrupts every payment redirect and
+    // every link in every email.
+    let shape: string | null = null
+    if (!/^https?:\/\//i.test(site)) {
+      shape = 'It has no https:// on the front. Stripe rejects a redirect URL that isn\'t absolute, so checkout would fail before the customer saw a card form.'
+    } else {
+      let path = ''
+      try { path = new URL(site).pathname } catch { shape = 'That is not a URL Stripe or a browser can use.' }
+      if (!shape && path && path !== '/') {
+        shape = `It ends in a path (${path}). This is the base address everything else gets appended to, so pay links would come out as ${site}/pay/… — set it to just the scheme and host.`
+      }
+    }
+
+    if (shape) {
+      add({
+        group: 'Site', label: 'Site address', status: 'fail',
+        detail: `NEXT_PUBLIC_SITE_URL is ${site}. ${shape}`,
+        fix: `Set it to just the address customers open, with nothing after the host — for example ${origin || 'https://your-app.vercel.app'} — then redeploy.`,
+      })
+    } else {
+      const matches = !origin || site.replace(/\/$/, '') === origin.replace(/\/$/, '')
+      add({
+        group: 'Site', label: 'Site address', status: matches ? 'ok' : 'warn',
+        detail: matches ? `Set to ${site}.` : `Set to ${site}, but you are looking at this page on ${origin}.`,
+        fix: matches ? undefined : `Point NEXT_PUBLIC_SITE_URL at the address customers use — probably ${origin} — so payment redirects and email links land there. The Stripe webhook endpoint has to match it too.`,
+      })
+    }
   }
 
   // ── Email ──────────────────────────────────────────────────
