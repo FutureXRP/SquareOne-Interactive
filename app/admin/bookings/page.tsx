@@ -139,6 +139,7 @@ export default function AdminBookingsPage() {
       runByStaffId: nbRunBy || null,
       packageId: nbPackage || null,
       contactEmail: nbEmail.trim() || null,
+      ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
     })
     if (res.ok && nbPay !== 'hold') {
       const fresh = await getStaffBookings()

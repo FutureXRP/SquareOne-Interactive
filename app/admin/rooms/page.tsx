@@ -220,6 +220,25 @@ export default function RoomsAdminPage() {
                   </select>
                 </div>
               )}
+              {/* Unbilled time the calendar holds around every booking (0039) */}
+              {editing.setupMin !== undefined && (
+                <>
+                  <div>
+                    <label className="sq-label" htmlFor="r-setup">Setup time before</label>
+                    <select id="r-setup" className="sq-select" value={editing.setupMin} onChange={(e) => patch(editing.id, { setupMin: Number(e.target.value) })}>
+                      <option value={0}>None</option>
+                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m >= 60 ? `${m / 60} hour${m > 60 ? 's' : ''}` : `${m} min`}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="sq-label" htmlFor="r-cleanup">Cleanup time after</label>
+                    <select id="r-cleanup" className="sq-select" value={editing.cleanupMin ?? 0} onChange={(e) => patch(editing.id, { cleanupMin: Number(e.target.value) })}>
+                      <option value={0}>None</option>
+                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m >= 60 ? `${m / 60} hour${m > 60 ? 's' : ''}` : `${m} min`}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
               <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: SUB, cursor: 'pointer' }}>
                   <input type="checkbox" checked={editing.active} onChange={(e) => patch(editing.id, { active: e.target.checked })} style={{ accentColor: BLUE }} />
@@ -228,6 +247,13 @@ export default function RoomsAdminPage() {
               </div>
             </div>
 
+            {editing.setupMin !== undefined && (editing.setupMin > 0 || (editing.cleanupMin ?? 0) > 0) && (
+              <p style={{ fontSize: 11, color: FAINT, margin: '-6px 0 14px', lineHeight: 1.5 }}>
+                Setup and cleanup time is held on the calendar around every booking of this room — a 6 PM
+                booking with an hour of setup blocks the room from 5 PM — but the customer is neither
+                shown nor charged for it. Changing this affects new bookings only.
+              </p>
+            )}
             <p style={{ fontSize: 11, color: FAINT, margin: '-6px 0 14px', lineHeight: 1.5 }}>
               {editing.firstHourCents !== undefined
                 ? 'The booking calculator charges the first-hour rate for hour one and the additional-hour rate for every hour after — set them equal for flat pricing. The advertised prices below are the chips shown on the room’s store card — keep them in sync.'

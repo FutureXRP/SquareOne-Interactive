@@ -206,7 +206,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   })
 }
 
-export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[]):
+export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }):
   Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
@@ -227,6 +227,9 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     hold_expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
     ...(depositCents !== undefined ? { deposit_cents: depositCents } : {}),
     ...(note ? { note } : {}),
+    // The room's unbilled setup/cleanup window (0039) — priced at zero,
+    // guarded by the calendar.
+    ...(buffers ? { setup_min: buffers.setupMin, cleanup_min: buffers.cleanupMin } : {}),
   }
   const withAddons = addonIds && addonIds.length > 0
   const payload = (withAddons ? { ...base, addon_ids: addonIds } : base) as typeof base
