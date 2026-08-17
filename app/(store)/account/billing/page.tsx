@@ -16,6 +16,7 @@ function BillingContent() {
   const [stripeLive, setStripeLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
 
   useEffect(() => { billingConfigured().then(setStripeLive) }, [])
   const [number, setNumber] = useState('')
@@ -76,14 +77,27 @@ function BillingContent() {
               </div>
 
               {stripeLive ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <p style={{ fontSize: 13.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
-                    Your card is stored securely with Stripe — add, update, or change it any time.
-                  </p>
-                  <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} disabled={busy}
-                    onClick={async () => { setBusy(true); await openBillingPortal(); setBusy(false) }}>
-                    Manage card &amp; invoices
-                  </button>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: 13.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+                      Your card is stored securely with Stripe — add, update, or change it any time.
+                    </p>
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }} disabled={busy}
+                      onClick={async () => {
+                        setBusy(true)
+                        setPortalError(null)
+                        const res = await openBillingPortal()
+                        setBusy(false)
+                        if (!res.ok) setPortalError(res.message ?? 'Stripe could not open the billing portal. Give us a call and we will update your card at the desk.')
+                      }}>
+                      Manage card &amp; invoices
+                    </button>
+                  </div>
+                  {portalError && (
+                    <p style={{ fontSize: 12.5, color: '#a33427', background: '#fae7e4', border: '1px solid #f0cdc7', borderRadius: 9, padding: '10px 12px', margin: '12px 0 0', lineHeight: 1.55 }}>
+                      {portalError}
+                    </p>
+                  )}
                 </div>
               ) : !editing ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

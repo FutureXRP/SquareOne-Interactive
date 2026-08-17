@@ -72,7 +72,9 @@ export default function AccountOverview() {
     setBusy(true)
     const opened = await openBillingPortal()
     setBusy(false)
-    if (!opened) window.location.assign('/account/billing') // local card page until Stripe is live
+    // A message means Stripe answered and refused; that belongs on the
+    // billing page where there's room to explain it.
+    if (!opened.ok) window.location.assign('/account/billing') // local card page until Stripe is live
   }
 
   return (
