@@ -2,7 +2,20 @@ import Link from 'next/link'
 import { card, INK, SUB, FAINT, LINE, NAVY, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { bookingForToken } from '@/lib/server/pay-links'
+import { serviceDb } from '@/lib/server/billing'
 import { PayPanel } from './PayPanel'
+
+// The facility's $cashtag, when staff have set one on Settings. Empty
+// string (or a pre-0040 database) simply hides the Cash App option.
+async function cashtag(): Promise<string> {
+  try {
+    const { data, error } = await serviceDb().from('site_config').select('cashapp_cashtag').limit(1).maybeSingle()
+    if (error) return ''
+    return ((data as { cashapp_cashtag?: string } | null)?.cashapp_cashtag ?? '').trim()
+  } catch {
+    return ''
+  }
+}
 
 // Where a booking email's pay button lands. No sign-in — the link itself
 // is the authorisation, the way a payment link on an invoice is — and it
@@ -45,7 +58,7 @@ export default async function PayPage({ params, searchParams }: {
 }) {
   const { token } = await params
   const { paid } = await searchParams
-  const found = await bookingForToken(token)
+  const [found, tag] = await Promise.all([bookingForToken(token), cashtag()])
 
   if (!found) {
     return (
@@ -113,7 +126,7 @@ export default async function PayPage({ params, searchParams }: {
             you settled.
           </p>
         ) : (
-          <PayPanel token={token} target={t} />
+          <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} />
         )}
       </div>
 

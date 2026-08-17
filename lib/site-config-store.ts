@@ -26,6 +26,9 @@ export interface SiteConfig {
   // Per-day hours, Sunday(0)–Saturday(6). undefined = migration 0010 not run.
   hoursByDay?: DaySchedule[]
   closures?: Closure[]
+  // Our $cashtag for direct Cash App payments (0040). undefined = not
+  // migrated; '' = feature off.
+  cashappCashtag?: string
 }
 
 interface Row {
@@ -40,6 +43,7 @@ interface Row {
   sunday_close_min: number
   hours_by_day?: unknown
   closures?: unknown
+  cashapp_cashtag?: string
 }
 
 const FALLBACK: SiteConfig = {
@@ -91,6 +95,7 @@ export async function getSiteConfig(): Promise<SiteConfig> {
     sundayCloseH: r.sunday_close_min / 60,
     hoursByDay: 'hours_by_day' in r ? normalizeHours(r.hours_by_day) : undefined,
     closures: 'closures' in r ? normalizeClosures(r.closures) : undefined,
+    cashappCashtag: 'cashapp_cashtag' in r ? (r.cashapp_cashtag ?? '') : undefined,
   }
 }
 
@@ -112,6 +117,7 @@ export async function saveSiteConfig(cfg: SiteConfig): Promise<boolean> {
     sunday_close_min: Math.round((sunday?.closeH ?? cfg.sundayCloseH) * 60),
     ...(cfg.hoursByDay !== undefined ? { hours_by_day: cfg.hoursByDay } : {}),
     ...(cfg.closures !== undefined ? { closures: cfg.closures } : {}),
+    ...(cfg.cashappCashtag !== undefined ? { cashapp_cashtag: cfg.cashappCashtag.replace(/^\$/, '').trim() } : {}),
   }).eq('org_id', orgIdCache))
   if (ok) emit(SITE_CONFIG_EVENT)
   return ok

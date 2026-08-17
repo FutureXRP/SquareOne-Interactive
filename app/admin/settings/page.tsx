@@ -99,6 +99,18 @@ export default function SettingsPage() {
                 <label className="sq-label" htmlFor="s-phone">Phone</label>
                 <input id="s-phone" className="sq-input" value={cfg.phone} onChange={(e) => patchCfg({ phone: e.target.value })} />
               </div>
+              {cfg.cashappCashtag !== undefined && (
+                <div>
+                  <label className="sq-label" htmlFor="s-cashtag">Cash App $cashtag</label>
+                  <input id="s-cashtag" className="sq-input" value={cfg.cashappCashtag} placeholder="SquareOneTulsa"
+                    onChange={(e) => patchCfg({ cashappCashtag: e.target.value })} />
+                  <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Shown on booking pay pages as a &ldquo;pay us directly&rdquo; option. Payments to it are
+                    verified by staff on the Payments tab before a booking reads paid. Leave blank to
+                    turn the option off.
+                  </p>
+                </div>
+              )}
             </div>
             {cfg.hoursByDay === undefined ? (
               <>
