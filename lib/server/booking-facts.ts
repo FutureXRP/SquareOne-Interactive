@@ -18,11 +18,14 @@ export interface BookingRecord {
   note?: string | null
   approved_at?: string | null
   pay_token?: string | null
+  canceled_via?: string | null
+  canceled_by_staff?: { name: string } | null
   facilities: { name: string } | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, facilities:facility_id(name), payments(amount_cents, status)',
@@ -84,6 +87,8 @@ export async function bookingFacts(bookingId: string):
       addons,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
+      canceledVia: (b.canceled_via as BookingFacts['canceledVia']) ?? undefined,
+      canceledByName: b.canceled_by_staff?.name ?? undefined,
     },
   }
 }

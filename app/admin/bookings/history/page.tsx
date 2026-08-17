@@ -5,7 +5,7 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { roomLabel, getActiveRooms, type RoomConfig } from '@/lib/facilities-store'
-import { getPastBookings, PAY_LABEL, type StaffBooking } from '@/lib/staff-bookings-store'
+import { getPastBookings, canceledByLabel, PAY_LABEL, type StaffBooking } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 // Everything that already happened, back a year. Kept off the main
@@ -154,7 +154,9 @@ export default function BookingHistoryPage() {
                       </p>
                     </div>
                     {b.status === 'canceled' ? (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>
+                        {canceledByLabel(b) ?? 'Canceled'}
+                      </span>
                     ) : owed > 0 ? (
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: RED, background: '#fae7e4', padding: '2px 10px', borderRadius: 999 }}>
                         {formatCents(owed)} never collected
