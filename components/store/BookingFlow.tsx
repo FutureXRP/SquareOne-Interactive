@@ -202,7 +202,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     if (coupon && discountCents > 0) parts.push(`Code ${coupon.code} −${formatCents(discountCents)}`)
     const note = parts.length > 0 ? parts.join(' · ') : undefined
     const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
-      f.depositCents === undefined ? undefined : depositCents, note, picked)
+      f.depositCents === undefined ? undefined : depositCents, note, picked,
+      // The room's unbilled setup/cleanup window rides along so the
+      // calendar holds it (0039).
+      f.setupMin !== undefined ? { setupMin: f.setupMin, cleanupMin: f.cleanupMin ?? 0 } : undefined)
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {

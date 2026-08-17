@@ -208,6 +208,9 @@ export interface NewBooking {
   runByStaffId?: string | null // who runs the event (0023)
   packageId?: string | null // party package this booking sells (0026)
   contactEmail?: string | null // where the guest's confirmation goes (0029)
+  // Unbilled buffer copied from the room at creation (0039).
+  setupMin?: number
+  cleanupMin?: number
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -236,6 +239,8 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     // A staff member writing the booking is the sign-off; only what
     // customers book themselves waits in review.
     ...(b.createdBy ? { approved_at: new Date().toISOString(), approved_by: b.createdBy } : {}),
+    ...(b.setupMin !== undefined ? { setup_min: b.setupMin } : {}),
+    ...(b.cleanupMin !== undefined ? { cleanup_min: b.cleanupMin } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base

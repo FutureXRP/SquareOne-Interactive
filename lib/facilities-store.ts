@@ -46,6 +46,9 @@ export interface RoomConfig {
   // 'flat': payoutValue is cents. 'percent': payoutValue is whole percent of the booking.
   payoutKind?: 'none' | 'flat' | 'percent'
   payoutValue?: number
+  // Unbilled time held around every booking (0039). undefined = not migrated.
+  setupMin?: number
+  cleanupMin?: number
 }
 
 export interface RateRule {
@@ -116,6 +119,8 @@ interface FacilityRow {
   addon_ids?: string[] | null
   payout_kind?: string | null
   payout_value?: number | null
+  setup_min?: number | null
+  cleanup_min?: number | null
   facility_prices: { label: string; cents: number; sort: number }[]
 }
 
@@ -138,6 +143,8 @@ function fromRow(r: FacilityRow): RoomConfig {
     depositRequired: 'deposit_required' in r ? !!r.deposit_required : undefined,
     rateRules: 'rate_rules' in r ? normalizeRules(r.rate_rules) : undefined,
     minNoticeHours: 'min_notice_hours' in r ? (r.min_notice_hours ?? 48) : undefined,
+    setupMin: 'setup_min' in r ? (r.setup_min ?? 0) : undefined,
+    cleanupMin: 'cleanup_min' in r ? (r.cleanup_min ?? 0) : undefined,
     addonIds: 'addon_ids' in r ? (Array.isArray(r.addon_ids) ? r.addon_ids : []) : undefined,
     payoutKind: 'payout_kind' in r
       ? (r.payout_kind === 'flat' || r.payout_kind === 'percent' ? r.payout_kind : 'none')
@@ -150,6 +157,7 @@ const BASE_COLS = 'id, name, color, blurb, capacity_label, min_hours, per_hour_c
 // Columns added by later migrations, newest first — we retry without them
 // until the matching migration has been run, so rooms never disappear.
 const COL_SETS = [
+  `setup_min, cleanup_min, photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, payout_kind, payout_value, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, payout_kind, payout_value, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, addon_ids, ${BASE_COLS}`,
   `photo_url, first_hour_cents, booking_hours, deposit_cents, deposit_required, rate_rules, min_notice_hours, ${BASE_COLS}`,
@@ -211,6 +219,8 @@ export async function saveRoom(room: RoomConfig): Promise<boolean> {
     ...(room.depositRequired !== undefined ? { deposit_required: room.depositRequired } : {}),
     ...(room.rateRules !== undefined ? { rate_rules: room.rateRules } : {}),
     ...(room.minNoticeHours !== undefined ? { min_notice_hours: room.minNoticeHours } : {}),
+    ...(room.setupMin !== undefined ? { setup_min: room.setupMin } : {}),
+    ...(room.cleanupMin !== undefined ? { cleanup_min: room.cleanupMin } : {}),
     ...(room.addonIds !== undefined ? { addon_ids: room.addonIds } : {}),
     ...(room.payoutKind !== undefined ? { payout_kind: room.payoutKind } : {}),
     ...(room.payoutValue !== undefined ? { payout_value: room.payoutValue } : {}),
