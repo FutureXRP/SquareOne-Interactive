@@ -3,11 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
-  bookingRemoved, bookingPayment, bookingApproved, paymentReceipt, refundIssued,
+  bookingRemoved, bookingPayment, bookingApproved, bookingStaffAssigned, paymentReceipt, refundIssued,
   membershipCanceled, membershipResumed,
   eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
-import { eventFacts } from '@/lib/server/event-facts'
+import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, recipientFor } from '@/lib/server/booking-facts'
 
 // Confirmation emails for things that happen in the browser — a member
@@ -54,6 +54,32 @@ export async function POST(req: Request) {
         : kind === 'booking.deleted' ? bookingRemoved(resolved.facts)
         : bookingCanceled(resolved.facts)
       await sendAndLog(kind, resolved.to.email, body, { accountId: resolved.b.account_id, bookingId: resolved.b.id })
+      return NextResponse.json({ ok: true })
+    }
+
+    // A staff member put on a booking to run it. This one goes to them,
+    // not the customer, and the address is looked up from the assignment
+    // on the row — the browser names the booking and nothing else.
+    if (kind === 'booking.staff_assigned') {
+      const db = serviceDb()
+      const { data } = await db.from('bookings')
+        .select('run_by_staff_id, payout_cents, staff:run_by_staff_id(name, user_id)')
+        .eq('id', id)
+        .maybeSingle()
+      const row = data as unknown as {
+        run_by_staff_id: string | null
+        payout_cents: number | null
+        staff: { name: string; user_id: string | null } | null
+      } | null
+      if (!row?.staff?.user_id) return NextResponse.json({ ok: true, skipped: 'no_staff_login' })
+      const to = await emailForStaffUser(row.staff.user_id)
+      if (!to) return NextResponse.json({ ok: true, skipped: 'no_email' })
+      const resolved = await bookingFacts(id)
+      if (!resolved) return NextResponse.json({ ok: true, skipped: 'not_found' })
+      await sendAndLog('booking.staff_assigned', to, bookingStaffAssigned(resolved.facts, {
+        staffName: row.staff.name,
+        payoutCents: row.payout_cents,
+      }), { bookingId: id })
       return NextResponse.json({ ok: true })
     }
 

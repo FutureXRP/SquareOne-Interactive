@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
+import { ReconcileStripe } from '@/components/admin/ReconcileStripe'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED, GOLD } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import {
@@ -125,6 +126,9 @@ export default function PaymentsPage() {
           {drawer && <HeroStat label="Cash bag" value={formatCents(drawer.balanceCents)} sub="on hand" />}
         </div>
       </PageHero>
+
+      {/* Money Stripe took that never reached our ledger */}
+      <ReconcileStripe />
 
       {/* Staff payouts — due once the customer has paid in full */}
       {payoutsMigrated && (

@@ -228,6 +228,8 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   // Holds email a "we're holding it" note; paid bookings get confirmed
   // by recordPayment right after.
   if (b.hold) notify('booking.hold', row.id)
+  // Somebody named as running this at the desk gets their shift email now.
+  if (b.runByStaffId) notify('booking.staff_assigned', row.id)
   return { ok: true, code: row.code }
 }
 
@@ -255,6 +257,9 @@ export async function setBookingRunBy(id: string, staffId: string | null): Promi
     return false
   }
   emit(BOOKINGS_EVENT)
+  // Tell them they're on it. Unassigning is silent — there's nothing
+  // useful to say to somebody who has just been taken off a shift by email.
+  if (staffId) notify('booking.staff_assigned', id)
   return true
 }
 
@@ -507,4 +512,28 @@ export async function facilityBusy(facilityId: string, date: string): Promise<{ 
     const to = new Date(r.busy_to)
     return { fromH: from.getHours() + from.getMinutes() / 60, toH: to.getHours() + to.getMinutes() / 60 }
   })
+}
+
+// Everything that already happened, newest first, back as far as `months`.
+// Kept out of the main Bookings tab so the desk's day-to-day list stays
+// about what's ahead — history is its own page.
+export async function getPastBookings(months = 12): Promise<StaffBooking[]> {
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - months)
+  const now = new Date().toISOString()
+  for (const cols of SELECT_SETS) {
+    const { data, error } = await supabase()
+      .from('bookings')
+      .select(cols)
+      // Range comparisons, not scalar ones: `sl` is "ends entirely before"
+      // and `sr` is "starts entirely after". A booking is past once its end
+      // time has gone by, not its start — something running right now still
+      // belongs to today.
+      .rangeLt('during', `[${now},${now}]`)
+      .rangeGt('during', `[${cutoff.toISOString()},${cutoff.toISOString()}]`)
+      .order('during', { ascending: false })
+      .limit(2000)
+    if (!error) return (data as unknown as Row[]).map(fromRow).filter((b): b is StaffBooking => b !== null)
+  }
+  throw new Error('bookings query failed')
 }

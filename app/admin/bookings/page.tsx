@@ -565,12 +565,17 @@ export default function AdminBookingsPage() {
             ? `${dayCount(byDate.today[0][1])} today`
             : 'Nothing booked today'}
         </span>
-        {canceledCount > 0 && (
-          <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5 }}
-            onClick={() => setShowCanceled((v) => !v)}>
-            {showCanceled ? 'Hide' : 'Show'} {canceledCount} canceled
-          </button>
-        )}
+        <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canceledCount > 0 && (
+            <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5 }}
+              onClick={() => setShowCanceled((v) => !v)}>
+              {showCanceled ? 'Hide' : 'Show'} {canceledCount} canceled
+            </button>
+          )}
+          <Link href="/admin/bookings/history" className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5 }}>
+            Past bookings →
+          </Link>
+        </span>
       </div>
 
       {!hasAny && (

@@ -165,6 +165,30 @@ export function bookingApproved(b: BookingFacts): EmailBody {
   }
 }
 
+// A staff member has been put on a booking to run it. Their shift, not
+// the customer's confirmation — so it carries what they need to show up
+// prepared, and what they'll be paid if a payout is set.
+export function bookingStaffAssigned(b: BookingFacts, s: { staffName: string; payoutCents?: number | null }): EmailBody {
+  return {
+    subject: `You're running ${b.what} — ${b.date}`,
+    html: shell(
+      `You're on for this one, ${s.staffName.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">You've been assigned to run a booking.</p>
+       ${detailRows([
+         ['What', b.what],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ['Booked for', b.name],
+         ['Confirmation', b.code],
+         ...(b.addons ? [['Extras to set up', b.addons] as [string, string]] : []),
+         ...(s.payoutCents && s.payoutCents > 0 ? [['You earn', money(s.payoutCents)] as [string, string]] : []),
+       ])}
+       <p style="margin:0;">If you can't make it, tell a manager so it can be handed to someone else.</p>`,
+      { label: 'Open the schedule', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
 export function bookingCanceled(b: BookingFacts): EmailBody {
   return {
     subject: `Canceled — ${b.room} on ${b.date}`,
