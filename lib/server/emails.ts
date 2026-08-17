@@ -68,6 +68,21 @@ export interface BookingFacts {
   depositCents?: number | null
   name: string
   addons?: string
+  // Direct link that pays this one booking, no sign-in needed. Undefined
+  // until migration 0037 has run.
+  payUrl?: string
+}
+
+// The button on any email about a booking with money still owed. Sends
+// them straight to paying that booking rather than to the front door of
+// the site to go looking for it. Falls back to the account page when the
+// pay-link migration hasn't run, and for anyone who owes nothing.
+function bookingCta(b: BookingFacts, paidLabel = 'View my booking'): { label: string; href: string } {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  if (owed <= 0 || !b.payUrl) return { label: paidLabel, href: siteLink('/account') }
+  const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
+  const due = depositDue > 0 && depositDue < owed ? depositDue : owed
+  return { label: `Pay ${money(due)} now`, href: b.payUrl }
 }
 
 export function bookingHeld(b: BookingFacts): EmailBody {
@@ -90,7 +105,7 @@ export function bookingHeld(b: BookingFacts): EmailBody {
        It locks in once we have ${money(due)}${b.depositCents && b.depositCents > 0 ? ' as a deposit' : ''}.
        Holds expire after 24 hours so the room doesn't sit empty.</p>
        <p style="margin:10px 0 0;">Need to change something? Reply here or call the front desk — we're happy to move things around.</p>`,
-      { label: 'View my booking', href: siteLink('/account') },
+      bookingCta(b),
     ),
   }
 }
@@ -113,7 +128,7 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
        ])}
        <p style="margin:0;">Come a few minutes early so we can get you settled. If anyone in your party hasn't
        signed a waiver yet, they can do it at the door.</p>`,
-      { label: 'View my booking', href: siteLink('/account') },
+      bookingCta(b),
     ),
   }
 }
@@ -141,11 +156,11 @@ export function bookingApproved(b: BookingFacts): EmailBody {
        ])}
        ${owed > 0
          ? `<p style="margin:0 0 6px;">You can pay ${due > 0 && due < owed ? `the ${money(due)} deposit` : 'the balance'}
-            right from your account — no need to call or wait until you get here.</p>`
+            with the button below — no account, no phone call, no waiting until you get here.</p>`
          : `<p style="margin:0 0 6px;">You're paid in full, so there's nothing left to do but show up.</p>`}
        <p style="margin:10px 0 0;">Come a few minutes early so we can get you settled. Anyone in your party
        without a signed waiver can take care of it at the door.</p>`,
-      { label: owed > 0 ? 'Pay my balance' : 'View my booking', href: siteLink('/account') },
+      bookingCta(b),
     ),
   }
 }
