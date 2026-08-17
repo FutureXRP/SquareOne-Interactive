@@ -1,6 +1,10 @@
 import { serviceDb } from '@/lib/server/billing'
 import type { BookingFacts } from '@/lib/server/emails'
 
+function site(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+}
+
 // Everything an email needs to say about a booking, read straight from the
 // database. Shared by /api/notify (browser-triggered confirmations) and the
 // Stripe webhook (a member paying for their own booking), so both write the
@@ -13,11 +17,13 @@ export interface BookingRecord {
   contact_email?: string | null
   note?: string | null
   approved_at?: string | null
+  pay_token?: string | null
   facilities: { name: string } | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, note, facilities:facility_id(name), payments(amount_cents, status)',
@@ -76,6 +82,8 @@ export async function bookingFacts(bookingId: string):
       depositCents: b.deposit_cents ?? null,
       name: to.name || b.client_name,
       addons,
+      // The direct pay link, when 0037 has run and there's something owed.
+      payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
     },
   }
 }
