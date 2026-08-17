@@ -51,6 +51,8 @@ export interface StaffBooking {
   canceledAt?: string | null
   canceledVia?: 'staff' | 'member' | 'hold_expired' | null
   canceledByName?: string | null
+  // The booking's own pay link (0037) — how a card is actually charged.
+  payToken?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -97,6 +99,7 @@ interface Row {
   canceled_at?: string | null
   canceled_via?: string | null
   canceled_by_staff?: { name: string } | null
+  pay_token?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -105,6 +108,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -147,6 +151,7 @@ function fromRow(r: Row): StaffBooking | null {
     canceledAt: 'canceled_at' in r ? (r.canceled_at ?? null) : undefined,
     canceledVia: 'canceled_via' in r ? ((r.canceled_via as StaffBooking['canceledVia']) ?? null) : undefined,
     canceledByName: 'canceled_by_staff' in r ? (r.canceled_by_staff?.name ?? null) : undefined,
+    payToken: 'pay_token' in r ? (r.pay_token ?? null) : undefined,
   }
 }
 
@@ -377,7 +382,22 @@ export async function updateBookingFields(id: string, patch: { price_cents?: num
 
 // Records a payment against a booking. amountCents defaults to the full
 // remaining balance; pass a smaller figure for a partial payment/deposit.
+// The booking's secure payment page — where a card actually gets charged.
+export function bookingPayUrl(b: StaffBooking): string | null {
+  return b.payToken ? `${window.location.origin}/pay/${b.payToken}` : null
+}
+
 export async function recordPayment(booking: StaffBooking, method: PayMethod, staffId: string | null, amountCents?: number): Promise<boolean> {
+  // A card payment is charged by Stripe or it did not happen. This
+  // function used to write a 'Card (Stripe)' ledger row without ever
+  // calling Stripe — a payment record with no payment behind it, which is
+  // exactly how two phantom charges ended up in the books. Cards go
+  // through the booking's pay page; this records only money physically
+  // handed over at the desk.
+  if (method === 'stripe') {
+    console.error('[payments] card payments go through the pay link, not recordPayment')
+    return false
+  }
   const sb = supabase()
   const remaining = booking.priceCents - booking.paidCents
   const amount = Math.min(amountCents ?? remaining, remaining)

@@ -6,7 +6,7 @@ import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { roomLabel, getActiveRooms } from '@/lib/facilities-store'
 import {
-  bookingsForDate, recordPayment, isoDate, BOOKINGS_EVENT, PAY_LABEL,
+  bookingsForDate, recordPayment, bookingPayUrl, isoDate, BOOKINGS_EVENT, PAY_LABEL,
   type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { getTodayCheckIns, recordCheckIn, CHECKINS_EVENT, type CheckIn } from '@/lib/checkins-store'
@@ -72,6 +72,13 @@ export default function FrontDeskPage() {
 
   const takePayment = async (b: StaffBooking, method: PayMethod) => {
     if (!me || busy) return
+    // Cards are charged on the booking's secure page, never asserted here.
+    if (method === 'stripe') {
+      const url = bookingPayUrl(b)
+      if (url) window.open(url, '_blank', 'noopener')
+      else window.alert('Run migration 0037 to turn on card payment links.')
+      return
+    }
     const cents = payAmount.trim() === '' ? dueNow(b).cents : dollarsToCents(payAmount)
     if (cents <= 0) return
     setBusy(true)
