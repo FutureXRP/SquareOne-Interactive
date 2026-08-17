@@ -10,7 +10,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -362,7 +362,7 @@ export default function AdminBookingsPage() {
                     </div>
                   )}
                 </div>
-                <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }); setEditingId(null) }}>
+                <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }, me?.id ?? null); setEditingId(null) }}>
                   Cancel this booking
                 </button>
               </div>

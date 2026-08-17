@@ -71,6 +71,9 @@ export interface BookingFacts {
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
+  // How it ended (0038): who the customer hears it from matters.
+  canceledVia?: 'staff' | 'member' | 'hold_expired'
+  canceledByName?: string
 }
 
 // The button on any email about a booking with money still owed. Sends
@@ -190,11 +193,22 @@ export function bookingStaffAssigned(b: BookingFacts, s: { staffName: string; pa
 }
 
 export function bookingCanceled(b: BookingFacts): EmailBody {
+  // Say plainly who ended it. "You asked us to cancel" reads very
+  // differently from "we had to cancel" — and an email that doesn't say
+  // which one leaves the customer guessing at the worst moment.
+  const opening =
+    b.canceledVia === 'member'
+      ? `<p style="margin:0 0 6px;">As you requested, this booking is canceled:</p>`
+    : b.canceledVia === 'hold_expired'
+      ? `<p style="margin:0 0 6px;">The 24-hour hold on this booking ran out before payment arrived, so the room has been released:</p>`
+    : b.canceledVia === 'staff'
+      ? `<p style="margin:0 0 6px;">${b.canceledByName ? `${b.canceledByName} at SquareOne` : 'Our team'} canceled this booking:</p>`
+      : `<p style="margin:0 0 6px;">We've canceled this booking:</p>`
   return {
     subject: `Canceled — ${b.room} on ${b.date}`,
     html: shell(
       'Your booking is canceled',
-      `<p style="margin:0 0 6px;">We've canceled this booking:</p>
+      opening + `
        ${detailRows([
          ['Confirmation', b.code],
          ['Room', b.room],

@@ -46,6 +46,11 @@ export interface StaffBooking {
   approvedAt?: string | null
   // Set when a standing reservation put this on the calendar (0035).
   standingId?: string | null
+  // Who ended it (0038). undefined = not migrated; all null = canceled
+  // before this was tracked.
+  canceledAt?: string | null
+  canceledVia?: 'staff' | 'member' | 'hold_expired' | null
+  canceledByName?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -89,6 +94,9 @@ interface Row {
   package_id?: string | null
   approved_at?: string | null
   standing_id?: string | null
+  canceled_at?: string | null
+  canceled_via?: string | null
+  canceled_by_staff?: { name: string } | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -97,6 +105,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -135,11 +144,24 @@ function fromRow(r: Row): StaffBooking | null {
     packageId: 'package_id' in r ? (r.package_id ?? null) : undefined,
     approvedAt: 'approved_at' in r ? (r.approved_at ?? null) : undefined,
     standingId: 'standing_id' in r ? (r.standing_id ?? null) : undefined,
+    canceledAt: 'canceled_at' in r ? (r.canceled_at ?? null) : undefined,
+    canceledVia: 'canceled_via' in r ? ((r.canceled_via as StaffBooking['canceledVia']) ?? null) : undefined,
+    canceledByName: 'canceled_by_staff' in r ? (r.canceled_by_staff?.name ?? null) : undefined,
   }
 }
 
 // A booking nobody has signed off on yet. Undefined approvedAt means the
 // review migration hasn't run, so nothing is "in review".
+// "by Dana Cruz", "by the customer", "hold expired unpaid" — or honest
+// silence for cancels that predate the tracking.
+export function canceledByLabel(b: StaffBooking): string | null {
+  if (b.status !== 'canceled') return null
+  if (b.canceledVia === 'member') return 'canceled by the customer'
+  if (b.canceledVia === 'hold_expired') return 'hold expired unpaid'
+  if (b.canceledVia === 'staff') return b.canceledByName ? `canceled by ${b.canceledByName}` : 'canceled by staff'
+  return null // canceled before this was tracked, or 0038 not run
+}
+
 export function isInReview(b: StaffBooking): boolean {
   return b.approvedAt === null && b.status !== 'canceled'
 }
@@ -328,8 +350,17 @@ export async function rescheduleBooking(id: string, date: string, startH: number
   return { ok: true, conflict: false }
 }
 
-export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null }): Promise<boolean> {
-  const { error } = await supabase().from('bookings').update(patch).eq('id', id)
+export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null }, byStaffId?: string | null): Promise<boolean> {
+  const sb = supabase()
+  // A staff cancel stamps who did it and when. The stamp columns arrive
+  // with 0038 — before that, retry the plain update rather than fail.
+  const stamped = patch.status === 'canceled'
+    ? { ...patch, canceled_at: new Date().toISOString(), canceled_by: byStaffId ?? null, canceled_via: 'staff' }
+    : patch
+  let { error } = await sb.from('bookings').update(stamped).eq('id', id)
+  if (error && stamped !== patch && (error.code === '42703' || error.code === 'PGRST204')) {
+    ;({ error } = await sb.from('bookings').update(patch).eq('id', id))
+  }
   if (error) {
     console.error('[bookings]', error.message)
     return false
