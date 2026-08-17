@@ -71,21 +71,35 @@ export async function ensureCustomer(caller: Caller): Promise<string> {
 // The Stripe price for a membership plan, created from the live plan row on
 // first use and found by lookup key after that. Recreated if the plan's
 // price has changed since.
+// How a plan's `period` reads to Stripe. Anything we don't recognize bills
+// monthly, which is what every plan has always been — but a plan whose page
+// says "year" must never be charged twelve times as often as it promises.
+function billingInterval(period: string | null): 'month' | 'year' | 'week' {
+  const p = (period ?? '').toLowerCase()
+  if (p.includes('year') || p.includes('annual')) return 'year'
+  if (p.includes('week')) return 'week'
+  return 'month'
+}
+
 export async function ensurePlanPrice(planId: string): Promise<string> {
   const db = serviceDb()
-  const { data, error } = await db.from('membership_plans').select('id, name, price_cents').eq('id', planId).single()
+  const { data, error } = await db.from('membership_plans').select('id, name, price_cents, period').eq('id', planId).single()
   if (error || !data) throw new Error(`unknown plan ${planId}`)
-  const plan = data as { id: string; name: string; price_cents: number }
+  const plan = data as { id: string; name: string; price_cents: number; period: string | null }
+  const interval = billingInterval(plan.period)
   const lookupKey = `plan-${plan.id}`
   const s = stripe()
   const found = await s.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 })
   const hit = found.data[0]
-  if (hit && hit.unit_amount === plan.price_cents) return hit.id
-  // New plan or changed price: mint a fresh price (transfers the lookup key).
+  // Reuse only when the amount AND the cadence still match — a plan moved
+  // from monthly to yearly needs a new price, not the old one.
+  if (hit && hit.unit_amount === plan.price_cents && hit.recurring?.interval === interval) return hit.id
+  // New plan, changed price, or changed cadence: mint a fresh price
+  // (transfers the lookup key).
   const price = await s.prices.create({
     currency: 'usd',
     unit_amount: plan.price_cents,
-    recurring: { interval: 'month' },
+    recurring: { interval },
     lookup_key: lookupKey,
     transfer_lookup_key: true,
     product_data: { name: `${plan.name} fitness membership` },
