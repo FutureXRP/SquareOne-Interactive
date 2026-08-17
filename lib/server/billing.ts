@@ -54,11 +54,26 @@ export async function getCaller(req: Request): Promise<Caller | null> {
 }
 
 // The Stripe customer for an account, created on first use.
+//
+// A stored id is checked before it's trusted. Test-mode and live-mode
+// customers live in separate worlds, so an account that signed up while
+// the deployment was on test keys holds a cus_… that simply does not
+// exist once live keys go in — and every Stripe call for that member
+// fails until it's replaced. Rather than leave those accounts broken, a
+// customer that no longer resolves is quietly reminted.
 export async function ensureCustomer(caller: Caller): Promise<string> {
   const db = serviceDb()
   const { data } = await db.from('client_accounts').select('stripe_customer_id').eq('id', caller.accountId).single()
   const existing = (data as { stripe_customer_id: string | null } | null)?.stripe_customer_id
-  if (existing) return existing
+  if (existing) {
+    try {
+      const found = await stripe().customers.retrieve(existing)
+      if (!found.deleted) return existing
+    } catch {
+      // Missing in this mode, or deleted in the dashboard — fall through
+      // and make a new one.
+    }
+  }
   const customer = await stripe().customers.create({
     email: caller.email || undefined,
     name: caller.name,

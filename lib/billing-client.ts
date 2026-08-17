@@ -19,21 +19,23 @@ export async function billingConfigured(): Promise<boolean> {
   return stripeLive
 }
 
-async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; url?: string }> {
+async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; url?: string; message?: string }> {
   const { data } = await supabase().auth.getSession()
   const token = data.session?.access_token
-  if (!token) return { ok: false }
+  if (!token) return { ok: false, message: 'You are signed out — sign in and try again.' }
   try {
     const res = await fetch(path, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : '{}',
     })
-    if (!res.ok) return { ok: false }
-    const json = (await res.json()) as { url?: string }
+    const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string }
+    // Carry the server's explanation back rather than dropping it — a
+    // button that does nothing is the hardest kind of bug to report.
+    if (!res.ok) return { ok: false, message: json.message }
     return { ok: true, url: json.url }
   } catch {
-    return { ok: false }
+    return { ok: false, message: 'Could not reach the server.' }
   }
 }
 
@@ -50,14 +52,14 @@ export async function startMembershipCheckout(planId: string, couponCode?: strin
 }
 
 // Stripe billing portal — update/change the card, see invoices.
-export async function openBillingPortal(): Promise<boolean> {
-  if (!(await billingConfigured())) return false
+export async function openBillingPortal(): Promise<{ ok: boolean; message?: string }> {
+  if (!(await billingConfigured())) return { ok: false }
   const res = await authedPost('/api/billing/portal')
   if (res.ok && res.url) {
     window.location.assign(res.url)
-    return true
+    return { ok: true }
   }
-  return false
+  return { ok: false, message: res.message }
 }
 
 // Upgrade/downgrade — swaps the Stripe price (prorated) and the DB plan.
