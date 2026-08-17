@@ -95,6 +95,28 @@ export async function POST(req: Request) {
     }
   }
 
+  // Which wallets Checkout will actually offer. Cash App Pay is a
+  // dashboard toggle, so say whether it's on rather than leaving it to
+  // "book something and see".
+  if (key) {
+    try {
+      const configs = await stripe().paymentMethodConfigurations.list({ limit: 10 })
+      const active = configs.data.find((c) => c.is_default) ?? configs.data[0]
+      // The SDK types lag the API here; the shape is documented.
+      const cashapp = (active as unknown as { cashapp?: { available?: boolean; display_preference?: { value?: string } } } | undefined)?.cashapp
+      const cashOn = !!cashapp?.available && cashapp.display_preference?.value === 'on'
+      add({
+        group: 'Payments', label: 'Cash App Pay', status: cashOn ? 'ok' : 'warn',
+        detail: cashOn
+          ? 'Enabled — checkout and pay links offer Cash App alongside cards, and payments record as Cash App.'
+          : 'Not enabled. Customers only see card at checkout.',
+        fix: cashOn ? undefined : 'Stripe → Settings → Payments → Payment methods → turn on Cash App Pay. No code change needed.',
+      })
+    } catch {
+      // Older accounts without payment method configurations — skip quietly.
+    }
+  }
+
   const whsec = process.env.STRIPE_WEBHOOK_SECRET ?? ''
   add({
     group: 'Payments', label: 'Stripe webhook', status: whsec ? 'ok' : 'fail',
