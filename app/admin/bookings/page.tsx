@@ -53,6 +53,9 @@ export default function AdminBookingsPage() {
   const [conflictMsg, setConflictMsg] = useState(false)
   const [addonConflictMsg, setAddonConflictMsg] = useState(false)
   const [busyWrite, setBusyWrite] = useState(false)
+  // Canceled bookings are kept, not deleted — but they shouldn't be the
+  // first thing the desk reads through.
+  const [showCanceled, setShowCanceled] = useState(false)
 
   // New-booking form state
   const [nbClient, setNbClient] = useState('')
@@ -160,18 +163,228 @@ export default function AdminBookingsPage() {
   // Customer-made reservations nobody has signed off on yet.
   const inReview = active.filter(isInReview)
 
+  // Today first, then what's coming, then history newest-first. The desk
+  // is almost always asking about today, and was scrolling past weeks of
+  // finished days to reach it.
   const byDate = useMemo(() => {
+    const today = isoDate(0)
     const groups = new Map<string, StaffBooking[]>()
     const sorted = [...bookings].sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH)
     for (const b of sorted) {
+      if (!showCanceled && b.status === 'canceled') continue
       const list = groups.get(b.date) ?? []
       list.push(b)
       groups.set(b.date, list)
     }
-    return [...groups.entries()]
-  }, [bookings])
+    const entries = [...groups.entries()]
+    return {
+      today: entries.filter(([d]) => d === today),
+      upcoming: entries.filter(([d]) => d > today),
+      past: entries.filter(([d]) => d < today).reverse(),
+    }
+  }, [bookings, showCanceled])
+
+  const canceledCount = bookings.filter((b) => b.status === 'canceled').length
+  const hasAny = byDate.today.length + byDate.upcoming.length + byDate.past.length > 0
 
   const dateLabel = (d: string) => (d === isoDate(0) ? 'Today' : d === isoDate(1) ? 'Tomorrow' : d)
+
+  // Never let the count contradict the rows underneath it: a day showing
+  // three canceled bookings used to be labelled "0 bookings".
+  const dayCount = (list: StaffBooking[]): string => {
+    const live = list.filter((b) => b.status !== 'canceled').length
+    const canceled = list.length - live
+    const parts: string[] = []
+    if (live > 0) parts.push(`${live} booking${live === 1 ? '' : 's'}`)
+    if (canceled > 0) parts.push(`${canceled} canceled`)
+    return parts.join(' · ') || 'nothing booked'
+  }
+
+  // One day's rows. Extracted so Today, Upcoming and Earlier can each
+  // render the same list without duplicating it three times.
+  const renderDay = (list: StaffBooking[]) => (
+    <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
+      {list.map((b, i) => {
+        const zone = roomLabel(b.roomId)
+        const isEditing = editingId === b.id
+        const isPaying = payingId === b.id
+        return (
+          <div key={b.id} style={{ borderBottom: i < list.length - 1 ? `1px solid ${LINE}` : 'none', opacity: b.status === 'canceled' ? 0.5 : 1 }}>
+            <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', flexWrap: 'wrap' }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 170 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {zone.name}</p>
+                <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                  {b.client} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {b.code} · by {b.takenBy}
+                </p>
+              </div>
+              {b.status === 'canceled' ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
+                  {canBook && (
+                    <button className="sq-btn sq-btn-danger" style={{ padding: '4px 10px', fontSize: 10.5 }}
+                      onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
+                  )}
+                </span>
+              ) : b.standingId ? (
+                // Put here by a standing reservation on the Calendar tab.
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '2px 10px', borderRadius: 999 }}>Standing group</span>
+              ) : isInReview(b) ? (
+                // Booked by a customer and waiting on one of us to say yes.
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
+                  In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ''}
+                </span>
+              ) : b.status === 'hold' && b.paidCents === 0 ? (
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
+              ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
+                // A deposit locks the slot in, but it isn't paid in full.
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
+                  Deposit paid · {formatCents(b.priceCents - b.paidCents)} due
+                </span>
+              ) : (
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>
+                  {b.payMethod ? `Paid · ${PAY_LABEL[b.payMethod] ?? b.payMethod}` : 'Confirmed'}
+                </span>
+              )}
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
+              {b.status !== 'canceled' && canBook && (
+                <span style={{ display: 'flex', gap: 6 }}>
+                  {isInReview(b) && (
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }}
+                      onClick={() => approveBooking(b.id, me?.id ?? null)}>Confirm reservation</button>
+                  )}
+                  {b.paidCents < b.priceCents && b.priceCents > 0 && (
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => {
+                      setPayingId(isPaying ? null : b.id)
+                      setEditingId(null)
+                      // Open on the deposit when the room asks for one.
+                      const due = b.depositCents && b.depositCents > 0
+                        ? Math.min(Math.max(b.depositCents - b.paidCents, 0), b.priceCents - b.paidCents)
+                        : 0
+                      setPayAmount(due > 0 && due < b.priceCents - b.paidCents ? (due / 100).toFixed(2) : '')
+                    }}>{b.paidCents > 0 ? 'Take balance' : 'Take payment'}</button>
+                  )}
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setEditingId(isEditing ? null : b.id); setPayingId(null) }}>{isEditing ? 'Close' : 'Edit'}</button>
+                </span>
+              )}
+            </div>
+
+            {isPaying && me && (() => {
+              // Take the whole balance, the deposit, or any amount typed.
+              const remaining = b.priceCents - b.paidCents
+              const depositDue = b.depositCents && b.depositCents > 0
+                ? Math.min(Math.max(b.depositCents - b.paidCents, 0), remaining)
+                : 0
+              const typed = payAmount.trim() === '' ? null : dollarsToCents(payAmount)
+              const amount = Math.min(typed ?? remaining, remaining)
+              const leftAfter = remaining - amount
+              return (
+                <div style={{ padding: '4px 18px 16px 39px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 9 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Collect</span>
+                    <input
+                      className="sq-input"
+                      style={{ width: 108, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }}
+                      inputMode="decimal"
+                      placeholder={(remaining / 100).toFixed(2)}
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                    />
+                    {depositDue > 0 && depositDue < remaining && (
+                      <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
+                        onClick={() => setPayAmount((depositDue / 100).toFixed(2))}>
+                        Deposit {formatCents(depositDue)}
+                      </button>
+                    )}
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
+                      onClick={() => setPayAmount((remaining / 100).toFixed(2))}>
+                      Full {formatCents(remaining)}
+                    </button>
+                  </div>
+                  <PayButtons disabled={busyWrite || amount <= 0} onPick={async (m) => {
+                    setBusyWrite(true)
+                    await recordPayment(b, m, me.id, amount)
+                    setBusyWrite(false)
+                    setPayingId(null)
+                    setPayAmount('')
+                  }} />
+                  <p style={{ fontSize: 11.5, color: leftAfter > 0 ? GOLD : SUB, margin: '8px 0 0', lineHeight: 1.5 }}>
+                    {amount <= 0
+                      ? 'Enter an amount to collect.'
+                      : leftAfter > 0
+                        ? `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the slot is locked in.`
+                        : `Taking ${formatCents(amount)} — paid in full.`}
+                  </p>
+                </div>
+              )
+            })()}
+
+            {isEditing && (
+              <div style={{ padding: '4px 18px 16px 39px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
+                  <div>
+                    <label className="sq-label">Date</label>
+                    <input type="date" className="sq-input" defaultValue={b.date} key={`bd-${b.id}`}
+                      onBlur={async (e) => { const r = await rescheduleBooking(b.id, e.target.value, b.startH, b.hours); if (r.conflict) window.alert('That time is taken in that room.') }} />
+                  </div>
+                  <div>
+                    <label className="sq-label">Start</label>
+                    <select className="sq-select" value={Math.round(b.startH)}
+                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, Number(e.target.value), b.hours); if (r.conflict) window.alert('That time is taken in that room.') }}>
+                      {START_TIMES.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="sq-label">Length</label>
+                    <select className="sq-select" value={Math.round(b.hours)}
+                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, b.startH, Number(e.target.value)); if (r.conflict) window.alert('That length overlaps another booking.') }}>
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hr</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="sq-label">Price ($)</label>
+                    <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
+                      onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
+                  </div>
+                  {b.runByStaffId !== undefined && allStaff.length > 0 && (
+                    <div>
+                      <label className="sq-label">Run by</label>
+                      <select className="sq-select" value={b.runByStaffId ?? ''} onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
+                        <option value="">— unassigned —</option>
+                        {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }); setEditingId(null) }}>
+                  Cancel this booking
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  const DayGroup = ({ date, list }: { date: string; list: StaffBooking[] }) => (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 10px' }}>
+        <span style={{ width: 8, height: 8, background: BLUE, borderRadius: 2 }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: BLUE, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{dateLabel(date)}</span>
+        <div style={{ height: 1, flex: 1, background: LINE }} />
+        <span style={{ fontSize: 11.5, color: FAINT }}>{dayCount(list)}</span>
+      </div>
+      {renderDay(list)}
+    </div>
+  )
+
+  const SectionRule = ({ label }: { label: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 14px' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+      <div style={{ height: 1, flex: 1, background: LINE }} />
+    </div>
+  )
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
@@ -345,184 +558,44 @@ export default function AdminBookingsPage() {
         </div>
       )}
 
-      {/* Booking list */}
-      {byDate.length === 0 && (
+      {/* Booking list — today first, then what's coming, then history */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: SUB }}>
+          {byDate.today.length > 0
+            ? `${dayCount(byDate.today[0][1])} today`
+            : 'Nothing booked today'}
+        </span>
+        {canceledCount > 0 && (
+          <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5 }}
+            onClick={() => setShowCanceled((v) => !v)}>
+            {showCanceled ? 'Hide' : 'Show'} {canceledCount} canceled
+          </button>
+        )}
+      </div>
+
+      {!hasAny && (
         <div className="sq-card" style={{ ...card, padding: '30px 32px', textAlign: 'center' }}>
-          <p style={{ fontSize: 14, color: SUB, margin: 0 }}>No bookings yet — create the first one, or wait for store requests to land here.</p>
+          <p style={{ fontSize: 14, color: SUB, margin: 0 }}>
+            {bookings.length === 0
+              ? 'No bookings yet — create the first one, or wait for store requests to land here.'
+              : 'Nothing to show. Every booking on the books is canceled — use the button above to see them.'}
+          </p>
         </div>
       )}
-      {byDate.map(([date, list]) => (
-        <div key={date} style={{ marginBottom: 22 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 10px' }}>
-            <span style={{ width: 8, height: 8, background: BLUE, borderRadius: 2 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: BLUE, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{dateLabel(date)}</span>
-            <div style={{ height: 1, flex: 1, background: LINE }} />
-            <span style={{ fontSize: 11.5, color: FAINT }}>{list.filter((b) => b.status !== 'canceled').length} bookings</span>
-          </div>
-          <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
-            {list.map((b, i) => {
-              const zone = roomLabel(b.roomId)
-              const isEditing = editingId === b.id
-              const isPaying = payingId === b.id
-              return (
-                <div key={b.id} style={{ borderBottom: i < list.length - 1 ? `1px solid ${LINE}` : 'none', opacity: b.status === 'canceled' ? 0.5 : 1 }}>
-                  <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', flexWrap: 'wrap' }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 170 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {zone.name}</p>
-                      <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
-                        {b.client} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {b.code} · by {b.takenBy}
-                      </p>
-                    </div>
-                    {b.status === 'canceled' ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
-                        {canBook && (
-                          <button className="sq-btn sq-btn-danger" style={{ padding: '4px 10px', fontSize: 10.5 }}
-                            onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
-                        )}
-                      </span>
-                    ) : b.standingId ? (
-                      // Put here by a standing reservation on the Calendar tab.
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '2px 10px', borderRadius: 999 }}>Standing group</span>
-                    ) : isInReview(b) ? (
-                      // Booked by a customer and waiting on one of us to say yes.
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
-                        In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ''}
-                      </span>
-                    ) : b.status === 'hold' && b.paidCents === 0 ? (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
-                    ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
-                      // A deposit locks the slot in, but it isn't paid in full.
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
-                        Deposit paid · {formatCents(b.priceCents - b.paidCents)} due
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>
-                        {b.payMethod ? `Paid · ${PAY_LABEL[b.payMethod] ?? b.payMethod}` : 'Confirmed'}
-                      </span>
-                    )}
-                    <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
-                    {b.status !== 'canceled' && canBook && (
-                      <span style={{ display: 'flex', gap: 6 }}>
-                        {isInReview(b) && (
-                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }}
-                            onClick={() => approveBooking(b.id, me?.id ?? null)}>Confirm reservation</button>
-                        )}
-                        {b.paidCents < b.priceCents && b.priceCents > 0 && (
-                          <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => {
-                            setPayingId(isPaying ? null : b.id)
-                            setEditingId(null)
-                            // Open on the deposit when the room asks for one.
-                            const due = b.depositCents && b.depositCents > 0
-                              ? Math.min(Math.max(b.depositCents - b.paidCents, 0), b.priceCents - b.paidCents)
-                              : 0
-                            setPayAmount(due > 0 && due < b.priceCents - b.paidCents ? (due / 100).toFixed(2) : '')
-                          }}>{b.paidCents > 0 ? 'Take balance' : 'Take payment'}</button>
-                        )}
-                        <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setEditingId(isEditing ? null : b.id); setPayingId(null) }}>{isEditing ? 'Close' : 'Edit'}</button>
-                      </span>
-                    )}
-                  </div>
 
-                  {isPaying && me && (() => {
-                    // Take the whole balance, the deposit, or any amount typed.
-                    const remaining = b.priceCents - b.paidCents
-                    const depositDue = b.depositCents && b.depositCents > 0
-                      ? Math.min(Math.max(b.depositCents - b.paidCents, 0), remaining)
-                      : 0
-                    const typed = payAmount.trim() === '' ? null : dollarsToCents(payAmount)
-                    const amount = Math.min(typed ?? remaining, remaining)
-                    const leftAfter = remaining - amount
-                    return (
-                      <div style={{ padding: '4px 18px 16px 39px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 9 }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Collect</span>
-                          <input
-                            className="sq-input"
-                            style={{ width: 108, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }}
-                            inputMode="decimal"
-                            placeholder={(remaining / 100).toFixed(2)}
-                            value={payAmount}
-                            onChange={(e) => setPayAmount(e.target.value)}
-                          />
-                          {depositDue > 0 && depositDue < remaining && (
-                            <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
-                              onClick={() => setPayAmount((depositDue / 100).toFixed(2))}>
-                              Deposit {formatCents(depositDue)}
-                            </button>
-                          )}
-                          <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 12px', fontSize: 11.5 }}
-                            onClick={() => setPayAmount((remaining / 100).toFixed(2))}>
-                            Full {formatCents(remaining)}
-                          </button>
-                        </div>
-                        <PayButtons disabled={busyWrite || amount <= 0} onPick={async (m) => {
-                          setBusyWrite(true)
-                          await recordPayment(b, m, me.id, amount)
-                          setBusyWrite(false)
-                          setPayingId(null)
-                          setPayAmount('')
-                        }} />
-                        <p style={{ fontSize: 11.5, color: leftAfter > 0 ? GOLD : SUB, margin: '8px 0 0', lineHeight: 1.5 }}>
-                          {amount <= 0
-                            ? 'Enter an amount to collect.'
-                            : leftAfter > 0
-                              ? `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the slot is locked in.`
-                              : `Taking ${formatCents(amount)} — paid in full.`}
-                        </p>
-                      </div>
-                    )
-                  })()}
-
-                  {isEditing && (
-                    <div style={{ padding: '4px 18px 16px 39px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
-                        <div>
-                          <label className="sq-label">Date</label>
-                          <input type="date" className="sq-input" defaultValue={b.date} key={`bd-${b.id}`}
-                            onBlur={async (e) => { const r = await rescheduleBooking(b.id, e.target.value, b.startH, b.hours); if (r.conflict) window.alert('That time is taken in that room.') }} />
-                        </div>
-                        <div>
-                          <label className="sq-label">Start</label>
-                          <select className="sq-select" value={Math.round(b.startH)}
-                            onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, Number(e.target.value), b.hours); if (r.conflict) window.alert('That time is taken in that room.') }}>
-                            {START_TIMES.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="sq-label">Length</label>
-                          <select className="sq-select" value={Math.round(b.hours)}
-                            onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, b.startH, Number(e.target.value)); if (r.conflict) window.alert('That length overlaps another booking.') }}>
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hr</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="sq-label">Price ($)</label>
-                          <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
-                            onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
-                        </div>
-                        {b.runByStaffId !== undefined && allStaff.length > 0 && (
-                          <div>
-                            <label className="sq-label">Run by</label>
-                            <select className="sq-select" value={b.runByStaffId ?? ''} onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
-                              <option value="">— unassigned —</option>
-                              {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                      <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }); setEditingId(null) }}>
-                        Cancel this booking
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+      {/* Today, always first — it's what the desk is nearly always asking about */}
+      {byDate.today.map(([date, list]) => <DayGroup key={date} date={date} list={list} />)}
+      {byDate.today.length === 0 && hasAny && (
+        <div className="sq-card" style={{ ...card, padding: '18px 22px', marginBottom: 22 }}>
+          <p style={{ fontSize: 13, color: SUB, margin: 0 }}>Nothing booked today.</p>
         </div>
-      ))}
+      )}
+
+      {byDate.upcoming.length > 0 && <SectionRule label="Coming up" />}
+      {byDate.upcoming.map(([date, list]) => <DayGroup key={date} date={date} list={list} />)}
+
+      {byDate.past.length > 0 && <SectionRule label="Earlier — most recent first" />}
+      {byDate.past.map(([date, list]) => <DayGroup key={date} date={date} list={list} />)}
 
       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
         Live booking book — changes land on <Link href="/admin/board" style={{ color: BLUE, fontWeight: 600 }}>the Board</Link>, in Payments,
