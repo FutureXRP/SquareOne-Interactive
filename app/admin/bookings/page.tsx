@@ -171,7 +171,10 @@ export default function AdminBookingsPage() {
     const groups = new Map<string, StaffBooking[]>()
     const sorted = [...bookings].sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH)
     for (const b of sorted) {
-      if (!showCanceled && b.status === 'canceled') continue
+      // A canceled booking with money on it is never hidden. Somebody paid
+      // and nobody has given it back yet — that is the last thing that
+      // should be behind a toggle.
+      if (!showCanceled && b.status === 'canceled' && b.paidCents === 0) continue
       const list = groups.get(b.date) ?? []
       list.push(b)
       groups.set(b.date, list)
@@ -184,7 +187,10 @@ export default function AdminBookingsPage() {
     }
   }, [bookings, showCanceled])
 
-  const canceledCount = bookings.filter((b) => b.status === 'canceled').length
+  const canceledCount = bookings.filter((b) => b.status === 'canceled' && b.paidCents === 0).length
+  // Canceled but paid: the desk owes these people their money back.
+  const refundOwed = bookings.filter((b) => b.status === 'canceled' && b.paidCents > 0)
+  const refundOwedCents = refundOwed.reduce((n, b) => n + b.paidCents, 0)
   const hasAny = byDate.today.length + byDate.upcoming.length + byDate.past.length > 0
 
   const dateLabel = (d: string) => (d === isoDate(0) ? 'Today' : d === isoDate(1) ? 'Tomorrow' : d)
@@ -577,6 +583,18 @@ export default function AdminBookingsPage() {
           </Link>
         </span>
       </div>
+
+      {refundOwed.length > 0 && (
+        <div className="sq-card" style={{ ...card, padding: '14px 18px', marginBottom: 16, background: '#fae7e4', border: '1px solid #f0cdc7' }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: '#a33427', margin: '0 0 3px' }}>
+            {formatCents(refundOwedCents)} taken on {refundOwed.length} canceled booking{refundOwed.length === 1 ? '' : 's'}
+          </p>
+          <p style={{ fontSize: 12.5, color: SUB, margin: 0, lineHeight: 1.55 }}>
+            These were paid and then canceled, so the money is still ours and shouldn&rsquo;t be. They stay
+            visible until refunded — open one and use Refund on the <Link href="/admin/payments" style={{ color: BLUE, fontWeight: 600 }}>Payments</Link> tab.
+          </p>
+        </div>
+      )}
 
       {!hasAny && (
         <div className="sq-card" style={{ ...card, padding: '30px 32px', textAlign: 'center' }}>

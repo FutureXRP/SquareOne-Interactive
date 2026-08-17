@@ -62,9 +62,10 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   if (existing) return
 
   const { data: bookingRow } = await db.from('bookings')
-    .select('id, code, title, account_id').eq('id', bookingId).maybeSingle()
-  const b = bookingRow as { id: string; code: string; title: string; account_id: string | null } | null
+    .select('id, code, title, account_id, status').eq('id', bookingId).maybeSingle()
+  const b = bookingRow as { id: string; code: string; title: string; account_id: string | null; status: string } | null
   if (!b) return
+  const wasCanceled = b.status === 'canceled'
 
   const { data: org } = await db.from('organizations').select('id').limit(1).single()
   const { data: paymentRow } = await db.from('payments').insert({
@@ -78,10 +79,20 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
     stripe_payment_intent_id: ref,
   }).select('id, code').single()
 
-  await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
+  // A canceled booking stays canceled. This can genuinely happen — the
+  // customer pays, the webhook is delayed, staff cancel in the meantime —
+  // and quietly resurrecting the booking would put a room back on the
+  // calendar that everyone believes is free. The payment above is still
+  // recorded, because the money is real and somebody now owes a refund.
+  if (!wasCanceled) {
+    await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
+  }
 
   // The receipt reads as a deposit or a paid-in-full note depending on
   // what's left, built from the booking row rather than anything Stripe sent.
+  // Nothing is sent for a canceled booking — "you're all set" would be a lie,
+  // and the refund sends its own email once staff issue it.
+  if (wasCanceled) return
   const paymentCode = (paymentRow as { id: string; code?: string } | null)?.code
   const resolved = await bookingFacts(b.id)
   if (resolved) {
