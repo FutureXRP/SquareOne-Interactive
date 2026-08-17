@@ -26,6 +26,33 @@ export async function setMyPassword(password: string): Promise<{ ok: boolean; er
   return { ok: true }
 }
 
+// Changing your own password while signed in. The current one is required
+// on purpose: these are household logins shared by a whole family, often
+// left signed in on a phone or the front-desk iPad. Without this check,
+// anyone who picked up an unlocked device could change the password and
+// lock the actual family out of their own account.
+//
+// Supabase has no "verify my password" call, so we verify the only way
+// available — by signing in with it. That returns a fresh session for the
+// same user, so a correct current password leaves the member signed in
+// exactly as they were.
+export async function changeMyPassword(current: string, next: string): Promise<{ ok: boolean; error?: string }> {
+  if (next.length < 8) return { ok: false, error: 'Use at least 8 characters.' }
+  if (next === current) return { ok: false, error: 'That is the password you already have — pick a different one.' }
+
+  const sb = supabase()
+  const { data: session } = await sb.auth.getUser()
+  const email = session.user?.email
+  if (!email) return { ok: false, error: 'Sign in again — your session expired.' }
+
+  const { error: wrong } = await sb.auth.signInWithPassword({ email, password: current })
+  if (wrong) return { ok: false, error: 'That current password isn\'t right.' }
+
+  const { error } = await sb.auth.updateUser({ password: next })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 async function adminPost(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; tempPassword?: string }> {
   const { data } = await supabase().auth.getSession()
   const token = data.session?.access_token
