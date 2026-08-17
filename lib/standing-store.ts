@@ -201,6 +201,26 @@ export async function clearStanding(id: string, from?: string): Promise<number> 
   return (data as number) ?? 0
 }
 
+// How far out each reservation is actually booked. Staff can otherwise
+// only guess where the calendar stops, which matters most for the
+// open-ended ones.
+export async function getStandingHorizons(): Promise<Record<string, string>> {
+  const { data, error } = await supabase()
+    .from('bookings')
+    .select('standing_id, during')
+    .not('standing_id', 'is', null)
+    .in('status', ['hold', 'confirmed'])
+  if (error) return {}
+  const out: Record<string, string> = {}
+  for (const row of (data as { standing_id: string; during: string }[])) {
+    const m = /,\s*"?([^")\]]+)"?[)\]]$/.exec(row.during)
+    if (!m) continue
+    const iso = new Date(m[1]).toISOString().slice(0, 10)
+    if (!out[row.standing_id] || iso > out[row.standing_id]) out[row.standing_id] = iso
+  }
+  return out
+}
+
 // The dates a reservation would land on — used to preview a schedule
 // before anything is written.
 export async function previewStanding(id: string, from: string, through: string): Promise<string[]> {

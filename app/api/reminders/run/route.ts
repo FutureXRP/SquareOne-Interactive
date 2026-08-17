@@ -81,10 +81,25 @@ async function run(): Promise<{ staffSent: number; guestsSent: number; considere
   return { staffSent, guestsSent, considered: rows.length }
 }
 
+// Keeps open-ended standing reservations booked out ahead of today, so a
+// group with no end date never silently runs out of calendar. Rolling
+// forward is cheap and idempotent — dates already on the books are left
+// alone — so it rides along with the hourly reminder run rather than
+// needing a schedule of its own.
+async function rollStanding(): Promise<{ rolled: number; added: number; blocked: number } | null> {
+  const { data, error } = await serviceDb().rpc('roll_standing_reservations', { p_days: 180 })
+  // Missing until 0036 runs; that's not a reason to fail the reminders.
+  if (error) return null
+  const row = (data as { reservations: number; created: number; blocked: number }[] | null)?.[0]
+  return { rolled: row?.reservations ?? 0, added: row?.created ?? 0, blocked: row?.blocked ?? 0 }
+}
+
 export async function GET(req: Request) {
   if (!(await authorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   try {
-    return NextResponse.json({ ok: true, ...(await run()) })
+    const reminders = await run()
+    const standing = await rollStanding()
+    return NextResponse.json({ ok: true, ...reminders, standing })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })
