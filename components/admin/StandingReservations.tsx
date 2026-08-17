@@ -6,7 +6,7 @@ import { roomLabel, type RoomConfig } from '@/lib/facilities-store'
 import {
   getStandingReservations, addStandingReservation, patchStandingReservation,
   deleteStandingReservation, extendStanding, clearStanding, patternLabel,
-  STANDING_EVENT, type StandingReservation, type StandingPattern,
+  getStandingHorizons, STANDING_EVENT, type StandingReservation, type StandingPattern,
 } from '@/lib/standing-store'
 
 // The groups that use the building on a schedule. Booking one out writes
@@ -50,6 +50,7 @@ const chip = (on: boolean): React.CSSProperties => ({
 
 export function StandingReservations({ rooms, canEdit }: { rooms: RoomConfig[]; canEdit: boolean }) {
   const [list, setList] = useState<StandingReservation[] | null>(null)
+  const [horizons, setHorizons] = useState<Record<string, string>>({})
   const [migrationMissing, setMigrationMissing] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -78,6 +79,7 @@ export function StandingReservations({ rooms, canEdit }: { rooms: RoomConfig[]; 
         if (!on) return
         if (r === null) { setMigrationMissing(true); setList([]) } else { setList(r); setMigrationMissing(false) }
       }).catch(() => { if (on) setList([]) })
+      getStandingHorizons().then((h) => { if (on) setHorizons(h) }).catch(() => {})
     }
     sync()
     window.addEventListener(STANDING_EVENT, sync)
@@ -287,8 +289,16 @@ export function StandingReservations({ rooms, canEdit }: { rooms: RoomConfig[]; 
               <p style={{ fontSize: 12, color: SUB, margin: 0, fontVariantNumeric: 'tabular-nums' }}>
                 {patternLabel(r)} · {formatHour(r.startH)}–{formatHour(r.startH + r.hours)}
                 {r.priceCents > 0 ? ` · ${formatCents(r.priceCents)} a session` : ' · no charge'}
-                {r.endsOn ? ` · through ${prettyDate(r.endsOn)}` : ''}
+                {r.endsOn ? ` · ends ${prettyDate(r.endsOn)}` : ' · no end date'}
               </p>
+              {/* Where the calendar actually stops for this group. Open-ended
+                  ones roll forward on their own; this is the proof. */}
+              {horizons[r.id] && (
+                <p style={{ fontSize: 11.5, color: FAINT, margin: '1px 0 0', fontVariantNumeric: 'tabular-nums' }}>
+                  On the calendar through {prettyDate(horizons[r.id])}
+                  {!r.endsOn ? ' · rolls forward automatically' : ''}
+                </p>
+              )}
             </div>
             {r.active
               ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>On the calendar</span>
