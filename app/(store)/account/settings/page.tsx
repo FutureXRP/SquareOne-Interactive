@@ -5,6 +5,7 @@ import { AccountShell } from '@/components/store/AccountShell'
 import { card, INK, SUB, FAINT, LINE, RED, GREEN } from '@/lib/theme'
 import { getPlan } from '@/lib/plans-store'
 import { cancelMembership, resumeMembership, updateProfileName } from '@/lib/session'
+import { ChangePassword } from '@/components/store/ChangePassword'
 
 export default function SettingsPage() {
   const [name, setName] = useState<string | null>(null)
@@ -46,6 +47,9 @@ export default function SettingsPage() {
               </div>
               <button className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }} onClick={saveName}>Save changes</button>
             </div>
+
+            {/* Password — shared by everyone on the account */}
+            <ChangePassword email={profile.email} />
 
             {/* Membership management */}
             <div className="sq-card" style={{ ...card, padding: '20px 24px' }}>
