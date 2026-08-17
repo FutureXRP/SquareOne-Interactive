@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { serviceDb, sendAndLog } from '@/lib/server/billing'
+import { serviceDb, sendAndLog, stripe } from '@/lib/server/billing'
 import { bookingPayment } from '@/lib/server/emails'
 import { bookingFacts } from '@/lib/server/booking-facts'
 
@@ -13,6 +13,26 @@ import { bookingFacts } from '@/lib/server/booking-facts'
 //
 // Every function here is idempotent on the Stripe id, so replaying costs
 // nothing.
+
+// What the customer actually paid with. Stripe Checkout can complete via
+// card, Cash App Pay, or whatever else the dashboard enables — the ledger
+// and the receipt should say which, not assume 'Card'.
+async function howTheyPaid(ref: string | Stripe.PaymentIntent):
+  Promise<{ ledger: 'stripe' | 'cashapp'; label: string }> {
+  try {
+    const pi = typeof ref === 'string'
+      ? await stripe().paymentIntents.retrieve(ref, { expand: ['latest_charge'] })
+      : ref
+    let charge = pi.latest_charge
+    if (typeof charge === 'string') charge = await stripe().charges.retrieve(charge)
+    const type = charge && typeof charge !== 'string' ? charge.payment_method_details?.type : undefined
+    if (type === 'cashapp') return { ledger: 'cashapp', label: 'Cash App' }
+    return { ledger: 'stripe', label: 'Card' }
+  } catch {
+    // Never lose a payment record over a labelling lookup.
+    return { ledger: 'stripe', label: 'Card' }
+  }
+}
 
 // Record a Stripe invoice payment in our payments ledger, so membership
 // charges (first signup and every monthly renewal) show on Payments and
@@ -67,12 +87,13 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   if (!b) return
   const wasCanceled = b.status === 'canceled'
 
+  const paidWith = await howTheyPaid(ref)
   const { data: org } = await db.from('organizations').select('id').limit(1).single()
   const { data: paymentRow } = await db.from('payments').insert({
     org_id: (org as { id: string }).id,
     account_id: b.account_id,
     booking_id: b.id,
-    method: 'stripe',
+    method: paidWith.ledger,
     status: 'paid',
     amount_cents: amount,
     memo: `${b.title} · ${b.code}`,
@@ -98,7 +119,7 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   if (resolved) {
     await sendAndLog('booking.payment', resolved.to.email, bookingPayment(resolved.facts, {
       amountCents: amount,
-      method: 'Card',
+      method: paidWith.label,
       code: paymentCode ?? b.code,
     }), { accountId: b.account_id, bookingId: b.id })
   }
@@ -123,12 +144,13 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
   if (!b) return false
   const wasCanceled = b.status === 'canceled'
 
+  const paidWith = await howTheyPaid(pi)
   const { data: org } = await db.from('organizations').select('id').limit(1).single()
   await db.from('payments').insert({
     org_id: (org as { id: string }).id,
     account_id: b.account_id,
     booking_id: b.id,
-    method: 'stripe',
+    method: paidWith.ledger,
     status: 'paid',
     amount_cents: amount,
     memo: `${b.title} · ${b.code}`,
@@ -142,7 +164,7 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
   if (resolved) {
     await sendAndLog('booking.payment', resolved.to.email, bookingPayment(resolved.facts, {
       amountCents: amount,
-      method: 'Card',
+      method: paidWith.label,
       code: b.code,
     }), { accountId: b.account_id, bookingId: b.id })
   }
