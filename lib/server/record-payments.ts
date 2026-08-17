@@ -103,3 +103,48 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
     }), { accountId: b.account_id, bookingId: b.id })
   }
 }
+
+// Same recording, from a bare PaymentIntent — desk charges (card on file,
+// phone orders through Elements) have no Checkout session around them.
+// Idempotent on the intent id, so the webhook and the confirm endpoint can
+// both fire without doubling the ledger.
+export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boolean> {
+  if (pi.status !== 'succeeded') return false
+  const bookingId = pi.metadata?.booking_id
+  const amount = pi.amount_received ?? 0
+  if (!bookingId || amount <= 0) return false
+  const db = serviceDb()
+  const { data: existing } = await db.from('payments').select('id').eq('stripe_payment_intent_id', pi.id).maybeSingle()
+  if (existing) return true
+
+  const { data: bookingRow } = await db.from('bookings')
+    .select('id, code, title, account_id, status').eq('id', bookingId).maybeSingle()
+  const b = bookingRow as { id: string; code: string; title: string; account_id: string | null; status: string } | null
+  if (!b) return false
+  const wasCanceled = b.status === 'canceled'
+
+  const { data: org } = await db.from('organizations').select('id').limit(1).single()
+  await db.from('payments').insert({
+    org_id: (org as { id: string }).id,
+    account_id: b.account_id,
+    booking_id: b.id,
+    method: 'stripe',
+    status: 'paid',
+    amount_cents: amount,
+    memo: `${b.title} · ${b.code}`,
+    stripe_payment_intent_id: pi.id,
+  })
+
+  if (wasCanceled) return true // money recorded; a canceled booking stays canceled
+  await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
+
+  const resolved = await bookingFacts(b.id)
+  if (resolved) {
+    await sendAndLog('booking.payment', resolved.to.email, bookingPayment(resolved.facts, {
+      amountCents: amount,
+      method: 'Card',
+      code: b.code,
+    }), { accountId: b.account_id, bookingId: b.id })
+  }
+  return true
+}

@@ -14,6 +14,7 @@ import {
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { ChargeCard } from '@/components/admin/ChargeCard'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -343,6 +344,15 @@ export default function AdminBookingsPage() {
                     link as in their email), and it records itself the moment Stripe confirms. Cash and Cash App
                     record here directly.
                   </p>
+                  {/* Charge without the customer's device: their saved card,
+                      or a number read over the phone into Stripe's own field. */}
+                  <ChargeCard
+                    bookingId={b.id}
+                    which={depositDue > 0 && amount === depositDue && amount < remaining ? 'deposit' : 'balance'}
+                    amountLabel={depositDue > 0 && amount === depositDue && amount < remaining
+                      ? `the ${formatCents(depositDue)} deposit` : `the ${formatCents(remaining)} balance`}
+                    onPaid={() => { setPayingId(null); setPayAmount('') }}
+                  />
                 </div>
               )
             })()}

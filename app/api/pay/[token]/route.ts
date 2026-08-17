@@ -32,8 +32,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   try {
     const base = siteUrl(req)
     const label = amount < target.balanceCents ? 'Deposit' : 'Balance'
+    // When the booking belongs to an account with a Stripe customer, tie
+    // the payment to it and save the card for later desk charges.
+    const { serviceDb } = await import('@/lib/server/billing')
+    let customer: string | undefined
+    if (row.account_id) {
+      const { data: acct } = await serviceDb().from('client_accounts')
+        .select('stripe_customer_id').eq('id', row.account_id).maybeSingle()
+      customer = (acct as { stripe_customer_id: string | null } | null)?.stripe_customer_id ?? undefined
+    }
     const session = await stripe().checkout.sessions.create({
       mode: 'payment',
+      ...(customer ? { customer } : {}),
       line_items: [{
         quantity: 1,
         price_data: {
@@ -46,6 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       // metadata, exactly as it does for a signed-in member.
       payment_intent_data: {
         metadata: { booking_id: row.id, account_id: row.account_id ?? '', kind: 'booking' },
+        ...(customer ? { setup_future_usage: 'off_session' as const } : {}),
       },
       metadata: { booking_id: row.id, account_id: row.account_id ?? '', kind: 'booking' },
       success_url: `${base}/pay/${token}?paid=1`,

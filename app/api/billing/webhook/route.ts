@@ -5,7 +5,7 @@ import {
   membershipWelcome, membershipCanceled, membershipEnded, membershipResumed, renewalReceipt, paymentFailed,
   bookingPayment,
 } from '@/lib/server/emails'
-import { recordInvoicePayment, recordBookingCheckout } from '@/lib/server/record-payments'
+import { recordInvoicePayment, recordBookingCheckout, recordBookingIntent } from '@/lib/server/record-payments'
 
 // Stripe webhook — keeps member_subscriptions in sync with what actually
 // happens to the card: subscription created, plan changed, payment failed,
@@ -119,6 +119,13 @@ export async function POST(req: Request) {
             }), { accountId: sub.metadata.account_id ?? null })
           }
         }
+        break
+      }
+      // Desk charges (card on file, phone orders) are bare PaymentIntents
+      // with no Checkout session around them.
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object
+        if (pi.metadata?.kind === 'booking') await recordBookingIntent(pi)
         break
       }
       case 'customer.subscription.updated':

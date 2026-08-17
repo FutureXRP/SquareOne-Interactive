@@ -76,6 +76,9 @@ export async function POST(req: Request) {
       }],
       payment_intent_data: {
         metadata: { booking_id: b.id, account_id: caller.accountId, kind: 'booking' },
+        // Save the card so the desk can charge the balance later with the
+        // customer's say-so, instead of asking them to type it again.
+        setup_future_usage: 'off_session',
       },
       metadata: { booking_id: b.id, account_id: caller.accountId, kind: 'booking' },
       success_url: `${base}/account?paid=${b.code}`,
