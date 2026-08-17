@@ -10,7 +10,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -141,10 +141,17 @@ export default function AdminBookingsPage() {
       contactEmail: nbEmail.trim() || null,
     })
     if (res.ok && nbPay !== 'hold') {
-      // Collect immediately: find the row we just made and record the payment.
       const fresh = await getStaffBookings()
       const mine = fresh.find((b) => b.code === res.code)
-      if (mine) await recordPayment(mine, nbPay, me.id)
+      if (mine && nbPay === 'stripe') {
+        // A card is charged on the booking's secure page, not asserted at
+        // the desk — open it so the customer can pay right now.
+        const url = bookingPayUrl(mine)
+        if (url) window.open(url, '_blank', 'noopener')
+      } else if (mine) {
+        // Cash / Cash App changed hands here: record it.
+        await recordPayment(mine, nbPay, me.id)
+      }
     }
     setBusyWrite(false)
     if (res.ok) {
@@ -308,6 +315,15 @@ export default function AdminBookingsPage() {
                     </button>
                   </div>
                   <PayButtons disabled={busyWrite || amount <= 0} onPick={async (m) => {
+                    // Card = the customer pays on the secure page, so the
+                    // charge is real and Stripe's records match ours.
+                    // Cash/Cash App = money changed hands here, record it.
+                    if (m === 'stripe') {
+                      const url = bookingPayUrl(b)
+                      if (url) window.open(url, '_blank', 'noopener')
+                      else window.alert('Run migration 0037 to turn on card payment links.')
+                      return
+                    }
                     setBusyWrite(true)
                     await recordPayment(b, m, me.id, amount)
                     setBusyWrite(false)
@@ -320,6 +336,11 @@ export default function AdminBookingsPage() {
                       : leftAfter > 0
                         ? `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the slot is locked in.`
                         : `Taking ${formatCents(amount)} — paid in full.`}
+                  </p>
+                  <p style={{ fontSize: 11.5, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Card opens the booking&rsquo;s secure payment page — have them pay there (it&rsquo;s the same
+                    link as in their email), and it records itself the moment Stripe confirms. Cash and Cash App
+                    record here directly.
                   </p>
                 </div>
               )
@@ -555,7 +576,9 @@ export default function AdminBookingsPage() {
             <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>
               {nbPay === 'hold'
                 ? 'Books the slot as a striped hold on the Board until payment lands (24-hour expiry).'
-                : `Collects ${formatCents(priceCents)} by ${PAY_LABEL[nbPay]} and confirms the slot.`}
+                : nbPay === 'stripe'
+                  ? `Books the slot and opens the secure card page for ${formatCents(priceCents)} — it confirms itself when Stripe does.`
+                  : `Collects ${formatCents(priceCents)} by ${PAY_LABEL[nbPay]} and confirms the slot.`}
             </p>
             <button className="sq-btn sq-btn-primary" disabled={!nbClient.trim() || !canBook || busyWrite} onClick={createBooking}>
               {busyWrite ? 'Booking…' : nbPay === 'hold' ? 'Book with hold' : `Book & take ${formatCents(priceCents)}`}
