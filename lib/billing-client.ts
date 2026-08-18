@@ -33,7 +33,7 @@ async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; 
     // Carry the server's explanation back rather than dropping it — a
     // button that does nothing is the hardest kind of bug to report.
     if (!res.ok) return { ok: false, message: json.message }
-    return { ok: true, url: json.url }
+    return { ok: true, url: json.url, message: json.message }
   } catch {
     return { ok: false, message: 'Could not reach the server.' }
   }
@@ -87,4 +87,14 @@ export async function startBookingCheckout(bookingId: string, which: 'deposit' |
     return true
   }
   return false
+}
+
+// Staff-only: land a coupon on a member's existing Stripe subscription —
+// for members who signed up before the code existed. The server validates
+// the code, applies the discount to their live billing, and resumes a
+// membership that was mid-cancel.
+export async function staffApplyCoupon(accountId: string, couponCode: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await authedPost('/api/billing/apply-coupon', { accountId, couponCode })
+  if (res.ok) emit(SESSION_EVENT)
+  return res
 }

@@ -10,6 +10,7 @@ import { getPlans, savePlan, addPlan as addPlanLive, deletePlan, type EditablePl
 import { slugify } from '@/lib/facilities-store'
 import { getFormLinks, setPlanWaiver, planRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
+import { staffApplyCoupon } from '@/lib/billing-client'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
@@ -25,6 +26,22 @@ export default function AdminMembershipsPage() {
   const [formLinks, setFormLinks] = useState<FormLink[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savedNote, setSavedNote] = useState(false)
+  // Apply-a-coupon drawer on a member row (for members who signed up
+  // before the code existed — e.g. moving staff to a free membership).
+  const [couponFor, setCouponFor] = useState<string | null>(null)
+  const [couponCode, setCouponCode] = useState('')
+  const [couponBusy, setCouponBusy] = useState(false)
+  const [couponNote, setCouponNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const applyCoupon = async (accountId: string) => {
+    if (couponBusy || !couponCode.trim()) return
+    setCouponBusy(true)
+    setCouponNote(null)
+    const res = await staffApplyCoupon(accountId, couponCode.trim())
+    setCouponNote({ ok: res.ok, text: res.message ?? (res.ok ? 'Applied.' : 'Could not apply that code.') })
+    if (res.ok) getMembershipStats().then(setStats).catch(() => {})
+    setCouponBusy(false)
+  }
 
   const debouncedSave = useDebouncedSave(async (plan: EditablePlan) => {
     await savePlan(plan)
@@ -212,12 +229,40 @@ export default function AdminMembershipsPage() {
           <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No members yet — signups from the store appear here the moment they happen.</p>
         ) : (
           m.recent.map((r, i) => (
-            <div key={`${r.account}-${i}`} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < m.recent.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{r.account}</p>
-                <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{r.plan} plan{r.status === 'canceling' ? ' · canceling' : ''}</p>
+            <div key={`${r.account}-${i}`} style={{ borderBottom: i < m.recent.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+              <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px' }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{r.account}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{r.plan} plan{r.status === 'canceling' ? ' · canceling' : ''}</p>
+                </div>
+                {r.accountId && r.hasStripe && (r.status === 'active' || r.status === 'canceling' || r.status === 'past_due') && (
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '4px 11px', fontSize: 11 }}
+                    onClick={() => { setCouponFor(couponFor === r.accountId ? null : r.accountId); setCouponCode(''); setCouponNote(null) }}>
+                    {couponFor === r.accountId ? 'Close' : 'Apply coupon'}
+                  </button>
+                )}
+                <span style={{ fontSize: 12, color: FAINT }}>{r.when}</span>
               </div>
-              <span style={{ fontSize: 12, color: FAINT }}>{r.when}</span>
+              {couponFor === r.accountId && (
+                <div style={{ padding: '0 20px 12px', background: '#fafbfd' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input className="sq-input" style={{ width: 170, padding: '7px 10px', fontSize: 12.5, textTransform: 'uppercase' }}
+                      placeholder="COUPON CODE" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} autoFocus />
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 11.5 }}
+                      disabled={couponBusy || !couponCode.trim()} onClick={() => applyCoupon(r.accountId as string)}>
+                      {couponBusy ? 'Applying…' : 'Apply to their billing'}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0', lineHeight: 1.5 }}>
+                    Lands on their live Stripe subscription — their next payment bills at the discounted rate
+                    for as long as the coupon&apos;s duration says, then full price resumes automatically.
+                    A membership mid-cancel is resumed.
+                  </p>
+                  {couponNote && (
+                    <p style={{ fontSize: 11.5, fontWeight: 600, color: couponNote.ok ? GREEN : RED, margin: '6px 0 0' }}>{couponNote.text}</p>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}

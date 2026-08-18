@@ -1,76 +1,12 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { stripe, stripeConfigured, getCaller, ensureCustomer, ensurePlanPrice, siteUrl, serviceDb } from '@/lib/server/billing'
+import { validCoupon, stripeCouponFor, trialDays } from '@/lib/server/coupon-shared'
 
 // Starts a Stripe Checkout session for a fitness membership subscription.
 // The member enters their card once; Stripe charges it on the cycle after
 // that. A coupon can grant free months up front (how current members move
 // over from the old system) or a discount on the price.
-
-interface CouponFacts {
-  code: string
-  kind: 'percent' | 'amount'
-  value: number
-  freeMonths: number
-}
-
-// Re-checked here rather than trusted from the browser: a code posted by
-// a shopper means nothing until the database says it's still good.
-async function validCoupon(code: string | undefined, planId: string, accountId: string): Promise<CouponFacts | null> {
-  if (!code?.trim()) return null
-  const db = serviceDb()
-  const { data, error } = await db.from('coupons')
-    .select('code, kind, value, active, applies_to, free_months, max_redemptions, once_per_account, expires_on, plan_ids')
-    .eq('code', code.trim().toUpperCase())
-    .maybeSingle()
-  if (error || !data) return null
-  const c = data as {
-    code: string; kind: 'percent' | 'amount'; value: number; active: boolean
-    applies_to: string; free_months: number; max_redemptions: number | null
-    once_per_account: boolean; expires_on: string | null; plan_ids: string[] | null
-  }
-  if (!c.active) return null
-  if (c.expires_on && c.expires_on < new Date().toISOString().slice(0, 10)) return null
-  if (c.applies_to !== 'all' && c.applies_to !== 'memberships') return null
-  if (c.plan_ids && c.plan_ids.length > 0 && !c.plan_ids.includes(planId)) return null
-  if (c.max_redemptions != null) {
-    const { count } = await db.from('coupon_redemptions').select('id', { count: 'exact', head: true }).eq('code', c.code)
-    if ((count ?? 0) >= c.max_redemptions) return null
-  }
-  if (c.once_per_account) {
-    const { count } = await db.from('coupon_redemptions')
-      .select('id', { count: 'exact', head: true }).eq('code', c.code).eq('account_id', accountId)
-    if ((count ?? 0) > 0) return null
-  }
-  return { code: c.code, kind: c.kind, value: c.value, freeMonths: c.free_months ?? 0 }
-}
-
-// Free months become a Stripe trial: the card is captured now, nothing is
-// charged until the trial ends, and normal billing picks up after.
-function trialDays(months: number): number {
-  return Math.round(months * 30)
-}
-
-// Percent/amount off becomes a one-off Stripe coupon, minted per code so
-// the same discount is reused rather than duplicated.
-async function stripeCouponFor(c: CouponFacts, currency = 'usd'): Promise<string | null> {
-  if (c.value <= 0) return null
-  const s = stripe()
-  const id = `sq-${c.code.toLowerCase()}`
-  try {
-    const existing = await s.coupons.retrieve(id)
-    if (existing && !existing.deleted) return existing.id
-  } catch {
-    // not minted yet
-  }
-  const created = await s.coupons.create({
-    id,
-    name: c.code,
-    duration: 'once',
-    ...(c.kind === 'percent' ? { percent_off: c.value } : { amount_off: c.value, currency }),
-  })
-  return created.id
-}
 
 export async function POST(req: Request) {
   if (!stripeConfigured()) return NextResponse.json({ error: 'stripe_not_configured' }, { status: 501 })
