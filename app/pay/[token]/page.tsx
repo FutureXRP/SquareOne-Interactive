@@ -3,6 +3,7 @@ import { card, INK, SUB, FAINT, LINE, NAVY, BLUE, GREEN, RED } from '@/lib/theme
 import { formatCents } from '@/lib/format'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { serviceDb } from '@/lib/server/billing'
+import { cashAppQrSvg } from '@/lib/server/cashapp-qr'
 import { PayPanel } from './PayPanel'
 
 // The facility's $cashtag, when staff have set one on Settings. Empty
@@ -79,6 +80,13 @@ export default async function PayPage({ params, searchParams }: {
   const settled = t.balanceCents <= 0
   const canceled = t.status === 'canceled'
 
+  // The Cash App QR carries the amount actually due right now — the same
+  // deposit-or-balance choice PayPanel's buttons make.
+  const showDeposit = t.depositDueCents > 0 && t.depositDueCents < t.balanceCents
+  const cashQr = tag && !canceled && !settled
+    ? await cashAppQrSvg(tag.replace(/^\$/, ''), showDeposit ? t.depositDueCents : t.balanceCents)
+    : ''
+
   return (
     <Shell>
       <div className="sq-card" style={{ ...card, padding: '26px 30px' }}>
@@ -126,7 +134,7 @@ export default async function PayPage({ params, searchParams }: {
             you settled.
           </p>
         ) : (
-          <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} />
+          <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} cashQr={cashQr} />
         )}
       </div>
 
