@@ -4,7 +4,7 @@
 // from here. Money is integer cents.
 
 import { supabase, emit } from '@/lib/supabase'
-import { notify } from '@/lib/notify-client'
+import { notify, notifyReport } from '@/lib/notify-client'
 
 export const BOOKINGS_EVENT = 'sq-staff-bookings'
 
@@ -282,17 +282,22 @@ export async function approveBooking(id: string, staffId: string | null): Promis
 
 // ── Staff payouts (migration 0023) ───────────────────────────
 
-export async function setBookingRunBy(id: string, staffId: string | null): Promise<boolean> {
+export interface RunByResult { ok: boolean; alertSent: boolean; alertReason: string | null }
+
+export async function setBookingRunBy(id: string, staffId: string | null): Promise<RunByResult> {
   const { error } = await supabase().from('bookings').update({ run_by_staff_id: staffId }).eq('id', id)
   if (error) {
     console.error('[bookings]', error.message)
-    return false
+    return { ok: false, alertSent: false, alertReason: null }
   }
   emit(BOOKINGS_EVENT)
-  // Tell them they're on it. Unassigning is silent — there's nothing
-  // useful to say to somebody who has just been taken off a shift by email.
-  if (staffId) notify('booking.staff_assigned', id)
-  return true
+  // Tell them they're on it — and report whether the server actually sent
+  // it, so the UI never claims an email that was silently skipped.
+  // Unassigning is silent: there's nothing useful to say to somebody who
+  // has just been taken off a shift by email.
+  if (!staffId) return { ok: true, alertSent: false, alertReason: null }
+  const r = await notifyReport('booking.staff_assigned', id)
+  return { ok: true, alertSent: r.sent, alertReason: r.reason }
 }
 
 export async function setBookingPayout(id: string, cents: number | null): Promise<boolean> {

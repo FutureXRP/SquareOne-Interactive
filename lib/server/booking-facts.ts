@@ -58,8 +58,12 @@ function hour(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined, timeZone: 'America/Chicago' })
 }
 
-export async function bookingFacts(bookingId: string):
-  Promise<{ b: BookingRecord; facts: BookingFacts; to: { email: string; name: string } } | null> {
+// The facts with or without a customer address. Staff-facing emails (an
+// assignment alert) must not depend on the CUSTOMER having an email on
+// file — a desk booking with no contact email still has a staff member
+// who needs to know they're running it.
+export async function bookingFactsAny(bookingId: string):
+  Promise<{ b: BookingRecord; facts: BookingFacts; to: { email: string; name: string } | null } | null> {
   let b: BookingRecord | null = null
   for (const cols of COL_SETS) {
     const { data, error } = await serviceDb().from('bookings').select(cols).eq('id', bookingId).maybeSingle()
@@ -67,7 +71,6 @@ export async function bookingFacts(bookingId: string):
   }
   if (!b) return null
   const to = await recipientFor(b.account_id, b.contact_email ?? null)
-  if (!to) return null
   const range = parseRange(b.during)
   const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
   const addons = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : undefined
@@ -83,7 +86,7 @@ export async function bookingFacts(bookingId: string):
       priceCents: b.price_cents,
       paidCents: paid,
       depositCents: b.deposit_cents ?? null,
-      name: to.name || b.client_name,
+      name: to?.name || b.client_name,
       addons,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
@@ -91,4 +94,12 @@ export async function bookingFacts(bookingId: string):
       canceledByName: b.canceled_by_staff?.name ?? undefined,
     },
   }
+}
+
+// Customer-facing emails still require someone to send to.
+export async function bookingFacts(bookingId: string):
+  Promise<{ b: BookingRecord; facts: BookingFacts; to: { email: string; name: string } } | null> {
+  const r = await bookingFactsAny(bookingId)
+  if (!r || !r.to) return null
+  return { b: r.b, facts: r.facts, to: r.to }
 }

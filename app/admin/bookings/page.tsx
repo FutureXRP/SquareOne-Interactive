@@ -62,17 +62,26 @@ export default function AdminBookingsPage() {
 
   const confirmRunBy = async (bookingId: string, staffId: string | null) => {
     const who = staffId ? allStaff.find((s) => s.id === staffId) : null
-    const ok = await setBookingRunBy(bookingId, staffId)
+    const res = await setBookingRunBy(bookingId, staffId)
     setPendingRunBy((cur) => { const n = { ...cur }; delete n[bookingId]; return n })
+    // The note reports what the SERVER says happened — never a promise the
+    // email went out unless it actually did.
+    const why: Record<string, string> = {
+      no_staff_login: 'they have no login linked — link one on Settings, then re-confirm',
+      no_email: 'their login has no email address on it',
+      not_found: 'the booking details could not be read',
+      signed_out: 'your session expired — sign in and re-confirm',
+      network: 'the server could not be reached — re-confirm to retry',
+    }
     setRunByNote((cur) => ({
       ...cur,
-      [bookingId]: !ok
+      [bookingId]: !res.ok
         ? { ok: false, text: 'Could not save the assignment — try again.' }
         : !who
           ? { ok: true, text: 'Assignment removed. No email is sent for removals.' }
-          : !who.linked
-            ? { ok: false, text: `${who.name} is assigned, but they have no login linked — no email could be sent. Link a login for them on Settings, and use Email health → Booking assignment alerts to verify.` }
-            : { ok: true, text: `${who.name} is assigned — the alert email went to their login address.` },
+          : res.alertSent
+            ? { ok: true, text: `${who.name} is assigned — the alert email is on its way to their login address. It will show under Email health → Recent sends.` }
+            : { ok: false, text: `${who.name} is assigned, but the alert email was NOT sent: ${why[res.alertReason ?? ''] ?? res.alertReason ?? 'unknown reason'}.` },
     }))
   }
   // Canceled bookings are kept, not deleted — but they shouldn't be the
