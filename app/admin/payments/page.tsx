@@ -6,12 +6,12 @@ import { CashAppClaims } from '@/components/admin/CashAppClaims'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED, GOLD } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import {
-  getPayments, getStaffBookings, setBookingRunBy, setBookingPayout, markPayoutPaid, undoPayoutPaid,
+  getPayments, getStaffBookings, setBookingRunBy, markPayoutPaid, undoPayoutPaid,
   BOOKINGS_EVENT, PAY_LABEL, type PaymentRow, type StaffBooking,
 } from '@/lib/staff-bookings-store'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { getPackages, type EventPackage } from '@/lib/packages-store'
-import { getStaff, getMyStaff, isAdminRole, type StaffMember } from '@/lib/staff-store'
+import { getStaff, getMyStaff, type StaffMember } from '@/lib/staff-store'
 import { getDrawer, addDrawerEntry, setStartingBalance, DRAWER_EVENT, type DrawerState } from '@/lib/cash-drawer-store'
 import { DrawerEntryRow } from '@/components/admin/DrawerEntryRow'
 import { RefundRow } from '@/components/admin/RefundRow'
@@ -24,16 +24,10 @@ function dollarsToCents(v: string): number {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
 }
 
-// What a booking owes its runner: explicit override, else the package's
-// rule (when the booking sells one), else the room's rule.
-function defaultPayoutCents(b: StaffBooking, room: RoomConfig | undefined, pkg: EventPackage | undefined): number {
-  if (b.payoutCents != null) return b.payoutCents
-  const rule: { payoutKind?: string; payoutValue?: number } | undefined =
-    pkg && pkg.payoutKind !== undefined && pkg.payoutKind !== 'none' ? pkg : room
-  if (!rule || rule.payoutKind === undefined || rule.payoutKind === 'none') return 0
-  if (rule.payoutKind === 'flat') return rule.payoutValue ?? 0
-  return Math.round((b.priceCents * (rule.payoutValue ?? 0)) / 100)
-}
+// Staff payouts are deliberately manual: no room or package rule computes
+// an amount, nothing accrues on its own. A booking becomes eligible the
+// moment it's paid in full; a person picks it, types the number, and
+// says how it went out.
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -78,35 +72,39 @@ export default function PaymentsPage() {
 
   const collectedCents = payments.reduce((n, p) => n + p.amountCents, 0)
   const staffById = useMemo(() => new Map(staff.map((s) => [s.id, s])), [staff])
-  const roomById = useMemo(() => new Map(rooms.map((r) => [r.id, r])), [rooms])
   const payoutsMigrated = bookings.some((b) => b.payoutPaidAt !== undefined) || (bookings.length === 0 && rooms.some((r) => r.payoutKind !== undefined))
 
-  // Payouts owed: fully paid bookings with a runner (or a room rule waiting
-  // for one), not yet settled. Admin-run events accrue nothing.
+  // Every fully paid booking is eligible — newest first, nothing pre-filled.
   const pkgById = useMemo(() => new Map(packages.map((p) => [p.id, p])), [packages])
 
   const due = useMemo(() => bookings
     .filter((b) => b.payoutPaidAt === null && b.status !== 'canceled' && b.priceCents > 0 && b.paidCents >= b.priceCents)
-    .map((b) => {
-      const room = roomById.get(b.roomId)
-      const pkg = b.packageId ? pkgById.get(b.packageId) : undefined
-      const runner = b.runByStaffId ? staffById.get(b.runByStaffId) : undefined
-      const amount = defaultPayoutCents(b, room, pkg)
-      return { b, runner, amount, pkg, exempt: !!runner && isAdminRole(runner.role) }
-    })
-    .filter((x) => x.amount > 0 || x.b.runByStaffId)
-    .sort((x, y) => x.b.date.localeCompare(y.b.date)), [bookings, roomById, pkgById, staffById])
+    .map((b) => ({
+      b,
+      pkg: b.packageId ? pkgById.get(b.packageId) : undefined,
+      runner: b.runByStaffId ? staffById.get(b.runByStaffId) : undefined,
+    }))
+    .sort((x, y) => y.b.date.localeCompare(x.b.date))
+    .slice(0, 20), [bookings, pkgById, staffById])
 
   const paidOut = useMemo(() => bookings
     .filter((b) => !!b.payoutPaidAt)
     .sort((x, y) => (y.payoutPaidAt ?? '').localeCompare(x.payoutPaidAt ?? ''))
     .slice(0, 8), [bookings])
 
+  // Which payout row is open, and the amount typed into it. Amounts are
+  // never suggested — the person paying decides every time.
+  const [openPayoutId, setOpenPayoutId] = useState<string | null>(null)
+  const [payoutAmount, setPayoutAmount] = useState('')
+
   const settle = async (b: StaffBooking, method: 'cash' | 'cashapp', amount: number, runnerName: string) => {
     if (busy || amount <= 0) return
-    if (method === 'cash' && !window.confirm(`Mark ${formatCents(amount)} paid in cash to ${runnerName}? It comes out of the cash bag.`)) return
+    const how = method === 'cash' ? 'in cash — it comes out of the cash bag' : 'by Cash App'
+    if (!window.confirm(`Pay ${runnerName} ${formatCents(amount)} ${how} for ${b.title} ${b.code}?`)) return
     setBusy(true)
     await markPayoutPaid(b, method, amount, runnerName, me?.id ?? null)
+    setOpenPayoutId(null)
+    setPayoutAmount('')
     setBusy(false)
   }
 
@@ -139,56 +137,60 @@ export default function PaymentsPage() {
         <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Staff payouts</span>
-            <span style={{ fontSize: 11.5, color: FAINT }}>owed once the booking is paid in full · Owners &amp; Admins don&apos;t accrue event pay</span>
-            {due.filter((d) => !d.exempt && d.runner).length > 0 && (
-              <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
-                {due.filter((d) => !d.exempt && d.runner).length} to pay
-              </span>
-            )}
+            <span style={{ fontSize: 11.5, color: FAINT }}>every paid-in-full booking is here — click one, pick who, type the amount, choose cash or Cash App</span>
           </div>
           {due.length === 0 ? (
             <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>
-              Nothing owed right now — payouts appear here when a booking with staff pay is paid in full.
+              Nothing to pay from yet — bookings appear here the moment they&apos;re paid in full.
             </p>
-          ) : due.map(({ b, runner, amount, pkg, exempt }, i) => (
-            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', flexWrap: 'wrap', borderBottom: i < due.length - 1 ? `1px solid ${LINE}` : 'none' }}>
-              <div style={{ flex: 1, minWidth: 190 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>
-                  {b.title} · {b.code}
-                  {pkg && <span style={{ fontSize: 10, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '1px 8px', borderRadius: 999, marginLeft: 8 }}>{pkg.name}</span>}
-                </p>
-                <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{b.date} · {b.client} · booking {formatCents(b.priceCents)} paid in full</p>
+          ) : due.map(({ b, runner, pkg }, i) => {
+            const open = openPayoutId === b.id
+            const cents = dollarsToCents(payoutAmount)
+            return (
+              <div key={b.id} style={{ borderBottom: i < due.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+                <button
+                  onClick={() => { setOpenPayoutId(open ? null : b.id); setPayoutAmount('') }}
+                  style={{ font: 'inherit', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', width: '100%', textAlign: 'left', background: open ? '#fafbfd' : 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <div style={{ flex: 1, minWidth: 190 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>
+                      {b.title} · {b.code}
+                      {pkg && <span style={{ fontSize: 10, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '1px 8px', borderRadius: 999, marginLeft: 8 }}>{pkg.name}</span>}
+                    </p>
+                    <p style={{ fontSize: 12, color: SUB, margin: 0 }}>{b.date} · {b.client} · {formatCents(b.paidCents)} collected in full</p>
+                  </div>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: BLUE }}>{open ? 'Close' : 'Pay staff →'}</span>
+                </button>
+                {open && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px 14px', flexWrap: 'wrap', background: '#fafbfd' }}>
+                    <select className="sq-select" style={{ width: 170, padding: '7px 10px', fontSize: 12.5 }} value={b.runByStaffId ?? ''}
+                      onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
+                      <option value="">— pay who? —</option>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <input className="sq-input" style={{ width: 100, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }} inputMode="decimal"
+                      placeholder="0.00" value={payoutAmount} onChange={(e) => setPayoutAmount(e.target.value)} autoFocus />
+                    {runner ? (
+                      <>
+                        {runner.cashtag && cents > 0 && (
+                          <a className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5, textDecoration: 'none' }}
+                            href={`https://cash.app/$${runner.cashtag}/${(cents / 100).toFixed(2)}`} target="_blank" rel="noreferrer">
+                            Open Cash App →
+                          </a>
+                        )}
+                        <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 11.5 }} disabled={busy || cents <= 0}
+                          onClick={() => settle(b, 'cashapp', cents, runner.name)}>Paid · Cash App</button>
+                        <button className="sq-btn sq-btn-navy" style={{ padding: '6px 13px', fontSize: 11.5 }} disabled={busy || cents <= 0}
+                          onClick={() => settle(b, 'cash', cents, runner.name)}>Paid in cash</button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 11.5, fontWeight: 600, color: '#b07818' }}>pick who to pay first</span>
+                    )}
+                  </div>
+                )}
               </div>
-              <select className="sq-select" style={{ width: 170, padding: '7px 10px', fontSize: 12.5 }} value={b.runByStaffId ?? ''}
-                onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
-                <option value="">— who ran it? —</option>
-                {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              {exempt ? (
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '3px 11px', borderRadius: 999 }}>
-                  Admin — no event pay
-                </span>
-              ) : runner ? (
-                <>
-                  <input className="sq-input" style={{ width: 92, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }} inputMode="decimal"
-                    defaultValue={(amount / 100).toFixed(2)} key={`po-${b.id}-${amount}`}
-                    onBlur={(e) => { const c = dollarsToCents(e.target.value); if (c !== amount) setBookingPayout(b.id, c) }} />
-                  {runner.cashtag && amount > 0 && (
-                    <a className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5, textDecoration: 'none' }}
-                      href={`https://cash.app/$${runner.cashtag}/${(amount / 100).toFixed(2)}`} target="_blank" rel="noreferrer">
-                      Open Cash App →
-                    </a>
-                  )}
-                  <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 11.5 }} disabled={busy || amount <= 0}
-                    onClick={() => settle(b, 'cashapp', amount, runner.name)}>Paid · Cash App</button>
-                  <button className="sq-btn sq-btn-navy" style={{ padding: '6px 13px', fontSize: 11.5 }} disabled={busy || amount <= 0}
-                    onClick={() => settle(b, 'cash', amount, runner.name)}>Paid in cash</button>
-                </>
-              ) : (
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: '#b07818' }}>{formatCents(amount)} — assign who ran it to pay</span>
-              )}
-            </div>
-          ))}
+            )
+          })}
           {paidOut.length > 0 && (
             <div style={{ borderTop: `1px solid ${LINE}`, background: '#fafbfd' }}>
               {paidOut.map((b) => {

@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
-  bookingRemoved, bookingPayment, bookingApproved, bookingStaffAssigned, paymentReceipt, refundIssued,
+  bookingRemoved, bookingPayment, bookingApproved, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
   membershipCanceled, membershipResumed,
   eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
@@ -96,6 +96,28 @@ export async function POST(req: Request) {
       const resolved = await bookingFacts(p.booking_id)
       if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
       await sendAndLog('booking.payment', resolved.to.email, bookingPayment(resolved.facts, {
+        amountCents: p.amount_cents,
+        method: PAY_LABEL[p.method] ?? p.method,
+        code: p.code,
+      }), { accountId: resolved.b.account_id, bookingId: resolved.b.id })
+      return NextResponse.json({ ok: true })
+    }
+
+    // A payment struck from the books. The customer already got a receipt
+    // for it, so the correction can't be silent. Only rows a staff member
+    // actually voided qualify — the browser names the row, the row's own
+    // status decides whether an email goes out.
+    if (kind === 'payment.voided') {
+      const { data } = await serviceDb()
+        .from('payments')
+        .select('code, amount_cents, method, booking_id, status')
+        .eq('id', id)
+        .maybeSingle()
+      const p = data as { code: string; amount_cents: number; method: string; booking_id: string | null; status: string } | null
+      if (!p || p.status !== 'voided' || !p.booking_id) return NextResponse.json({ ok: true, skipped: 'not_a_voided_booking_payment' })
+      const resolved = await bookingFacts(p.booking_id)
+      if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
+      await sendAndLog('payment.voided', resolved.to.email, paymentVoided(resolved.facts, {
         amountCents: p.amount_cents,
         method: PAY_LABEL[p.method] ?? p.method,
         code: p.code,

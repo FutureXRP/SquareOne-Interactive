@@ -439,6 +439,46 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   return true
 }
 
+// Undo for a mistakenly recorded desk payment (cash / Cash App — never a
+// card, which is a real Stripe charge and comes back via Refund). The row
+// is kept and flipped to 'voided', so the books show it was entered and
+// struck; every total and report counts only 'paid' rows, so the amount
+// drops out of the booking's balance, the reports, and this list at once.
+export async function voidPayment(p: PaymentRow, staffId: string | null): Promise<{ ok: boolean; message?: string }> {
+  if (p.method === 'stripe') {
+    return { ok: false, message: 'Card payments are real Stripe charges — use Refund instead.' }
+  }
+  const sb = supabase()
+  const { data, error } = await sb.from('payments')
+    .update({ status: 'voided', voided_by: staffId, voided_at: new Date().toISOString() })
+    .eq('id', p.id)
+    .eq('status', 'paid')
+    .select('id')
+  // Pre-0041 databases fail two ways: an unknown enum value / column
+  // errors, and a missing update policy silently matches zero rows.
+  if (error || !data || data.length === 0) {
+    if (error) console.error('[payments]', error.message)
+    return { ok: false, message: 'Could not undo — has 0041_void_payments.sql been run in Supabase?' }
+  }
+  // A voided cash payment never belonged in the bag — take it back out.
+  if (p.method === 'cash') {
+    const { data: org } = await sb.from('organizations').select('id').limit(1).single()
+    if (org) {
+      await sb.from('cash_drawer_entries').insert({
+        org_id: (org as { id: string }).id,
+        amount_cents: -p.amountCents,
+        reason: `Undo — payment ${p.code} was recorded in error`,
+        staff_id: staffId,
+      })
+    }
+  }
+  // The customer already holds a receipt for this, so the correction
+  // can't be silent — the server builds the email from the voided row.
+  if (p.bookingId) notify('payment.voided', p.id)
+  emit(BOOKINGS_EVENT)
+  return { ok: true }
+}
+
 // Hard-delete a booking row (payments/ledger keep their records, unlinked).
 export async function deleteBooking(id: string): Promise<boolean> {
   // Send first — once the row is gone the server has nothing left to
