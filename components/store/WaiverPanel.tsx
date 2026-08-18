@@ -21,9 +21,16 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
   const [choices, setChoices] = useState<Record<string, string[]>>({})
+  const [agreements, setAgreements] = useState<Record<string, boolean>>({})
 
-  const toggleChoice = (label: string, option: string) => {
+  const toggleChoice = (label: string, option: string, single: boolean) => {
     setChoices((cur) => {
+      // An either/or holds exactly one answer — picking one replaces the
+      // other, so "I give permission" and "I do NOT" can never both be true.
+      if (single) {
+        const had = (cur[label] ?? [])[0] === option
+        return { ...cur, [label]: had ? [] : [option] }
+      }
       const set = new Set(cur[label] ?? [])
       if (set.has(option)) set.delete(option)
       else set.add(option)
@@ -31,15 +38,26 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
     })
   }
 
-  const choicesOk = def.choices.every((m) => !m.required || (choices[m.label]?.length ?? 0) > 0)
-  const canSign = signer.trim().length > 0 && agreed && choicesOk && signature.trim().toLowerCase() === signer.trim().toLowerCase()
+  const choicesOk = def.choices.every((m) => {
+    const picked = choices[m.label]?.length ?? 0
+    // A required either/or needs exactly one answer; a required
+    // check-any needs at least one.
+    return m.single ? (!m.required || picked === 1) : (!m.required || picked > 0)
+  })
+  const agreementsOk = def.agreements.every((a) => !a.required || !!agreements[a.label])
+  const canSign = signer.trim().length > 0 && agreed && choicesOk && agreementsOk
+    && signature.trim().toLowerCase() === signer.trim().toLowerCase()
 
   const sign = async () => {
     setSaving(true)
     setFailed(false)
     // The snapshot is what keeps this signature meaningful later: the
     // waiver as it read today, not as the form may read next year.
-    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), choices, { name: def.name, terms: def.terms })
+    const answers: Record<string, string[]> = { ...choices }
+    for (const a of def.agreements) {
+      if (agreements[a.label]) answers[a.label] = ['agreed']
+    }
+    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), answers, { name: def.name, terms: def.terms })
     setSaving(false)
     if (ok) onSigned()
     else setFailed(true)
@@ -61,19 +79,43 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
 
       {def.choices.map((m) => (
         <div key={m.label} style={{ marginBottom: 12 }}>
-          <span className="sq-label">{m.label}{m.required ? '' : ' (optional)'}</span>
+          <span className="sq-label">
+            {m.label}{m.required ? '' : ' (optional)'}
+            {m.single && <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}> — pick one</span>}
+          </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {m.options.map((opt) => {
               const on = (choices[m.label] ?? []).includes(opt)
               return (
                 <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: INK, cursor: 'pointer', background: on ? '#eef4fb' : '#fff', border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 9, padding: '6px 11px' }}>
-                  <input type="checkbox" checked={on} onChange={() => toggleChoice(m.label, opt)} style={{ accentColor: BLUE }} />
+                  <input
+                    type={m.single ? 'radio' : 'checkbox'}
+                    name={m.single ? `${def.id}-${m.label}` : undefined}
+                    checked={on}
+                    onChange={() => toggleChoice(m.label, opt, m.single)}
+                    // A radio can't be un-picked by the browser; let a second
+                    // click clear it so "changed my mind" stays possible.
+                    onClick={() => { if (m.single && on) toggleChoice(m.label, opt, true) }}
+                    style={{ accentColor: BLUE }}
+                  />
                   {opt}
                 </label>
               )
             })}
           </div>
         </div>
+      ))}
+
+      {def.agreements.map((a) => (
+        <label key={a.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 12.5, color: SUB, lineHeight: 1.5, cursor: 'pointer', marginBottom: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!agreements[a.label]}
+            onChange={(e) => setAgreements((cur) => ({ ...cur, [a.label]: e.target.checked }))}
+            style={{ marginTop: 2, accentColor: BLUE }}
+          />
+          <span>{a.label}{a.required ? '' : <span style={{ color: FAINT }}> (optional)</span>}</span>
+        </label>
       ))}
 
       <div style={{ marginBottom: 12 }}>

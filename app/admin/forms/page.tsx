@@ -8,7 +8,7 @@ import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import type { WaiverFrequency } from '@/lib/waivers-live'
 
-type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph' | 'multi'
+type FieldType = 'text' | 'email' | 'date' | 'signature' | 'checkbox' | 'paragraph' | 'multi' | 'single'
 type AssignTo = 'none' | 'fitness' | 'rentals'
 
 interface FormField {
@@ -55,6 +55,7 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'signature', label: 'Signature' },
   { value: 'paragraph', label: 'Info paragraph' },
   { value: 'multi', label: 'Multiple checkboxes' },
+  { value: 'single', label: 'Pick one (either/or)' },
 ]
 
 interface Row {
@@ -209,7 +210,10 @@ export default function FormsPage() {
               {/* The store shows exactly the paragraphs written here and nothing
                   else — an empty waiver collects nothing, so say so plainly. */}
               {f.status === 'active' && f.assignTo !== 'none'
-                && !f.fields.some((fl) => fl.type === 'paragraph' && fl.content?.trim()) && (
+                && !f.fields.some((fl) =>
+                  (fl.type === 'paragraph' && fl.content?.trim())
+                  || ((fl.type === 'multi' || fl.type === 'single') && (fl.options ?? []).length > 0)
+                  || (fl.type === 'checkbox' && fl.label.trim())) && (
                 <p style={{ fontSize: 11, fontWeight: 600, color: '#b07818', margin: '5px 0 0', lineHeight: 1.45 }}>
                   No waiver text yet — add an info paragraph and nobody will be asked to sign this.
                 </p>
@@ -304,14 +308,18 @@ export default function FormsPage() {
                   value={fl.content ?? ''} style={{ marginLeft: 16, width: 'calc(100% - 16px)' }}
                   onChange={(e) => patchField(editing.id, i, { content: e.target.value })} />
               )}
-              {fl.type === 'multi' && (
+              {(fl.type === 'multi' || fl.type === 'single') && (
                 <div style={{ marginLeft: 16 }}>
-                  <textarea className="sq-textarea" rows={3} placeholder={'One choice per line, e.g.\nGym\nDining Hall\nMultiball Zone'}
+                  <textarea className="sq-textarea" rows={3} placeholder={fl.type === 'single'
+                      ? 'One choice per line, e.g.\nI give permission for photos\nI do NOT give permission for photos'
+                      : 'One choice per line, e.g.\nGym\nDining Hall\nMultiball Zone'}
                     value={(fl.options ?? []).join('\n')}
                     onChange={(e) => patchField(editing.id, i, { options: e.target.value.split('\n') })}
                     onBlur={(e) => patchField(editing.id, i, { options: e.target.value.split('\n').map((o) => o.trim()).filter(Boolean) })} />
                   <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0' }}>
-                    Signers can check any that apply — their choices are saved with the signature.
+                    {fl.type === 'single'
+                      ? 'Signers pick exactly one — right for yes-or-no permissions. Their choice is saved with the signature.'
+                      : 'Signers can check any that apply — their choices are saved with the signature.'}
                   </p>
                 </div>
               )}

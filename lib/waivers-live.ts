@@ -17,6 +17,9 @@ export interface WaiverChoice {
   label: string
   options: string[]
   required: boolean
+  // true = pick exactly one (an either/or, like a photo release);
+  // false = check any that apply.
+  single: boolean
 }
 
 export interface RequiredWaiver {
@@ -25,6 +28,9 @@ export interface RequiredWaiver {
   context: string
   terms: string[]
   choices: WaiverChoice[]
+  // Standalone "Agreement checkbox" fields — each rendered as its own
+  // checkbox; required ones must be ticked to sign.
+  agreements: { label: string; required: boolean }[]
   frequency: WaiverFrequency
 }
 
@@ -67,8 +73,11 @@ export function toWaiver(r: FormRow, where?: string): RequiredWaiver {
       .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
       .map((f) => (f.content as string).trim()),
     choices: fields
-      .filter((f) => f.type === 'multi' && Array.isArray(f.options) && f.options.length > 0)
-      .map((f) => ({ label: f.label ?? '', options: f.options as string[], required: !!f.required })),
+      .filter((f) => (f.type === 'multi' || f.type === 'single') && Array.isArray(f.options) && f.options.length > 0)
+      .map((f) => ({ label: f.label ?? '', options: f.options as string[], required: !!f.required, single: f.type === 'single' })),
+    agreements: fields
+      .filter((f) => f.type === 'checkbox' && (f.label ?? '').trim())
+      .map((f) => ({ label: (f.label as string).trim(), required: !!f.required })),
     frequency,
   }
 }
@@ -139,10 +148,17 @@ async function needsSignature(w: RequiredWaiver): Promise<boolean> {
   return Date.now() - signedMs > 365 * 24 * 60 * 60 * 1000
 }
 
-// The waivers this flow still has to collect right now. A form with no
-// paragraphs has nothing to agree to, so it isn't put in front of anyone.
+// A form is substantive when it puts anything in front of the signer to
+// read or decide — paragraphs, choices, or agreement checkboxes. A photo
+// release that is nothing but an either/or question counts.
+export function hasSubstance(w: RequiredWaiver): boolean {
+  return w.terms.length > 0 || w.choices.length > 0 || w.agreements.length > 0
+}
+
+// The waivers this flow still has to collect right now. A form with
+// nothing to read or decide isn't put in front of anyone.
 export async function unsignedRequiredWaivers(target: WaiverTarget): Promise<RequiredWaiver[]> {
-  const required = (await getRequiredWaivers(target)).filter((w) => w.terms.length > 0)
+  const required = (await getRequiredWaivers(target)).filter(hasSubstance)
   const due: RequiredWaiver[] = []
   for (const w of required) {
     if (await needsSignature(w)) due.push(w)
