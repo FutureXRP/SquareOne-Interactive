@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { card, INK, SUB, FAINT, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getActiveProducts, PRODUCTS_EVENT, type ProductConfig } from '@/lib/products-store'
-import { getSiteContent, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
+import { getSiteContent, navTabOn, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
 import { useLive } from '@/lib/use-live'
 import { addToCart } from '@/lib/session'
 
@@ -16,6 +16,21 @@ export default function ShopPage() {
     addToCart(id)
     setAdded(id)
     window.setTimeout(() => setAdded((cur) => (cur === id ? null : cur)), 1200)
+  }
+
+  // The Shop nav tab is the shop's on/off switch — turned off on Site
+  // Content, the page itself closes too (someone can still hold the URL).
+  if (content && !navTabOn(content, 'shop')) {
+    return (
+      <div className="sq-page" style={{ padding: '60px 20px', maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
+        <div className="sq-card" style={{ ...card, padding: '32px 34px' }}>
+          <p style={{ fontSize: 16, fontWeight: 800, color: INK, margin: '0 0 6px' }}>The shop isn&rsquo;t open right now</p>
+          <p style={{ fontSize: 13.5, color: SUB, margin: 0, lineHeight: 1.6 }}>
+            Check back soon — in the meantime you can rent a room, book a party, or join the fitness center.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

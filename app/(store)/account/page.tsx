@@ -15,6 +15,8 @@ import { DoorUnlock } from '@/components/store/DoorUnlock'
 import { VisitCard } from '@/components/store/VisitCard'
 import { FamilyCard } from '@/components/store/FamilyCard'
 import { getAllWaivers, type RequiredWaiver } from '@/lib/waivers-live'
+import { getSiteContent, navTabOn, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
+import { useLive } from '@/lib/use-live'
 
 export default function AccountOverview() {
   const [bookings, setBookings] = useState<MemberBooking[]>([])
@@ -28,6 +30,7 @@ export default function AccountOverview() {
   // What Stripe will actually charge next — the list price corrected for
   // any coupon on the live subscription (e.g. a free staff membership).
   const [nextPay, setNextPay] = useState<{ totalCents: number; label: string | null } | null>(null)
+  const { data: siteContent } = useLive<SiteContent | null>(getSiteContent, [CONTENT_EVENT], null)
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
@@ -167,7 +170,8 @@ export default function AccountOverview() {
                 {[
                   ['Rent a room', '/facilities'],
                   ['Book a party', '/facilities/party'],
-                  ['Shop gear', '/shop'],
+                  // The shop quick link follows the Shop nav tab's switch.
+                  ...(navTabOn(siteContent, 'shop') ? [['Shop gear', '/shop']] : []),
                   ['Update payment method', '/account/billing'],
                 ].map(([label, href]) => (
                   <Link key={href} href={href} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: BLUE, textDecoration: 'none', padding: '8px 0', borderBottom: `1px solid ${LINE}` }}>
