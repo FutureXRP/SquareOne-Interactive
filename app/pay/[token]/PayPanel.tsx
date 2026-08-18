@@ -9,11 +9,13 @@ import type { PayTarget } from '@/lib/server/pay-links'
 // has a $cashtag configured, a direct Cash App path rides along — pay the
 // tag, tap "I've sent it", and the desk confirms before anything reads as
 // paid, because Cash App has no way for software to check.
-export function PayPanel({ token, target, cashtag = '', bookingCode = '' }: {
+export function PayPanel({ token, target, cashtag = '', bookingCode = '', cashQr = '' }: {
   token: string
   target: PayTarget
   cashtag?: string
   bookingCode?: string
+  // Server-rendered QR SVG for the cash.app link with the amount baked in.
+  cashQr?: string
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,15 +97,35 @@ export function PayPanel({ token, target, cashtag = '', bookingCode = '' }: {
           ) : !cashOpen ? (
             <button
               onClick={() => setCashOpen(true)}
-              style={{ font: 'inherit', fontSize: 12.5, color: SUB, background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+              style={{ font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: INK, background: '#fff', border: `1.5px solid ${LINE}`, borderRadius: 10, cursor: 'pointer', padding: '8px 14px' }}
             >
-              Prefer Cash App? Pay our ${tag} directly
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, background: '#00D632', color: '#fff', fontSize: 12, fontWeight: 800, lineHeight: 1 }}>$</span>
+              Prefer Cash App? Pay ${tag} directly
             </button>
           ) : (
             <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: '0 0 6px' }}>Pay with Cash App</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: '#00D632', color: '#fff', fontSize: 13, fontWeight: 800, lineHeight: 1 }}>$</span>
+                <p style={{ fontSize: 13.5, fontWeight: 800, color: INK, margin: 0 }}>Pay with Cash App</p>
+              </div>
+
+              {cashQr && (
+                <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 16, padding: '18px 18px 12px', margin: '0 auto 12px', width: 'fit-content', textAlign: 'center', boxShadow: '0 2px 10px rgba(24,39,64,0.07)' }}>
+                  <div style={{ position: 'relative', width: 150, height: 150, margin: '0 auto' }}>
+                    <div style={{ lineHeight: 0 }} dangerouslySetInnerHTML={{ __html: cashQr }} />
+                    {/* Center badge, same construction as the official Cash App
+                        card — level-H error correction keeps it scannable. */}
+                    <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 36, height: 36, borderRadius: 9, background: '#00D632', border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 19, fontWeight: 800 }}>$</span>
+                  </div>
+                  <p style={{ fontSize: 13.5, fontWeight: 800, color: INK, margin: '10px 0 0', letterSpacing: '-0.01em' }}>${tag}</p>
+                  <p style={{ fontSize: 11, color: FAINT, margin: '1px 0 0' }}>
+                    Scan with your phone camera — opens Cash App with <strong style={{ color: INK }}>{formatCents(cashAmount)}</strong> filled in
+                  </p>
+                </div>
+              )}
+
               <ol style={{ fontSize: 12.5, color: SUB, margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.7 }}>
-                <li>Send <strong style={{ color: INK }}>{formatCents(cashAmount)}</strong> to <strong style={{ color: INK }}>${tag}</strong> — the button below opens it with the amount filled in.</li>
+                <li>Send <strong style={{ color: INK }}>{formatCents(cashAmount)}</strong> to <strong style={{ color: INK }}>${tag}</strong> — scan the code above, or on your phone use the button below.</li>
                 <li>Put your booking code <strong style={{ color: INK }}>{bookingCode}</strong> in the note so we can match it.</li>
                 <li>Come back here and tap &ldquo;I&rsquo;ve sent it.&rdquo;</li>
               </ol>
