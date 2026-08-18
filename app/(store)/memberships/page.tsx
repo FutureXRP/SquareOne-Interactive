@@ -7,7 +7,6 @@ export const metadata = { title: 'Fitness Memberships — SquareOne Interactive'
 const faqs = [
   ['How do I get in the door?', 'Your account unlocks the door. Sign in on your phone, tap "Unlock door," and the fitness center door opens for 6 seconds — nothing to scan or carry. Every unlock is logged to building security under your name, and family plans let each household member check in under their own name.'],
   ['Can I cancel anytime?', 'Yes. Cancel from your account and your fitness membership stays active through the end of the paid period. No cancellation fees.'],
-  ['Do members get discounts?', 'Members get member pricing on room rentals, birthday parties, and programs like Speed & Agility.'],
   ['Is there a joining fee?', 'No joining fee. Your first payment is your first month.'],
 ]
 
