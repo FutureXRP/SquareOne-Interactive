@@ -228,6 +228,27 @@ export default function CouponsAdminPage() {
               <span style={{ fontSize: 11.5, color: FAINT, paddingBottom: 10 }}>set to 0 for a free-months-only code</span>
             </div>
 
+            {/* How many monthly payments the discount covers (memberships) */}
+            {editing.discountMonths !== undefined && editing.value > 0 && (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 6, marginTop: 10 }}>
+                <div>
+                  <label className="sq-label" htmlFor="c-dur">Discount lasts (memberships)</label>
+                  <select id="c-dur" className="sq-select" style={{ width: 210 }} value={editing.discountMonths ?? 1}
+                    onChange={(e) => patch(editing.code, { discountMonths: Number(e.target.value) })}>
+                    <option value={1}>First payment only</option>
+                    {[2, 3, 4, 5, 6, 9, 12].map((n) => (
+                      <option key={n} value={n}>{n} monthly payments</option>
+                    ))}
+                    <option value={0}>Forever — every payment</option>
+                  </select>
+                </div>
+                <span style={{ fontSize: 11.5, color: FAINT, paddingBottom: 10, flex: 1, minWidth: 200, lineHeight: 1.5 }}>
+                  After the last discounted month, Stripe bills the full plan price automatically — nothing to
+                  remember. &ldquo;Forever&rdquo; + 100% off is how a staff membership stays free.
+                </span>
+              </div>
+            )}
+
             {migrated && (
               <>
                 {/* Free months */}

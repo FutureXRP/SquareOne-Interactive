@@ -25,12 +25,16 @@ export interface Coupon {
   expiresOn?: string | null // YYYY-MM-DD — required once 0031 has run
   planIds?: string[]
   redeemed?: number // count, filled by getCoupons
+  // 0042: how many monthly payments the discount covers — 1 = first only,
+  // N = that many then full price automatically, 0 = forever.
+  discountMonths?: number
 }
 
 interface Row {
   code: string; kind: 'percent' | 'amount'; value: number; note: string; active: boolean
   applies_to?: string; free_months?: number; max_redemptions?: number | null
   once_per_account?: boolean; expires_on?: string | null; plan_ids?: string[] | null
+  discount_months?: number
 }
 
 function fromRow(r: Row): Coupon {
@@ -47,11 +51,13 @@ function fromRow(r: Row): Coupon {
     oncePerAccount: migrated ? (r.once_per_account ?? true) : undefined,
     expiresOn: migrated ? (r.expires_on ?? null) : undefined,
     planIds: migrated ? (r.plan_ids ?? []) : undefined,
+    discountMonths: 'discount_months' in r ? (r.discount_months ?? 1) : undefined,
   }
 }
 
 const BASE = 'code, kind, value, note, active'
-const COL_SETS = [`${BASE}, applies_to, free_months, max_redemptions, once_per_account, expires_on, plan_ids`, BASE]
+const FULL_0030 = `${BASE}, applies_to, free_months, max_redemptions, once_per_account, expires_on, plan_ids`
+const COL_SETS = [`${FULL_0030}, discount_months`, FULL_0030, BASE]
 
 export async function getCoupons(): Promise<Coupon[]> {
   for (const cols of COL_SETS) {
@@ -120,6 +126,7 @@ export async function upsertCoupon(c: Coupon, previousCode?: string): Promise<bo
     // Never write a null end date — the column is required after 0031.
     ...(c.expiresOn !== undefined ? { expires_on: c.expiresOn || defaultExpiry() } : {}),
     ...(c.planIds !== undefined ? { plan_ids: c.planIds } : {}),
+    ...(c.discountMonths !== undefined ? { discount_months: c.discountMonths } : {}),
   }))
   if (ok) emit(COUPONS_EVENT)
   return ok

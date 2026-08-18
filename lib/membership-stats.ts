@@ -10,12 +10,14 @@ export interface MembershipStats {
   pastDue: number
   mrrCents: number
   byPlan: { name: string; count: number }[]
-  recent: { account: string; plan: string; when: string; status: string }[]
+  recent: { account: string; accountId: string | null; hasStripe: boolean; plan: string; when: string; status: string }[]
 }
 
 interface Row {
   status: string
   created_at: string
+  account_id: string | null
+  stripe_subscription_id: string | null
   membership_plans: { name: string; price_cents: number } | null
   client_accounts: { name: string } | null
 }
@@ -23,7 +25,7 @@ interface Row {
 export async function getMembershipStats(): Promise<MembershipStats> {
   const { data, error } = await supabase()
     .from('member_subscriptions')
-    .select('status, created_at, membership_plans(name, price_cents), client_accounts(name)')
+    .select('status, created_at, account_id, stripe_subscription_id, membership_plans(name, price_cents), client_accounts(name)')
     .order('created_at', { ascending: false })
   if (error) throw error
   const rows = data as unknown as Row[]
@@ -43,6 +45,8 @@ export async function getMembershipStats(): Promise<MembershipStats> {
     byPlan: [...byPlanMap.entries()].map(([name, count]) => ({ name, count })),
     recent: rows.slice(0, 6).map((r) => ({
       account: r.client_accounts?.name ?? '—',
+      accountId: r.account_id,
+      hasStripe: !!r.stripe_subscription_id,
       plan: r.membership_plans?.name ?? '—',
       when: new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       status: r.status,
