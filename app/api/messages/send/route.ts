@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { serviceDb } from '@/lib/server/billing'
+import { serviceDb, resendFrom } from '@/lib/server/billing'
 
 // Mass communication: sends an email to a member segment via Resend.
 // Owner/Admin only — verified against the staff table, not just the UI.
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   if (!key) return NextResponse.json({ error: 'email_not_configured' }, { status: 501 })
   if (emails.length === 0) return NextResponse.json({ error: 'no_recipients' }, { status: 400 })
 
-  const from = process.env.RESEND_FROM || 'SquareOne Interactive <onboarding@resend.dev>'
+  const from = resendFrom()
   const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
     <h2 style="color:#182740">${subject.trim()}</h2>
     <div style="color:#333;line-height:1.6;font-size:15px">${body.trim().replace(/\n/g, '<br/>')}</div>

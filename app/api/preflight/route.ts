@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { serviceDb, stripe, stripeConfigured, DEFAULT_FROM } from '@/lib/server/billing'
+import { serviceDb, stripe, stripeConfigured, resendFrom } from '@/lib/server/billing'
 
 // Go-live readiness. Every check actually probes the thing it names —
 // Stripe is called, the database is queried, the columns are looked for —
@@ -170,7 +170,7 @@ export async function POST(req: Request) {
 
   // ── Email ──────────────────────────────────────────────────
   const resendKey = process.env.RESEND_API_KEY ?? ''
-  const from = process.env.RESEND_FROM || DEFAULT_FROM
+  const from = resendFrom()
   if (!resendKey) {
     add({
       group: 'Email', label: 'Resend key', status: 'fail',

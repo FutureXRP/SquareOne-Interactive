@@ -504,7 +504,7 @@ export function membershipWelcome(o: { name: string; plan: string }): EmailBody 
        <ul style="margin:8px 0 12px;padding-left:20px;">
          <li style="margin-bottom:4px;">Unlock the fitness door from your phone — no card to carry</li>
          <li style="margin-bottom:4px;">Check yourself in and out so your workout time adds up</li>
-         <li>Member pricing on room rentals and parties</li>
+         <li>Book rooms, parties, and programs right from your account</li>
        </ul>
        <p style="margin:0;">You can change your plan, update your card, or cancel any time from your account page.</p>`,
       { label: 'Open my account', href: siteLink('/account') },

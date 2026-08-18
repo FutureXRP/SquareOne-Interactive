@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { serviceDb, sendEmail, DEFAULT_FROM } from '@/lib/server/billing'
+import { serviceDb, sendEmail, resendFrom } from '@/lib/server/billing'
 
 // Tells staff exactly why email is or isn't working: whether the key is
 // set, whether Resend accepts it, which domains are verified, whether the
@@ -50,8 +50,8 @@ export async function POST(req: Request) {
   const { testTo } = (await req.json().catch(() => ({}))) as { testTo?: string }
 
   const key = process.env.RESEND_API_KEY ?? ''
-  const from = process.env.RESEND_FROM || DEFAULT_FROM
-  const usingTestSender = !process.env.RESEND_FROM || from.includes('resend.dev')
+  const from = resendFrom()
+  const usingTestSender = from.includes('resend.dev')
   const checks: EmailCheck[] = []
 
   // 1 — is there a key at all?

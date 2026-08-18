@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { getStaff, type StaffMember } from '@/lib/staff-store'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 
 interface EmailCheck { label: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }
@@ -36,6 +37,34 @@ export default function EmailHealthPage() {
   const [testTo, setTestTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Booking-assignment alert test: pick a staff member, run the exact
+  // lookup a real assignment uses, and see where it breaks.
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [assignStaffId, setAssignStaffId] = useState('')
+  const [assignBusy, setAssignBusy] = useState(false)
+  const [assignResult, setAssignResult] = useState<{ ok: boolean; detail: string } | null>(null)
+
+  const testAssignment = async () => {
+    if (assignBusy || !assignStaffId) return
+    setAssignBusy(true)
+    setAssignResult(null)
+    try {
+      const { data } = await supabase().auth.getSession()
+      const token = data.session?.access_token
+      if (!token) { setAssignResult({ ok: false, detail: 'Sign in again — your session expired.' }); setAssignBusy(false); return }
+      const res = await fetch('/api/email/test-assignment', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ staffId: assignStaffId }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; detail?: string }
+      setAssignResult({ ok: !!json.ok, detail: json.detail ?? `The test itself failed (${res.status}).` })
+    } catch (e) {
+      setAssignResult({ ok: false, detail: e instanceof Error ? e.message : 'Could not run the test.' })
+    }
+    setAssignBusy(false)
+    loadLog()
+  }
 
   const run = useCallback(async (sendTo?: string) => {
     setBusy(true)
@@ -73,6 +102,7 @@ export default function EmailHealthPage() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     run()
+    getStaff().then(setStaff).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -186,6 +216,36 @@ export default function EmailHealthPage() {
                 account. Any other address fails exactly like this.
               </p>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Do assignment alerts reach this staff member? */}
+      <div className="sq-card" style={{ ...card, padding: '18px 20px', marginBottom: 16 }}>
+        <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: '0 0 4px' }}>Booking assignment alerts</p>
+        <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 12px', lineHeight: 1.55 }}>
+          When someone is set as &ldquo;Run by&rdquo; on a booking, the alert goes to their <strong style={{ color: INK }}>login
+          email</strong>. This runs that exact lookup for one person and either sends them a sample alert or tells you
+          which link in the chain is missing — a staff member with no login linked gets nothing, silently.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select className="sq-select" style={{ flex: 1, minWidth: 220 }} value={assignStaffId} onChange={(e) => { setAssignStaffId(e.target.value); setAssignResult(null) }}>
+            <option value="">— which staff member? —</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.linked ? '' : ' (no login linked)'}</option>
+            ))}
+          </select>
+          <button className="sq-btn sq-btn-primary" style={{ padding: '10px 20px' }} disabled={assignBusy || !assignStaffId} onClick={testAssignment}>
+            {assignBusy ? 'Testing…' : 'Send test alert'}
+          </button>
+        </div>
+        {assignResult && (
+          <div style={{
+            marginTop: 12, padding: '12px 14px', borderRadius: 10,
+            background: assignResult.ok ? '#e5f2ea' : '#fae7e4',
+            border: `1px solid ${assignResult.ok ? '#bfe0cc' : '#f0c9c3'}`,
+          }}>
+            <p style={{ fontSize: 12.5, color: INK, margin: 0, lineHeight: 1.6, fontWeight: assignResult.ok ? 500 : 600 }}>{assignResult.detail}</p>
           </div>
         )}
       </div>

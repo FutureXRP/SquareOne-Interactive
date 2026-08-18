@@ -177,6 +177,16 @@ export async function sendAndLog(
 
 export const DEFAULT_FROM = 'SquareOne Interactive <onboarding@resend.dev>'
 
+// The From header, cleaned. People paste the whole "RESEND_FROM = Name
+// <a@b.com>" line into the Vercel value box — name, equals sign and all —
+// and every email then shows "RESEND_FROM = Name" as the sender. Strip
+// the accidental prefix and stray wrapping quotes so either paste works.
+export function resendFrom(): string {
+  let v = (process.env.RESEND_FROM ?? '').trim()
+  v = v.replace(/^["']?\s*RESEND_FROM\s*=\s*/i, '').replace(/^["']|["']$/g, '').trim()
+  return v || DEFAULT_FROM
+}
+
 // Sends through Resend and *throws with Resend's own words* when it
 // refuses. Silently ignoring the response is how a broken sender looks
 // healthy: the API answers 403 "domain is not verified" with a 200-shaped
@@ -192,7 +202,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM || DEFAULT_FROM,
+        from: resendFrom(),
         to: [to],
         subject,
         html,
