@@ -339,40 +339,6 @@ export default function RoomsAdminPage() {
               </div>
             )}
 
-            {/* Staff pay for running a booking here — due once the customer pays in full */}
-            {editing.payoutKind !== undefined && (
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
-                <div>
-                  <label className="sq-label" htmlFor="r-payout-kind">Staff pay for running a booking</label>
-                  <select id="r-payout-kind" className="sq-select" style={{ width: 190 }} value={editing.payoutKind}
-                    onChange={(e) => patch(editing.id, { payoutKind: e.target.value as 'none' | 'flat' | 'percent' })}>
-                    <option value="none">No staff pay</option>
-                    <option value="flat">Flat amount ($)</option>
-                    <option value="percent">% of the booking</option>
-                  </select>
-                </div>
-                {editing.payoutKind === 'flat' && (
-                  <div>
-                    <label className="sq-label" htmlFor="r-payout-v">Amount ($)</label>
-                    <input id="r-payout-v" className="sq-input" style={{ width: 110 }} inputMode="decimal"
-                      defaultValue={((editing.payoutValue ?? 0) / 100).toFixed(2)} key={`pov-${editing.id}`}
-                      onBlur={(e) => patch(editing.id, { payoutValue: dollarsToCents(e.target.value) })} />
-                  </div>
-                )}
-                {editing.payoutKind === 'percent' && (
-                  <div>
-                    <label className="sq-label" htmlFor="r-payout-p">Percent (%)</label>
-                    <input id="r-payout-p" className="sq-input" style={{ width: 90 }} inputMode="numeric"
-                      defaultValue={String(editing.payoutValue ?? 0)} key={`pop-${editing.id}`}
-                      onBlur={(e) => { const n = Number.parseInt(e.target.value, 10); patch(editing.id, { payoutValue: Number.isFinite(n) && n >= 0 ? Math.min(n, 100) : 0 }) }} />
-                  </div>
-                )}
-                <p style={{ fontSize: 11, color: FAINT, margin: '0 0 9px', flexBasis: '100%', lineHeight: 1.5 }}>
-                  Paid to whoever is assigned &quot;Run by&quot; on the booking, once the customer has paid in full — settle it from
-                  the Payments tab by Cash App or cash. Owners and Admins never accrue event pay.
-                </p>
-              </div>
-            )}
 
             {/* Add-ons this room offers, from the Add Ons catalog */}
             {editing.addonIds !== undefined && (

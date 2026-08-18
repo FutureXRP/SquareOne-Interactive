@@ -259,6 +259,35 @@ export function bookingPayment(b: BookingFacts, pay: { amountCents: number; meth
   }
 }
 
+// A staff correction: a payment recorded by mistake was struck from the
+// books. The customer may already hold a receipt email for it, so the
+// correction names that receipt and shows where the booking truly stands
+// now — the facts are read after the void, so the totals are current.
+export function paymentVoided(b: BookingFacts, pay: { amountCents: number; method: string; code: string }): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  return {
+    subject: `Correction — a payment record was removed on ${b.code}`,
+    html: shell(
+      'A payment record was corrected',
+      `<p style="margin:0 0 6px;">A ${money(pay.amountCents)} ${pay.method} payment (receipt ${pay.code})
+        was recorded on your booking by mistake, and our team has removed it. If you received a
+        receipt email for it, please disregard that one.</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ['Booking total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+         ...(owed > 0 ? [['Still due', money(owed)] as [string, string]] : []),
+       ])}
+       <p style="margin:0;">${owed > 0
+         ? 'If you actually did send this payment, call the front desk and we’ll match it up right away.'
+         : 'Your booking remains paid in full — nothing further to do.'}</p>`,
+      bookingCta(b),
+    ),
+  }
+}
+
 export function bookingRescheduled(b: BookingFacts): EmailBody {
   return {
     subject: `Moved — ${b.room} is now ${b.date}`,

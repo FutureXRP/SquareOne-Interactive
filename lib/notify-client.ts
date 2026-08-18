@@ -9,7 +9,7 @@ export type NotifyKind =
   | 'booking.hold' | 'booking.confirmed' | 'booking.canceled'
   | 'booking.rescheduled' | 'booking.updated' | 'booking.deleted'
   | 'booking.approved' | 'booking.staff_assigned'
-  | 'booking.payment' | 'payment.receipt' | 'refund.issued'
+  | 'booking.payment' | 'payment.receipt' | 'payment.voided' | 'refund.issued'
   | 'membership.canceled' | 'membership.resumed'
   | 'event.assigned' | 'event.guest_confirmed' | 'event.moved'
 

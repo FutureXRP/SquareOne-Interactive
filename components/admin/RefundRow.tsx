@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { PAY_LABEL, type PaymentRow } from '@/lib/staff-bookings-store'
+import { PAY_LABEL, voidPayment, type PaymentRow } from '@/lib/staff-bookings-store'
 import { refundPayment } from '@/lib/refunds-store'
 
 function dollarsToCents(v: string): number {
@@ -32,6 +32,28 @@ export function RefundRow({
   const cents = dollarsToCents(amount)
   const tooMuch = cents > remaining
   const isCard = payment.method === 'stripe'
+  const [undoError, setUndoError] = useState<string | null>(null)
+
+  // Undo is for records that were a mistake — no money ever moved, so the
+  // row is struck from the books entirely. Refund is for money that
+  // really changed hands and goes back. Cards always refund (Stripe holds
+  // the truth), and a partially refunded payment can't be "a mistake".
+  const canUndo = !isCard && refundedCents === 0
+
+  const undo = async () => {
+    if (busy) return
+    const label = PAY_LABEL[payment.method] ?? payment.method
+    if (!window.confirm(
+      `Undo the ${formatCents(payment.amountCents)} ${label} payment from ${payment.client}? `
+      + `This strikes it from the books — the booking goes back to owing that amount, reports drop it, `
+      + `and the customer is emailed a correction. Use Refund instead if money really changed hands.`,
+    )) return
+    setBusy(true)
+    setUndoError(null)
+    const res = await voidPayment(payment, staffId)
+    setBusy(false)
+    if (!res.ok) setUndoError(res.message ?? 'Could not undo that payment.')
+  }
 
   const submit = async () => {
     if (busy || cents <= 0 || tooMuch) return
@@ -79,7 +101,15 @@ export function RefundRow({
             {open ? 'Close' : 'Refund'}
           </button>
         )}
+        {canUndo && (
+          <button className="sq-btn sq-btn-ghost" style={{ padding: '4px 11px', fontSize: 11, color: RED }} disabled={busy} onClick={undo} title="Recorded by mistake? Strike it from the books.">
+            {busy ? '…' : 'Undo'}
+          </button>
+        )}
       </div>
+      {undoError && (
+        <p style={{ fontSize: 11.5, color: RED, fontWeight: 600, margin: 0, padding: '0 20px 10px 78px' }}>{undoError}</p>
+      )}
 
       {open && (
         <div style={{ padding: '2px 20px 14px 78px', background: '#fafbfd' }}>

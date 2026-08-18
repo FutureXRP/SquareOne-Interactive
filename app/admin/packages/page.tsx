@@ -139,41 +139,6 @@ export default function PackagesAdminPage() {
               </div>
             </div>
 
-            {/* Staff pay — internal only, never shown in the store */}
-            {editing.payoutKind !== undefined && (
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 14, flexWrap: 'wrap', background: '#fafbfd', border: `1px solid ${LINE}`, borderRadius: 10, padding: '12px 14px' }}>
-                <div>
-                  <label className="sq-label" htmlFor="p-payout-kind">Staff pay for running this package</label>
-                  <select id="p-payout-kind" className="sq-select" style={{ width: 190 }} value={editing.payoutKind}
-                    onChange={(e) => patch(editing.id, { payoutKind: e.target.value as 'none' | 'flat' | 'percent' })}>
-                    <option value="none">No staff pay</option>
-                    <option value="flat">Flat amount ($)</option>
-                    <option value="percent">% of the package</option>
-                  </select>
-                </div>
-                {editing.payoutKind === 'flat' && (
-                  <div>
-                    <label className="sq-label" htmlFor="p-payout-v">Amount ($)</label>
-                    <input id="p-payout-v" className="sq-input" style={{ width: 110 }} inputMode="decimal"
-                      defaultValue={((editing.payoutValue ?? 0) / 100).toFixed(2)} key={`ppv-${editing.id}`}
-                      onBlur={(e) => patch(editing.id, { payoutValue: dollarsToCents(e.target.value) })} />
-                  </div>
-                )}
-                {editing.payoutKind === 'percent' && (
-                  <div>
-                    <label className="sq-label" htmlFor="p-payout-p">Percent (%)</label>
-                    <input id="p-payout-p" className="sq-input" style={{ width: 90 }} inputMode="numeric"
-                      defaultValue={String(editing.payoutValue ?? 0)} key={`ppp-${editing.id}`}
-                      onBlur={(e) => { const n = Number.parseInt(e.target.value, 10); patch(editing.id, { payoutValue: Number.isFinite(n) && n >= 0 ? Math.min(n, 100) : 0 }) }} />
-                  </div>
-                )}
-                <p style={{ fontSize: 11, color: FAINT, margin: '0 0 6px', flexBasis: '100%', lineHeight: 1.5 }}>
-                  Internal only — shoppers never see this. When a desk booking sells this package, whoever is assigned
-                  &quot;Run by&quot; is owed {editing.payoutKind === 'percent' ? `${editing.payoutValue ?? 0}% (${formatCents(Math.round(editing.priceCents * (editing.payoutValue ?? 0) / 100))})` : formatCents(editing.payoutValue ?? 0)} once
-                  the customer pays in full. The package rule beats the room&apos;s rule. Owners &amp; Admins never accrue event pay.
-                </p>
-              </div>
-            )}
 
             <div style={{ marginBottom: 14 }}>
               <span className="sq-label">Rooms in this bundle</span>
