@@ -8,7 +8,7 @@ import { getPlan, getActivePlans, type EditablePlan } from '@/lib/plans-store'
 import { getRooms, type RoomConfig } from '@/lib/facilities-store'
 import { MyBookingsCard } from '@/components/store/MyBookingsCard'
 import { getMyBookings, getMyWaivers, choosePlan, cancelMembership, resumeMembership, SESSION_EVENT, type MemberBooking, type SignedWaiver } from '@/lib/session'
-import { changePlanBilled, cancelBilled, openBillingPortal } from '@/lib/billing-client'
+import { changePlanBilled, cancelBilled, openBillingPortal, getNextPayment } from '@/lib/billing-client'
 import { isSupabaseConfigured, emit } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { DoorUnlock } from '@/components/store/DoorUnlock'
@@ -25,6 +25,9 @@ export default function AccountOverview() {
   const [signingId, setSigningId] = useState<string | null>(null)
   const [changingPlan, setChangingPlan] = useState(false)
   const [busy, setBusy] = useState(false)
+  // What Stripe will actually charge next — the list price corrected for
+  // any coupon on the live subscription (e.g. a free staff membership).
+  const [nextPay, setNextPay] = useState<{ totalCents: number; label: string | null } | null>(null)
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
@@ -33,6 +36,7 @@ export default function AccountOverview() {
       Promise.all([getMyBookings(), getMyWaivers(), getRooms().catch(() => []), getActivePlans().catch(() => []), getAllWaivers().catch(() => [])])
         .then(([b, w, r, p, aw]) => { if (on) { setBookings(b.filter((x) => x.status !== 'canceled')); setWaivers(w); setRooms(r); setPlans(p); setAllWaivers(aw) } })
         .catch(() => {})
+      getNextPayment().then((np) => { if (on) setNextPay(np) }).catch(() => {})
     }
     sync()
     window.addEventListener(SESSION_EVENT, sync)
@@ -100,10 +104,20 @@ export default function AccountOverview() {
                         ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '2px 10px', borderRadius: 999 }}>Active</span>
                         : <span style={{ fontSize: 10.5, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Ends {profile.renewsOn}</span>}
                     </div>
-                    <p style={{ fontSize: 13, color: SUB, margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatCents(plan.priceCents)}/{plan.period}
+                    <p style={{ fontSize: 13, color: SUB, margin: nextPay?.label ? '0 0 4px' : '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>
+                      {nextPay && nextPay.totalCents !== plan.priceCents ? (
+                        <>
+                          <strong style={{ color: nextPay.totalCents === 0 ? GREEN : INK }}>{formatCents(nextPay.totalCents)}</strong>/{plan.period}{' '}
+                          <s style={{ color: FAINT }}>{formatCents(plan.priceCents)}</s>
+                        </>
+                      ) : (
+                        <>{formatCents(plan.priceCents)}/{plan.period}</>
+                      )}
                       {profile.status === 'active' ? ` · renews ${profile.renewsOn}` : ' · will not renew'}
                     </p>
+                    {nextPay?.label && (
+                      <p style={{ fontSize: 12, fontWeight: 600, color: GREEN, margin: '0 0 14px' }}>{nextPay.label}</p>
+                    )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Link href="/account/card" className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }}>Show my card</Link>
                       <button className="sq-btn sq-btn-ghost" style={{ padding: '8px 16px' }} disabled={busy} onClick={updateCard}>Update payment method</button>
