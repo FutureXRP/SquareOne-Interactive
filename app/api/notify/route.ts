@@ -8,7 +8,7 @@ import {
   eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
 import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
-import { bookingFacts, recipientFor } from '@/lib/server/booking-facts'
+import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -74,7 +74,9 @@ export async function POST(req: Request) {
       if (!row?.staff?.user_id) return NextResponse.json({ ok: true, skipped: 'no_staff_login' })
       const to = await emailForStaffUser(row.staff.user_id)
       if (!to) return NextResponse.json({ ok: true, skipped: 'no_email' })
-      const resolved = await bookingFacts(id)
+      // The staff alert must not depend on the CUSTOMER having an email —
+      // a desk booking with no contact address still has a runner to tell.
+      const resolved = await bookingFactsAny(id)
       if (!resolved) return NextResponse.json({ ok: true, skipped: 'not_found' })
       await sendAndLog('booking.staff_assigned', to, bookingStaffAssigned(resolved.facts, {
         staffName: row.staff.name,
