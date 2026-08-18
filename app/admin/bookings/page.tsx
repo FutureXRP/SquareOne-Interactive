@@ -54,6 +54,27 @@ export default function AdminBookingsPage() {
   const [conflictMsg, setConflictMsg] = useState(false)
   const [addonConflictMsg, setAddonConflictMsg] = useState(false)
   const [busyWrite, setBusyWrite] = useState(false)
+  // "Run by" is a two-step: pick the name, then explicitly confirm — the
+  // confirm is what saves it and sends the assignment email, so nobody is
+  // put on a booking (or emailed about one) by a slipped dropdown.
+  const [pendingRunBy, setPendingRunBy] = useState<Record<string, string | null>>({})
+  const [runByNote, setRunByNote] = useState<Record<string, { ok: boolean; text: string }>>({})
+
+  const confirmRunBy = async (bookingId: string, staffId: string | null) => {
+    const who = staffId ? allStaff.find((s) => s.id === staffId) : null
+    const ok = await setBookingRunBy(bookingId, staffId)
+    setPendingRunBy((cur) => { const n = { ...cur }; delete n[bookingId]; return n })
+    setRunByNote((cur) => ({
+      ...cur,
+      [bookingId]: !ok
+        ? { ok: false, text: 'Could not save the assignment — try again.' }
+        : !who
+          ? { ok: true, text: 'Assignment removed. No email is sent for removals.' }
+          : !who.linked
+            ? { ok: false, text: `${who.name} is assigned, but they have no login linked — no email could be sent. Link a login for them on Settings, and use Email health → Booking assignment alerts to verify.` }
+            : { ok: true, text: `${who.name} is assigned — the alert email went to their login address.` },
+    }))
+  }
   // Canceled bookings are kept, not deleted — but they shouldn't be the
   // first thing the desk reads through.
   const [showCanceled, setShowCanceled] = useState(false)
@@ -387,13 +408,44 @@ export default function AdminBookingsPage() {
                   {b.runByStaffId !== undefined && allStaff.length > 0 && (
                     <div>
                       <label className="sq-label">Run by</label>
-                      <select className="sq-select" value={b.runByStaffId ?? ''} onChange={(e) => setBookingRunBy(b.id, e.target.value || null)}>
+                      <select className="sq-select"
+                        value={(b.id in pendingRunBy ? pendingRunBy[b.id] : b.runByStaffId) ?? ''}
+                        onChange={(e) => {
+                          setPendingRunBy((cur) => ({ ...cur, [b.id]: e.target.value || null }))
+                          setRunByNote((cur) => { const n = { ...cur }; delete n[b.id]; return n })
+                        }}>
                         <option value="">— unassigned —</option>
-                        {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name}{s.linked ? '' : ' (no login — can’t be emailed)'}</option>)}
                       </select>
                     </div>
                   )}
                 </div>
+                {(() => {
+                  const pending = b.id in pendingRunBy ? pendingRunBy[b.id] : undefined
+                  if (pending === undefined || pending === (b.runByStaffId ?? null)) return null
+                  const who = pending ? allStaff.find((s) => s.id === pending) : null
+                  return (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                      <button className="sq-btn sq-btn-primary" style={{ padding: '7px 15px', fontSize: 12 }} onClick={() => confirmRunBy(b.id, pending)}>
+                        {who ? `Confirm — assign ${who.name} & send email alert` : 'Confirm — remove assignment'}
+                      </button>
+                      <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 13px', fontSize: 12 }}
+                        onClick={() => setPendingRunBy((cur) => { const n = { ...cur }; delete n[b.id]; return n })}>
+                        Never mind
+                      </button>
+                      {who && !who.linked && (
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color: '#b07818' }}>
+                          {who.name} has no login linked — they can be assigned, but no email can reach them.
+                        </span>
+                      )}
+                    </div>
+                  )
+                })()}
+                {runByNote[b.id] && (
+                  <p style={{ fontSize: 12, fontWeight: 600, color: runByNote[b.id].ok ? GREEN : '#b07818', margin: '0 0 12px' }}>
+                    {runByNote[b.id].text}
+                  </p>
+                )}
                 <button className="sq-btn sq-btn-danger" style={{ padding: '6px 13px', fontSize: 11.5 }} onClick={async () => { await updateBookingFields(b.id, { status: 'canceled' }, me?.id ?? null); setEditingId(null) }}>
                   Cancel this booking
                 </button>
