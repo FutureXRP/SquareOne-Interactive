@@ -5,6 +5,7 @@ import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { StaffManager } from '@/components/admin/StaffManager'
 import { PermissionsMatrix } from '@/components/admin/PermissionsMatrix'
+import { CashAppQRCard } from '@/components/admin/CashAppQRCard'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getSiteConfig, saveSiteConfig, type SiteConfig, type Closure } from '@/lib/site-config-store'
@@ -109,6 +110,7 @@ export default function SettingsPage() {
                     verified by staff on the Payments tab before a booking reads paid. Leave blank to
                     turn the option off.
                   </p>
+                  <CashAppQRCard cashtag={cfg.cashappCashtag} />
                 </div>
               )}
             </div>
