@@ -241,18 +241,24 @@ export async function POST(req: Request) {
     fix: (roomCount ?? 0) > 0 ? undefined : 'Activate rooms on the Rooms tab.',
   })
 
-  // A published waiver with no paragraphs asks people to agree to nothing.
+  // A published waiver with nothing to read or decide asks people to agree
+  // to nothing. Paragraphs, choice questions, and agreement checkboxes all
+  // count as substance — a photo release that is only an either/or question
+  // is a complete form.
   const { data: forms } = await db.from('forms').select('id, name, fields').eq('status', 'active')
-  const empty = ((forms ?? []) as { name: string; fields: { type: string; content?: string }[] }[])
-    .filter((f) => !(Array.isArray(f.fields) ? f.fields : []).some((fl) => fl.type === 'paragraph' && fl.content?.trim()))
+  const empty = ((forms ?? []) as { name: string; fields: { type: string; label?: string; content?: string; options?: string[] }[] }[])
+    .filter((f) => !(Array.isArray(f.fields) ? f.fields : []).some((fl) =>
+      (fl.type === 'paragraph' && fl.content?.trim())
+      || ((fl.type === 'multi' || fl.type === 'single') && (fl.options ?? []).length > 0)
+      || (fl.type === 'checkbox' && fl.label?.trim())))
     .map((f) => f.name)
   add({
     group: 'Storefront', label: 'Waiver wording', status: empty.length === 0 ? 'ok' : 'fail',
     detail: empty.length === 0
       ? 'Every published waiver has text people can read and agree to.'
-      : `No wording written yet for: ${empty.join(', ')}. Nobody will be asked to sign these, so you would be operating with no signed waiver on file.`,
+      : `Nothing to read or agree to yet in: ${empty.join(', ')}. Nobody will be asked to sign these, so you would be operating with no signed waiver on file.`,
     fix: empty.length === 0 ? undefined
-      : 'Forms & Waivers tab → open each one → write the terms into an info paragraph field.',
+      : 'Forms & Waivers tab → open each one → add an info paragraph, a pick-one question, or an agreement checkbox.',
   })
 
   // Somebody has to be able to get into the admin side.
