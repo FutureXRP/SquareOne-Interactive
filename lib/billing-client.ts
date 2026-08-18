@@ -19,7 +19,7 @@ export async function billingConfigured(): Promise<boolean> {
   return stripeLive
 }
 
-async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; url?: string; message?: string }> {
+async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; url?: string; message?: string } & Record<string, unknown>> {
   const { data } = await supabase().auth.getSession()
   const token = data.session?.access_token
   if (!token) return { ok: false, message: 'You are signed out — sign in and try again.' }
@@ -29,11 +29,11 @@ async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; 
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : '{}',
     })
-    const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string }
+    const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string } & Record<string, unknown>
     // Carry the server's explanation back rather than dropping it — a
     // button that does nothing is the hardest kind of bug to report.
     if (!res.ok) return { ok: false, message: json.message }
-    return { ok: true, url: json.url, message: json.message }
+    return { ...json, ok: true }
   } catch {
     return { ok: false, message: 'Could not reach the server.' }
   }
@@ -96,5 +96,14 @@ export async function startBookingCheckout(bookingId: string, which: 'deposit' |
 export async function staffApplyCoupon(accountId: string, couponCode: string): Promise<{ ok: boolean; message?: string }> {
   const res = await authedPost('/api/billing/apply-coupon', { accountId, couponCode })
   if (res.ok) emit(SESSION_EVENT)
-  return res
+  return { ok: res.ok, message: res.message }
+}
+
+// The member's actual next bill, discounts included — null when Stripe
+// isn't live, the account has no card-billed membership, or the ask fails.
+export async function getNextPayment(): Promise<{ totalCents: number; label: string | null } | null> {
+  const res = await authedPost('/api/billing/next-payment')
+  if (!res.ok) return null
+  const r = res as { ok: boolean; totalCents?: number; label?: string | null }
+  return typeof r.totalCents === 'number' ? { totalCents: r.totalCents, label: r.label ?? null } : null
 }
