@@ -4,7 +4,7 @@ import { card, HERO_GRADIENT, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
 import { FacilityGrid } from '@/components/store/FacilityGrid'
 import { PlanCards } from '@/components/store/PlanCards'
 import { ProductTeaser } from '@/components/store/ProductTeaser'
-import { getSiteContent, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
+import { getSiteContent, navTabOn, CONTENT_EVENT, type SiteContent } from '@/lib/content-store'
 import { useLive } from '@/lib/use-live'
 
 function SectionLabel({ children, meta }: { children: string; meta?: React.ReactNode }) {
@@ -70,11 +70,13 @@ export default function StoreHome() {
         <FacilityGrid limit={4} compact />
       </div>
 
-      {/* Shop teaser */}
-      <div style={{ marginBottom: 8 }}>
-        <SectionLabel meta={<Link href="/shop" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Shop all →</Link>}>{t('home.section.gear', 'SquareOne gear')}</SectionLabel>
-        <ProductTeaser />
-      </div>
+      {/* Shop teaser — the whole section follows the Shop nav tab's switch */}
+      {navTabOn(content, 'shop') && (
+        <div style={{ marginBottom: 8 }}>
+          <SectionLabel meta={<Link href="/shop" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>Shop all →</Link>}>{t('home.section.gear', 'SquareOne gear')}</SectionLabel>
+          <ProductTeaser />
+        </div>
+      )}
 
       {/* Hours live in the footer, which reads the admin-editable site config */}
       <p style={{ fontSize: 12, color: FAINT, margin: '26px 0 0' }}>

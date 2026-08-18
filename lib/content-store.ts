@@ -105,6 +105,15 @@ async function orgId(): Promise<string | null> {
 }
 
 // Empty value deletes the override so the built-in wording returns.
+// Is a nav tab switched on? Whole features follow the tab's switch: hide
+// the Shop tab on Site Content and the home merch strip, the account
+// "Shop gear" link, and the /shop page itself all go dark with it.
+// Null content (still loading, or overrides table absent) means defaults.
+export function navTabOn(content: SiteContent | null, id: string): boolean {
+  const item = (content?.nav ?? NAV_DEFAULT).find((n) => n.id === id)
+  return item ? item.visible : true
+}
+
 export async function saveTextKey(key: string, value: string): Promise<boolean> {
   const trimmed = value.trim()
   if (!trimmed || trimmed === TEXT_DEFAULTS[key]) {
