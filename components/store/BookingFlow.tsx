@@ -26,6 +26,9 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [cfg, setCfg] = useState<SiteConfig | null>(null)
   const [days, setDays] = useState<DayOption[]>([])
   const [dayIdx, setDayIdx] = useState(0)
+  // A date beyond the two-week quick-pick strip, chosen with the date
+  // field — bookings can be made up to a year out.
+  const [customDay, setCustomDay] = useState<DayOption | null>(null)
   const [hours, setHours] = useState(1)
   const [startH, setStartH] = useState<number | null>(null)
   const [busy, setBusy] = useState<{ fromH: number; toH: number }[]>([])
@@ -80,7 +83,35 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     return () => window.removeEventListener(SESSION_EVENT, sync)
   }, [facilityId])
 
-  const day = days[dayIdx]
+  const day = customDay ?? days[dayIdx]
+
+  const dayOptionFor = (iso: string): DayOption => {
+    const [y, m, dd] = iso.split('-').map(Number)
+    const d = new Date(y, m - 1, dd)
+    return {
+      iso,
+      label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      isSunday: d.getDay() === 0,
+      dow: d.getDay(),
+    }
+  }
+
+  // Bookings can be made up to a year from today.
+  const maxIso = (() => {
+    const d = new Date()
+    d.setFullYear(d.getFullYear() + 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+
+  const pickDate = (iso: string) => {
+    setStartH(null)
+    setConflict(false)
+    if (!iso) { setCustomDay(null); return }
+    const inStrip = days.findIndex((d) => d.iso === iso)
+    if (inStrip >= 0) { setCustomDay(null); setDayIdx(inStrip) }
+    else setCustomDay(dayOptionFor(iso))
+  }
 
   // Real availability: fetch this room's booked ranges for the selected day.
   const loadBusy = useCallback(() => {
@@ -109,7 +140,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   // With 48-hour notice the first day or two can't be booked — land the
   // picker on the first day that actually can.
   useEffect(() => {
-    if (days.length === 0) return
+    if (days.length === 0 || customDay) return
     const closed = (d: DayOption) => new Date(`${d.iso}T23:59:59`).getTime() < Date.now() + (f?.minNoticeHours ?? 48) * 3600_000
     if (!closed(days[dayIdx])) return
     const idx = days.findIndex((d) => !closed(d))
@@ -145,7 +176,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const slots = useMemo(() => {
     if (!day || closedToday) return []
     const now = new Date()
-    const isToday = dayIdx === 0
+    const isToday = day.iso === days[0]?.iso
     const nowH = now.getHours() + now.getMinutes() / 60
     const [yy, mm, dd] = day.iso.split('-').map(Number)
     const earliest = new Date(now.getTime() + noticeH * 3600_000)
@@ -281,20 +312,36 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
       <div>
         {/* Date picker */}
         <p className="sq-label">Pick a date</p>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 18 }}>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 10 }}>
           {days.map((d, i) => {
             const off = dayClosed(d)
+            const on = !customDay && i === dayIdx
             return (
-              <button key={d.iso} disabled={off} onClick={() => { setDayIdx(i); setStartH(null); setConflict(false) }} style={{
+              <button key={d.iso} disabled={off} onClick={() => pickDate(d.iso)} style={{
                 font: 'inherit', cursor: off ? 'default' : 'pointer', flexShrink: 0, textAlign: 'center',
-                border: `1.5px solid ${i === dayIdx ? BLUE : LINE}`, borderRadius: 10,
-                background: off ? '#f3f6fb' : i === dayIdx ? '#eef4fb' : '#fff', padding: '8px 13px', opacity: off ? 0.6 : 1,
+                border: `1.5px solid ${on ? BLUE : LINE}`, borderRadius: 10,
+                background: off ? '#f3f6fb' : on ? '#eef4fb' : '#fff', padding: '8px 13px', opacity: off ? 0.6 : 1,
               }}>
-                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: i === dayIdx ? BLUE : FAINT }}>{d.weekday}</span>
-                <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: off ? '#c3cede' : i === dayIdx ? BLUE : INK, fontVariantNumeric: 'tabular-nums', textDecoration: off ? 'line-through' : 'none' }}>{d.label}</span>
+                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: on ? BLUE : FAINT }}>{d.weekday}</span>
+                <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: off ? '#c3cede' : on ? BLUE : INK, fontVariantNumeric: 'tabular-nums', textDecoration: off ? 'line-through' : 'none' }}>{d.label}</span>
               </button>
             )
           })}
+        </div>
+        {/* Any date up to a year out — the strip is just the quick picks */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, color: SUB, fontWeight: 600 }}>Planning further ahead?</span>
+          <input
+            type="date" className="sq-input" style={{ width: 170, padding: '7px 10px', fontSize: 13 }}
+            min={days[0]?.iso} max={maxIso}
+            value={customDay?.iso ?? ''}
+            onChange={(e) => pickDate(e.target.value)}
+          />
+          {customDay && (
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: BLUE }}>
+              {new Date(`${customDay.iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            </span>
+          )}
         </div>
 
         {/* Duration — 1 hour by default, up to 6 per rental */}
