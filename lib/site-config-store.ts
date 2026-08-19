@@ -29,6 +29,9 @@ export interface SiteConfig {
   // Our $cashtag for direct Cash App payments (0040). undefined = not
   // migrated; '' = feature off.
   cashappCashtag?: string
+  // Who gets a heads-up email when someone joins the fitness membership.
+  // Empty = nobody. Arrives with 0044.
+  membershipAlertEmail?: string
 }
 
 interface Row {
@@ -44,6 +47,7 @@ interface Row {
   hours_by_day?: unknown
   closures?: unknown
   cashapp_cashtag?: string
+  membership_alert_email?: string
 }
 
 const FALLBACK: SiteConfig = {
@@ -96,6 +100,7 @@ export async function getSiteConfig(): Promise<SiteConfig> {
     hoursByDay: 'hours_by_day' in r ? normalizeHours(r.hours_by_day) : undefined,
     closures: 'closures' in r ? normalizeClosures(r.closures) : undefined,
     cashappCashtag: 'cashapp_cashtag' in r ? (r.cashapp_cashtag ?? '') : undefined,
+    membershipAlertEmail: 'membership_alert_email' in r ? (r.membership_alert_email ?? '') : undefined,
   }
 }
 
@@ -118,6 +123,7 @@ export async function saveSiteConfig(cfg: SiteConfig): Promise<boolean> {
     ...(cfg.hoursByDay !== undefined ? { hours_by_day: cfg.hoursByDay } : {}),
     ...(cfg.closures !== undefined ? { closures: cfg.closures } : {}),
     ...(cfg.cashappCashtag !== undefined ? { cashapp_cashtag: cfg.cashappCashtag.replace(/^\$/, '').trim() } : {}),
+    ...(cfg.membershipAlertEmail !== undefined ? { membership_alert_email: cfg.membershipAlertEmail.trim() } : {}),
   }).eq('org_id', orgIdCache))
   if (ok) emit(SITE_CONFIG_EVENT)
   return ok

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { stripe, stripeConfigured, serviceDb, sendEmail, sendAndLog } from '@/lib/server/billing'
 import {
-  membershipWelcome, membershipCanceled, membershipEnded, membershipResumed, renewalReceipt, paymentFailed,
+  membershipWelcome, membershipStaffAlert, membershipCanceled, membershipEnded, membershipResumed, renewalReceipt, paymentFailed,
   bookingPayment,
 } from '@/lib/server/emails'
 import { recordInvoicePayment, recordBookingCheckout, recordBookingIntent } from '@/lib/server/record-payments'
@@ -113,10 +113,26 @@ export async function POST(req: Request) {
             const { data: plan } = planId
               ? await serviceDb().from('membership_plans').select('name').eq('id', planId).maybeSingle()
               : { data: null }
+            const planName = (plan as { name: string } | null)?.name ?? 'Fitness'
+            const memberName = session.customer_details?.name ?? 'there'
             await sendAndLog('membership.welcome', email, membershipWelcome({
-              name: session.customer_details?.name ?? 'there',
-              plan: (plan as { name: string } | null)?.name ?? 'Fitness',
+              name: memberName,
+              plan: planName,
             }), { accountId: sub.metadata.account_id ?? null })
+            // The internal heads-up, to whoever Settings names (0044).
+            try {
+              const { data: cfgRow } = await serviceDb().from('site_config').select('membership_alert_email').limit(1).maybeSingle()
+              const alertTo = ((cfgRow as { membership_alert_email?: string } | null)?.membership_alert_email ?? '').trim()
+              if (alertTo && alertTo.toLowerCase() !== email.toLowerCase()) {
+                await sendAndLog('membership.staff_alert', alertTo, membershipStaffAlert({
+                  name: memberName,
+                  email,
+                  plan: planName,
+                }), { accountId: sub.metadata.account_id ?? null })
+              }
+            } catch {
+              // pre-0044 — no alert address to consult
+            }
           }
         }
         break

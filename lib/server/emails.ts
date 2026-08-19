@@ -514,6 +514,26 @@ export function membershipWelcome(o: { name: string; plan: string }): EmailBody 
   }
 }
 
+// The internal heads-up: someone joined. Goes to the address chosen on
+// Settings, never to the member — their welcome email is separate.
+export function membershipStaffAlert(o: { name: string; email: string; plan: string }): EmailBody {
+  return {
+    subject: `New fitness member — ${o.name} joined ${o.plan}`,
+    html: shell(
+      'A new member just joined',
+      `<p style="margin:0 0 6px;">Fresh signup on the fitness membership:</p>
+       ${detailRows([
+         ['Member', o.name],
+         ['Email', o.email],
+         ['Plan', o.plan],
+       ])}
+       <p style="margin:0;">Their welcome email has gone out and their account is live — this is just
+       your heads-up.</p>`,
+      { label: 'Open the Memberships tab', href: siteLink('/admin/memberships') },
+    ),
+  }
+}
+
 export function membershipChanged(o: { name: string; plan: string; priceCents: number; period: string }): EmailBody {
   return {
     subject: `Your membership is now ${o.plan}`,
