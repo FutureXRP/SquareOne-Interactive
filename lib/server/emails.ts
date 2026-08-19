@@ -29,7 +29,9 @@ function shell(heading: string, body: string, cta?: { label: string; href: strin
         </td></tr>
         <tr><td style="padding:26px 26px 8px;">
           <h1 style="margin:0 0 12px;font-size:19px;line-height:1.35;color:${INK};font-weight:800;letter-spacing:-0.02em;">${heading}</h1>
+          <!--sq:top-->
           <div style="font-size:14px;line-height:1.6;color:${SUB};">${body}</div>
+          <!--sq:bottom-->
         </td></tr>
         ${cta ? `<tr><td style="padding:6px 26px 22px;">
           <a href="${cta.href}" style="display:inline-block;background:${BLUE};color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:9px;">${cta.label}</a>

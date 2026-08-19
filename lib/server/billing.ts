@@ -149,10 +149,19 @@ export async function sendAndLog(
   meta: { accountId?: string | null; bookingId?: string | null } = {},
 ): Promise<void> {
   if (!to) return
+  // Staff wording from the Email health tab lands here — the one door
+  // every outgoing email walks through.
+  let finalBody = body
+  try {
+    const { applyEmailOverrides } = await import('@/lib/server/email-overrides')
+    finalBody = await applyEmailOverrides(kind, body)
+  } catch {
+    // overrides must never block a send
+  }
   let ok = true
   let error: string | null = null
   try {
-    await sendEmail(to, body.subject, body.html)
+    await sendEmail(to, finalBody.subject, finalBody.html)
   } catch (e) {
     ok = false
     error = e instanceof Error ? e.message : 'send failed'
@@ -164,7 +173,7 @@ export async function sendAndLog(
       org_id: (org as { id: string }).id,
       kind,
       to_email: to,
-      subject: body.subject,
+      subject: finalBody.subject,
       ok,
       error,
       account_id: meta.accountId ?? null,
