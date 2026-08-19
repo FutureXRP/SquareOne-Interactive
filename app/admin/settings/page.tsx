@@ -113,6 +113,17 @@ export default function SettingsPage() {
                   <CashAppQRCard cashtag={cfg.cashappCashtag} />
                 </div>
               )}
+              {cfg.membershipAlertEmail !== undefined && (
+                <div>
+                  <label className="sq-label" htmlFor="s-member-alert">New-member alerts go to</label>
+                  <input id="s-member-alert" className="sq-input" type="email" value={cfg.membershipAlertEmail} placeholder="owner@squareoneinteractive.com"
+                    onChange={(e) => patchCfg({ membershipAlertEmail: e.target.value })} />
+                  <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Every time someone joins the fitness membership, this address gets a heads-up email
+                    with their name, email, and plan. Leave blank to turn it off.
+                  </p>
+                </div>
+              )}
             </div>
             {cfg.hoursByDay === undefined ? (
               <>
