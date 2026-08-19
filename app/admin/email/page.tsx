@@ -4,6 +4,7 @@ import { PageHero } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD, RED } from '@/lib/theme'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { getStaff, type StaffMember } from '@/lib/staff-store'
+import { EmailWordingEditor } from '@/components/admin/EmailWording'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 
 interface EmailCheck { label: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }
@@ -219,6 +220,9 @@ export default function EmailHealthPage() {
           </div>
         )}
       </div>
+
+      {/* Every outgoing email's wording, editable */}
+      <EmailWordingEditor />
 
       {/* Do assignment alerts reach this staff member? */}
       <div className="sq-card" style={{ ...card, padding: '18px 20px', marginBottom: 16 }}>
