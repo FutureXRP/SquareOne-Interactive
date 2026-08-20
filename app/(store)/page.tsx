@@ -45,7 +45,10 @@ export default function StoreHome() {
         {[
           { href: '/facilities', title: t('tile1.title', 'Rent a room'), sub: t('tile1.sub', 'Gym, party rooms & more — book online'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
           { href: '/memberships', title: t('tile2.title', 'Join the gym'), sub: t('tile2.sub', 'Monthly plans · cancel anytime'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3.5" width="13" height="9" rx="1.8" stroke="currentColor" strokeWidth="1.5"/><circle cx="5" cy="7.2" r="1.4" stroke="currentColor" strokeWidth="1.2"/><path d="M8.5 6.4h4.2M8.5 8.8h4.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg> },
-          { href: '/shop', title: t('tile3.title', 'Shop merch'), sub: t('tile3.sub', 'Tees, hoodies & more'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M5.5 1.5h5l3 3-2 2-1-1v9h-7v-9l-1 1-2-2 3-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> },
+          // The shop tile follows the Shop nav tab's switch on Site Content.
+          ...(navTabOn(content, 'shop')
+            ? [{ href: '/shop', title: t('tile3.title', 'Shop merch'), sub: t('tile3.sub', 'Tees, hoodies & more'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M5.5 1.5h5l3 3-2 2-1-1v9h-7v-9l-1 1-2-2 3-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> }]
+            : []),
           { href: '/facilities/party', title: t('tile4.title', 'Book a party'), sub: t('tile4.sub', 'Arcade party packages with a host'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4.5 6.5L8 2l3.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 6.5h11l-1.2 7a1.5 1.5 0 01-1.5 1.2H5.2a1.5 1.5 0 01-1.5-1.2l-1.2-7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><circle cx="8" cy="10.5" r="1.1" fill="currentColor"/></svg> },
         ].map((tile) => (
           <Link key={tile.href} href={tile.href} style={{ textDecoration: 'none' }}>
