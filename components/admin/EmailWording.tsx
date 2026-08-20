@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, GOLD } from '@/lib/theme'
 import { getEmailWording, saveEmailWording, EMAIL_WORDING_EVENT, type EmailWording } from '@/lib/email-wording-store'
+import { supabase } from '@/lib/supabase'
 
 // Every email the system sends, editable in place. The subject can be
 // replaced outright ({default} inserts the automatic one, which carries
@@ -36,6 +37,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
     group: 'Memberships',
     items: [
       { kind: 'membership.welcome', label: 'Welcome — membership active', blurb: 'Right after a successful signup.' },
+      { kind: 'membership.staff_alert', label: 'Staff: new member joined', blurb: 'The heads-up to the address chosen on Settings.' },
       { kind: 'membership.changed', label: 'Plan changed', blurb: 'Switched between plans.' },
       { kind: 'membership.renewed', label: 'Monthly renewal receipt', blurb: 'The recurring charge went through.' },
       { kind: 'membership.payment_failed', label: 'Payment failed', blurb: 'The card was declined on renewal.' },
@@ -65,6 +67,27 @@ export function EmailWordingEditor() {
   const [draft, setDraft] = useState<EmailWording | null>(null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
+  // The real template rendered with sample facts, current edits applied —
+  // exactly the assembly a live send goes through.
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+
+  const loadPreview = async (kind: string) => {
+    setPreviewBusy(true)
+    setPreview(null)
+    try {
+      const { data } = await supabase().auth.getSession()
+      const token = data.session?.access_token
+      if (!token) { setPreviewBusy(false); return }
+      const res = await fetch('/api/email/preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ kind }),
+      })
+      if (res.ok) setPreview(await res.json() as { subject: string; html: string })
+    } catch { /* preview is best effort */ }
+    setPreviewBusy(false)
+  }
 
   useEffect(() => {
     let on = true
@@ -75,11 +98,12 @@ export function EmailWordingEditor() {
   }, [])
 
   const open = (kind: string) => {
-    if (openKind === kind) { setOpenKind(null); setDraft(null); return }
+    if (openKind === kind) { setOpenKind(null); setDraft(null); setPreview(null); return }
     const cur = wording instanceof Map ? wording.get(kind) : undefined
     setOpenKind(kind)
     setDraft(cur ? { ...cur } : BLANK(kind))
     setNote(null)
+    loadPreview(kind)
   }
 
   const save = async () => {
@@ -92,6 +116,7 @@ export function EmailWordingEditor() {
         ? 'Cleared — this email is back to its stock wording.'
         : 'Saved — takes effect on sends within a minute.')
       : 'Could not save — has 0043_email_wording.sql been run in Supabase?')
+    if (ok) loadPreview(draft.kind)
   }
 
   return (
@@ -132,6 +157,26 @@ export function EmailWordingEditor() {
                 </button>
                 {isOpen && draft && (
                   <div style={{ padding: '4px 20px 16px', background: '#fafbfd' }}>
+                    {/* What this email looks like right now, edits included */}
+                    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden', marginBottom: 14 }}>
+                      <div style={{ padding: '9px 14px', borderBottom: `1px solid ${LINE}`, background: '#fafbfd' }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 2px' }}>Currently sends as</p>
+                        <p style={{ fontSize: 12.5, fontWeight: 700, color: INK, margin: 0 }}>
+                          {previewBusy ? 'Rendering the preview…' : preview ? `Subject: ${preview.subject}` : 'Preview unavailable.'}
+                        </p>
+                      </div>
+                      {preview && (
+                        <iframe
+                          title={`preview-${item.kind}`}
+                          sandbox=""
+                          srcDoc={preview.html}
+                          style={{ width: '100%', height: 380, border: 'none', display: 'block', background: '#f4f7fb' }}
+                        />
+                      )}
+                      <p style={{ fontSize: 10.5, color: FAINT, margin: 0, padding: '6px 14px 8px' }}>
+                        Rendered with sample details (Jordan Alvarez, BK-1234, sample amounts) — real sends use the real facts.
+                      </p>
+                    </div>
                     <label className="sq-label" htmlFor={`ew-subj-${item.kind}`}>Subject line</label>
                     <input id={`ew-subj-${item.kind}`} className="sq-input" style={{ marginBottom: 2 }}
                       placeholder="blank = the automatic subject" value={draft.subject}

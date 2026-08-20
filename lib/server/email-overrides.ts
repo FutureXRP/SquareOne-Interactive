@@ -38,7 +38,8 @@ function paragraphs(s: string, color: string): string {
     + '</div>'
 }
 
-export async function applyEmailOverrides(kind: string, body: { subject: string; html: string }): Promise<{ subject: string; html: string }> {
+export async function applyEmailOverrides(kind: string, body: { subject: string; html: string }, opts: { fresh?: boolean } = {}): Promise<{ subject: string; html: string }> {
+  if (opts.fresh) cache = null
   const o = (await overrides()).get(kind)
   if (!o) return body
   let subject = body.subject
