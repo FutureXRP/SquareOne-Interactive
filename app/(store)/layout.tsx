@@ -33,10 +33,18 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
           </div>
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.14)', paddingTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px 18px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px 18px', flexWrap: 'wrap' }}>
-              {['Early Learning Center', 'Interactive', 'Medical Center', 'Event Rooms', 'Donate'].map((s, i) => (
+              {/* The SquareOne Compassion family — real links to the sister sites */}
+              {([
+                ['Early Learning Center', 'https://www.squareonecompassion.com/elc/'],
+                ['Interactive', null],
+                ['Medical Center', 'https://www.squareonecompassion.com/medical/'],
+                ['Donate', 'https://www.squareonecompassion.com/donate/'],
+              ] as [string, string | null][]).map(([s, href], i) => (
                 <span key={s} style={{ fontSize: 11.5, fontWeight: s === 'Interactive' ? 700 : 500, color: s === 'Interactive' ? '#fff' : 'rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', gap: 18 }}>
                   {i > 0 && <span style={{ width: 4, height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 1, transform: 'rotate(45deg)' }} />}
-                  {s}
+                  {href
+                    ? <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{s}</a>
+                    : s}
                 </span>
               ))}
             </div>
