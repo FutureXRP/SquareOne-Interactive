@@ -128,7 +128,6 @@ export const PLANS: Plan[] = [
     tagline: 'Everyone in your household',
     features: [
       'Up to 6 household members',
-      'Unlimited gym & open-play access',
       'Door access for every member',
       'Member pricing on rentals, parties & programs',
       'Cancel anytime',
