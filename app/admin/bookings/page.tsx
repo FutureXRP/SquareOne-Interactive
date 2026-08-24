@@ -172,19 +172,19 @@ export default function AdminBookingsPage() {
       contactEmail: nbEmail.trim() || null,
       ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
     })
-    if (res.ok && nbPay !== 'hold') {
+    if (res.ok && nbPay === 'stripe') {
       const fresh = await getStaffBookings()
       const mine = fresh.find((b) => b.code === res.code)
-      if (mine && nbPay === 'stripe') {
+      if (mine) {
         // A card is charged on the booking's secure page, not asserted at
         // the desk — open it so the customer can pay right now.
         const url = bookingPayUrl(mine)
         if (url) window.open(url, '_blank', 'noopener')
-      } else if (mine) {
-        // Cash / Cash App changed hands here: record it.
-        await recordPayment(mine, nbPay, me.id)
       }
     }
+    // Cash / Cash App at creation is an INTENTION, not a payment — nothing
+    // is recorded until the money is actually in hand and staff record it
+    // under Take payment. The booking is confirmed but owes its balance.
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
@@ -650,12 +650,42 @@ export default function AdminBookingsPage() {
                 ? 'Books the slot as a striped hold on the Board until payment lands (24-hour expiry).'
                 : nbPay === 'stripe'
                   ? `Books the slot and opens the secure card page for ${formatCents(priceCents)} — it confirms itself when Stripe does.`
-                  : `Collects ${formatCents(priceCents)} by ${PAY_LABEL[nbPay]} and confirms the slot.`}
+                  : `Confirms the slot with ${formatCents(priceCents)} still owed in ${PAY_LABEL[nbPay]}. Nothing reads as paid until the money is in hand — record it then under Take payment.`}
             </p>
             <button className="sq-btn sq-btn-primary" disabled={!nbClient.trim() || !canBook || busyWrite} onClick={createBooking}>
-              {busyWrite ? 'Booking…' : nbPay === 'hold' ? 'Book with hold' : `Book & take ${formatCents(priceCents)}`}
+              {busyWrite ? 'Booking…' : nbPay === 'hold' ? 'Book with hold' : nbPay === 'stripe' ? `Book & take ${formatCents(priceCents)}` : `Book — ${formatCents(priceCents)} due in ${PAY_LABEL[nbPay]}`}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Reservations waiting on approval — pinned where nobody can miss them */}
+      {inReview.length > 0 && (
+        <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16, border: '1px solid #e8d9a8' }}>
+          <div style={{ padding: '12px 20px', background: '#fdf3dc', borderBottom: `1px solid ${LINE}` }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#5b4708', margin: 0 }}>
+              {inReview.length} reservation{inReview.length === 1 ? '' : 's'} waiting for approval
+            </p>
+            <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
+              Customer bookings nobody has signed off on yet. Confirming locks the room in and sends
+              their approval email — with a direct pay link if anything is owed.
+            </p>
+          </div>
+          {[...inReview].sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH).map((b, i) => (
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: i < inReview.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 210 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
+                <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                  {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {formatCents(b.priceCents)}
+                  {b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ' · unpaid'}
+                </p>
+              </div>
+              <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 11.5 }} disabled={busyWrite}
+                onClick={async () => { setBusyWrite(true); await approveBooking(b.id, me?.id ?? null); setBusyWrite(false) }}>
+                Confirm reservation
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
