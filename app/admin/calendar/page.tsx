@@ -315,7 +315,8 @@ export default function CalendarPage() {
             const room = roomLabel(b.roomId)
             const paidUp = b.paidCents >= b.priceCents
             return (
-              <div key={b.id} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', borderBottom: i < dayList.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
+              // Clicking opens the booking's full details on the Bookings tab.
+              <Link key={b.id} href={`/admin/bookings?open=${b.id}`} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', borderBottom: i < dayList.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap', textDecoration: 'none', cursor: 'pointer' }}>
                 <span style={{ width: 10, height: 10, borderRadius: 3, background: room.color, flexShrink: 0 }} />
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: INK, fontVariantNumeric: 'tabular-nums', minWidth: 120 }}>
                   {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}
@@ -329,7 +330,7 @@ export default function CalendarPage() {
                 <span style={{ fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: paidUp ? GREEN : SUB }}>
                   {paidUp ? formatCents(b.priceCents) : `${formatCents(b.paidCents)} of ${formatCents(b.priceCents)}`}
                 </span>
-              </div>
+              </Link>
             )
           })}
         </div>

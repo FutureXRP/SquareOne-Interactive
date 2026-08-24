@@ -53,6 +53,11 @@ export interface StaffBooking {
   canceledByName?: string | null
   // The booking's own pay link (0037) — how a card is actually charged.
   payToken?: string | null
+  // The account behind a member booking (null = guest/desk booking).
+  accountId: string | null
+  // Guest contact email typed at the desk (0029). Member bookings carry
+  // their address on the account instead — see emailsForAccounts().
+  contactEmail?: string | null
 }
 
 export function isoDate(offset = 0): string {
@@ -100,6 +105,7 @@ interface Row {
   canceled_via?: string | null
   canceled_by_staff?: { name: string } | null
   pay_token?: string | null
+  contact_email?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -108,6 +114,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -152,7 +159,28 @@ function fromRow(r: Row): StaffBooking | null {
     canceledVia: 'canceled_via' in r ? ((r.canceled_via as StaffBooking['canceledVia']) ?? null) : undefined,
     canceledByName: 'canceled_by_staff' in r ? (r.canceled_by_staff?.name ?? null) : undefined,
     payToken: 'pay_token' in r ? (r.pay_token ?? null) : undefined,
+    accountId: r.account_id ?? null,
+    contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
   }
+}
+
+// The email behind each member account — for showing who to reach on a
+// booking made through the store, where contact_email is empty because
+// the address lives on the account. Primary member's address wins.
+export async function emailsForAccounts(accountIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const ids = [...new Set(accountIds)].filter(Boolean)
+  if (ids.length === 0) return out
+  const { data, error } = await supabase()
+    .from('clients')
+    .select('account_id, email, is_primary')
+    .in('account_id', ids)
+    .order('is_primary', { ascending: false })
+  if (error) return out
+  for (const r of data as { account_id: string; email: string | null }[]) {
+    if (r.email && !out.has(r.account_id)) out.set(r.account_id, r.email)
+  }
+  return out
 }
 
 // A booking nobody has signed off on yet. Undefined approvedAt means the
