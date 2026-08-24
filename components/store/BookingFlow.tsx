@@ -41,6 +41,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [addonConflict, setAddonConflict] = useState(false)
+  // What the customer wants the desk to know — decorations, timing, etc.
+  const [requests, setRequests] = useState('')
   // Promo code applied to this rental
   const [promo, setPromo] = useState('')
   const [coupon, setCoupon] = useState<Coupon | null>(null)
@@ -231,6 +233,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
       parts.push(`Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(addonPriceCents(a, hours))})`).join(', ')}`)
     }
     if (coupon && discountCents > 0) parts.push(`Code ${coupon.code} −${formatCents(discountCents)}`)
+    if (requests.trim()) parts.push(`Requests: ${requests.trim()}`)
     const note = parts.length > 0 ? parts.join(' · ') : undefined
     const res = await requestMemberHold(f.id, `${f.name} rental`, day.iso, startH, hours, priceCents,
       f.depositCents === undefined ? undefined : depositCents, note, picked,
@@ -497,6 +500,17 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
               {promoError && <p style={{ fontSize: 11, color: RED, margin: '5px 0 0', fontWeight: 600 }}>{promoError}</p>}
             </div>
           )}
+
+          {/* Anything the desk should know — rides on the booking for staff */}
+          <div style={{ padding: '10px 0 2px' }}>
+            <label className="sq-label" htmlFor={`req-${f.id}`}>Anything we should know? (optional)</label>
+            <textarea
+              id={`req-${f.id}`} className="sq-input" rows={2} maxLength={400}
+              style={{ resize: 'vertical', fontSize: 12.5 }}
+              placeholder="Decorations, arrival plans, accessibility, anything else…"
+              value={requests} onChange={(e) => setRequests(e.target.value)}
+            />
+          </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 14px' }}>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Total</span>

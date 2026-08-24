@@ -169,6 +169,10 @@ export default function BookingHistoryPage() {
                     <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 74, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {formatCents(b.priceCents)}
                     </span>
+                    {/* Full details, edits, and late payments live on the main tab */}
+                    <Link href={`/admin/bookings?open=${b.id}`} className="sq-btn sq-btn-ghost" style={{ padding: '4px 11px', fontSize: 11, textDecoration: 'none' }}>
+                      Open
+                    </Link>
                   </div>
                 )
               })}

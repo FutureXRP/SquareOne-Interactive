@@ -10,7 +10,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl, emailsForAccounts,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -87,6 +87,17 @@ export default function AdminBookingsPage() {
   // Canceled bookings are kept, not deleted — but they shouldn't be the
   // first thing the desk reads through.
   const [showCanceled, setShowCanceled] = useState(false)
+  // account id → the member's email, for store bookings whose contact
+  // address lives on the account rather than the booking row.
+  const [accountEmails, setAccountEmails] = useState<Map<string, string>>(new Map())
+  // A calendar deep-link waiting to scroll its booking into view.
+  const [scrollToId, setScrollToId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!scrollToId || bookings.length === 0) return
+    const el = document.getElementById(`bk-${scrollToId}`)
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setScrollToId(null) }
+  }, [scrollToId, bookings])
 
   // New-booking form state
   const [nbClient, setNbClient] = useState('')
@@ -111,6 +122,9 @@ export default function AdminBookingsPage() {
     const sync = () => {
       Promise.all([getStaffBookings(), getActiveRooms(), getMyStaff(), getStaff().catch(() => []), getActiveAddons().catch(() => []), getActivePackages().catch(() => [])]).then(([b, r, m, s, a, pk]) => {
         if (on) { setBookings(b); setRooms(r); setMe(m); setAllStaff(s); setAllAddons(a); setPackages(pk) }
+        // Member emails live on the account, not the booking row.
+        emailsForAccounts(b.map((x) => x.accountId ?? '').filter(Boolean))
+          .then((em) => { if (on) setAccountEmails(em) }).catch(() => {})
       }).catch(() => {})
     }
     sync()
@@ -118,6 +132,9 @@ export default function AdminBookingsPage() {
     markBookingsSeen() // clears the sidebar's new-booking badge
     // Front Desk deep-link: /admin/bookings?new=1 opens the booking form
     if (new URLSearchParams(window.location.search).get('new') === '1') setShowNew(true)
+    // Calendar deep-link: ?open=<id> opens that booking's full details.
+    const openId = new URLSearchParams(window.location.search).get('open')
+    if (openId) { setEditingId(openId); setShowCanceled(true); setScrollToId(openId) }
     window.addEventListener(BOOKINGS_EVENT, sync)
     return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync) }
   }, [])
@@ -254,7 +271,7 @@ export default function AdminBookingsPage() {
         const isEditing = editingId === b.id
         const isPaying = payingId === b.id
         return (
-          <div key={b.id} style={{ borderBottom: i < list.length - 1 ? `1px solid ${LINE}` : 'none', opacity: b.status === 'canceled' ? 0.5 : 1 }}>
+          <div key={b.id} id={`bk-${b.id}`} style={{ borderBottom: i < list.length - 1 ? `1px solid ${LINE}` : 'none', opacity: b.status === 'canceled' ? 0.5 : 1 }}>
             <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', flexWrap: 'wrap' }}>
               <span style={{ width: 9, height: 9, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 170 }}>
@@ -311,6 +328,21 @@ export default function AdminBookingsPage() {
                   )}
                   <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setEditingId(isEditing ? null : b.id); setPayingId(null) }}>{isEditing ? 'Close' : 'Edit'}</button>
                 </span>
+              )}
+              {b.status === 'canceled' && canBook && (
+                // A canceled booking that really happened (a hold that
+                // expired before the party, say) can come back — then
+                // payments and edits work on it like any other booking.
+                <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
+                  onClick={async () => {
+                    if (!window.confirm(`Reinstate ${b.code} for ${b.client}? It becomes a live booking again — you can then take payment or edit it.`)) return
+                    setBusyWrite(true)
+                    const ok = await updateBookingFields(b.id, { status: 'confirmed' }, me?.id ?? null)
+                    setBusyWrite(false)
+                    if (!ok) window.alert('Could not reinstate — the room may have been rebooked for that time.')
+                  }}>
+                  Reinstate
+                </button>
               )}
             </div>
 
@@ -389,6 +421,35 @@ export default function AdminBookingsPage() {
 
             {isEditing && (
               <div style={{ padding: '4px 18px 16px 39px' }}>
+                {/* Everything the customer gave us at booking time */}
+                {(() => {
+                  const email = b.contactEmail || (b.accountId ? accountEmails.get(b.accountId) : undefined)
+                  return (
+                    <div style={{ background: '#fafbfd', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5, color: SUB, lineHeight: 1.7, maxWidth: 620 }}>
+                      <p style={{ margin: 0 }}>
+                        <strong style={{ color: INK }}>Client:</strong> {b.client}
+                        {b.accountId ? ' · member account' : ' · guest'}
+                        {' · booked by '}{b.takenBy}
+                      </p>
+                      <p style={{ margin: 0 }}>
+                        <strong style={{ color: INK }}>Contact:</strong>{' '}
+                        {email
+                          ? <a href={`mailto:${email}`} style={{ color: BLUE, fontWeight: 600 }}>{email}</a>
+                          : 'no email on file — ask when they arrive'}
+                      </p>
+                      <p style={{ margin: 0 }}>
+                        <strong style={{ color: INK }}>Money:</strong>{' '}
+                        {formatCents(b.priceCents)} total · {formatCents(b.paidCents)} paid
+                        {b.depositCents != null && b.depositCents > 0 ? ` · ${formatCents(b.depositCents)} deposit asked` : ''}
+                      </p>
+                      {b.note && (
+                        <p style={{ margin: 0 }}>
+                          <strong style={{ color: INK }}>Notes &amp; requests:</strong> {b.note}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
                   <div>
                     <label className="sq-label">Date</label>
