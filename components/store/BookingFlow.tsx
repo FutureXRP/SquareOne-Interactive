@@ -294,8 +294,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
             <strong>Hold {confirmed.code}</strong> — the room is yours for 24 hours.
             {depositCents
-              ? ` Pay the ${formatCents(depositCents)} deposit at the front desk (or when we call to confirm) and it locks in.`
-              : ' Pay at the front desk (or when we call to confirm) and it locks in.'}
+              ? ` Pay the ${formatCents(depositCents)} deposit by card or Cash App — the link is in your confirmation email and under My bookings — and it locks in.`
+              : ' Pay by card or Cash App — the link is in your confirmation email and under My bookings — and it locks in.'}
             {' '}Unpaid holds release automatically.
           </p>
         </div>
