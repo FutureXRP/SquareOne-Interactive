@@ -20,6 +20,9 @@ export function AccountShell({ children }: { children: (profile: Profile) => Rea
   const pathname = usePathname()
   const router = useRouter()
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined)
+  // Phone nav: the tabs collapse into a hamburger dropdown under 640px.
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { setMenuOpen(false) }, [pathname])
 
   useEffect(() => {
     let on = true
@@ -70,7 +73,7 @@ export function AccountShell({ children }: { children: (profile: Profile) => Rea
         <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px' }} onClick={async () => { await signOut(); router.push('/') }}>Sign out</button>
       </div>
 
-      <div style={{ display: 'flex', gap: 4, overflowX: 'auto', borderBottom: '1px solid #dbe4f0', marginBottom: 24 }}>
+      <div className="sq-account-tabs" style={{ display: 'flex', gap: 4, overflowX: 'auto', borderBottom: '1px solid #dbe4f0', marginBottom: 24 }}>
         {tabs.map((t) => {
           const active = pathname === t.href
           return (
@@ -81,6 +84,40 @@ export function AccountShell({ children }: { children: (profile: Profile) => Rea
             }}>{t.label}</Link>
           )
         })}
+      </div>
+
+      {/* The same five tabs as a hamburger dropdown, phones only (CSS swaps them) */}
+      <div className="sq-account-tabs-menu" style={{ position: 'relative', marginBottom: 20 }}>
+        <button
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+          style={{ font: 'inherit', display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', background: '#fff', border: '1.5px solid #dbe4f0', borderRadius: 11, padding: '11px 14px', cursor: 'pointer' }}
+        >
+          <span aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ width: 16, height: 2, background: INK, borderRadius: 2, display: 'block' }} />
+            <span style={{ width: 16, height: 2, background: INK, borderRadius: 2, display: 'block' }} />
+            <span style={{ width: 16, height: 2, background: INK, borderRadius: 2, display: 'block' }} />
+          </span>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>
+            {tabs.find((t) => t.href === pathname)?.label ?? 'My account'}
+          </span>
+          <span aria-hidden style={{ marginLeft: 'auto', color: FAINT, fontSize: 11, transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}>▾</span>
+        </button>
+        {menuOpen && (
+          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, background: '#fff', border: '1px solid #dbe4f0', borderRadius: 12, boxShadow: '0 10px 28px rgba(24,39,64,0.14)', overflow: 'hidden', zIndex: 40 }}>
+            {tabs.map((t, i) => {
+              const active = pathname === t.href
+              return (
+                <Link key={t.href} href={t.href} onClick={() => setMenuOpen(false)} style={{
+                  display: 'block', fontSize: 13.5, fontWeight: active ? 700 : 500,
+                  color: active ? BLUE : INK, background: active ? '#eef4fb' : '#fff',
+                  textDecoration: 'none', padding: '13px 16px',
+                  borderBottom: i < tabs.length - 1 ? '1px solid #eef2f8' : 'none',
+                }}>{t.label}</Link>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {children(profile)}

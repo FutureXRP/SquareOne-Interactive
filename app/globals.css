@@ -75,6 +75,14 @@ table { border-collapse: collapse; width: 100%; }
   .sq-store-nav a { white-space: nowrap; }
 }
 
+/* Account tabs: the underlined row on desktop, a hamburger dropdown on
+   phones — no finger-sliding a strip that doesn't fit. */
+.sq-account-tabs-menu { display: none; }
+@media (max-width: 640px) {
+  .sq-account-tabs { display: none !important; }
+  .sq-account-tabs-menu { display: block; }
+}
+
 /* 380px rule (build.md): sidebar collapses to a horizontal nav bar and
    multi-column grids stack. Inline styles set the desktop values, so the
    narrow-width overrides need !important. */
