@@ -239,6 +239,9 @@ export interface NewBooking {
   // Unbilled buffer copied from the room at creation (0039).
   setupMin?: number
   cleanupMin?: number
+  // Free-text that rides on the booking — one-time price adjustments and
+  // their reasons land here so the paper trail survives.
+  note?: string
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -257,6 +260,7 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     price_cents: b.priceCents,
     hold_expires_at: b.hold ? new Date(Date.now() + 24 * 3600_000).toISOString() : null,
     created_by: b.createdBy,
+    ...(b.note ? { note: b.note } : {}),
     ...(b.depositCents !== undefined ? { deposit_cents: b.depositCents } : {}),
   }
   const extras = {
@@ -393,7 +397,7 @@ export async function rescheduleBooking(id: string, date: string, startH: number
   return { ok: true, conflict: false }
 }
 
-export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null }, byStaffId?: string | null): Promise<boolean> {
+export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null; note?: string | null }, byStaffId?: string | null): Promise<boolean> {
   const sb = supabase()
   // A staff cancel stamps who did it and when. The stamp columns arrive
   // with 0038 — before that, retry the plain update rather than fail.
