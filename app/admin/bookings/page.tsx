@@ -218,6 +218,12 @@ export default function AdminBookingsPage() {
   const holds = active.filter((b) => b.status === 'hold')
   // Customer-made reservations nobody has signed off on yet.
   const inReview = active.filter(isInReview)
+  // Anything live and not paid in full — the other half of "needs our
+  // attention". In-review bookings stay in their own queue (approval is
+  // step one); soonest event first, since that's the money at risk.
+  const unpaid = active
+    .filter((b) => b.priceCents > 0 && b.paidCents < b.priceCents && !isInReview(b))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH)
 
   // Today first, then what's coming, then history newest-first. The desk
   // is almost always asking about today, and was scrolling past weeks of
@@ -720,6 +726,19 @@ export default function AdminBookingsPage() {
         </div>
       )}
 
+      {/* When both attention queues are clear, say so — a section that only
+          exists when busy looks like a section that doesn't exist at all. */}
+      {inReview.length === 0 && unpaid.length === 0 && (
+        <div className="sq-card" style={{ ...card, padding: '12px 20px', marginBottom: 16, borderLeft: `3px solid ${GREEN}` }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, margin: 0 }}>
+            ✓ Nothing needs your attention — no reservations waiting for approval, nothing unpaid.
+          </p>
+          <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>
+            New customer reservations and any booking owing money will appear right here.
+          </p>
+        </div>
+      )}
+
       {/* Reservations waiting on approval — pinned where nobody can miss them */}
       {inReview.length > 0 && (
         <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16, border: '1px solid #e8d9a8' }}>
@@ -747,6 +766,47 @@ export default function AdminBookingsPage() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Money still owed — the other queue that must never need scrolling */}
+      {unpaid.length > 0 && (
+        <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16, border: '1px solid #f0c9c3' }}>
+          <div style={{ padding: '12px 20px', background: '#fdeceb', borderBottom: `1px solid ${LINE}` }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#8c2f24', margin: 0 }}>
+              {unpaid.length} booking{unpaid.length === 1 ? '' : 's'} not paid in full · {formatCents(unpaid.reduce((n, b) => n + (b.priceCents - b.paidCents), 0))} outstanding
+            </p>
+            <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
+              Soonest event first. Collect opens that booking&rsquo;s payment panel right where it sits in the list.
+            </p>
+          </div>
+          {unpaid.slice(0, 15).map((b, i) => {
+            const owed = b.priceCents - b.paidCents
+            const depositMet = b.depositCents != null && b.depositCents > 0 && b.paidCents >= b.depositCents
+            return (
+              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: i < Math.min(unpaid.length, 15) - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 210 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                    {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}
+                    {b.status === 'hold' ? ' · hold' : ''}{depositMet ? ' · deposit met' : ''}
+                  </p>
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: RED, fontVariantNumeric: 'tabular-nums' }}>
+                  {formatCents(owed)} due
+                </span>
+                <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 11.5 }}
+                  onClick={() => { setPayingId(b.id); setEditingId(null); setPayAmount(''); setScrollToId(b.id) }}>
+                  Collect
+                </button>
+              </div>
+            )
+          })}
+          {unpaid.length > 15 && (
+            <p style={{ fontSize: 11.5, color: FAINT, margin: 0, padding: '8px 20px' }}>
+              …and {unpaid.length - 15} more further out — they&rsquo;re in the list below too.
+            </p>
+          )}
         </div>
       )}
 
