@@ -16,6 +16,13 @@ import {
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { ChargeCard } from '@/components/admin/ChargeCard'
 
+// Signed dollars → cents: "-25" and "25" both work, for adjustments that
+// can cut or add to a price.
+function signedCents(v: string): number {
+  const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) ? Math.round(n * 100) : 0
+}
+
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0
@@ -107,6 +114,10 @@ export default function AdminBookingsPage() {
   const [nbStart, setNbStart] = useState(17)
   const [nbHours, setNbHours] = useState(2)
   const [nbPrice, setNbPrice] = useState('')
+  // One-time price adjustment: ± dollars plus the why, shown as its own
+  // line above the total and written into the booking's notes.
+  const [nbAdjust, setNbAdjust] = useState('')
+  const [nbAdjustWhy, setNbAdjustWhy] = useState('')
   const [nbDeposit, setNbDeposit] = useState('') // '' = room default
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
   const [nbAddons, setNbAddons] = useState<string[]>([])
@@ -145,7 +156,9 @@ export default function AdminBookingsPage() {
   const pickedAddons = roomAddons.filter((a) => nbAddons.includes(a.id))
   const nbAddonsCents = pickedAddons.reduce((n, a) => n + addonPriceCents(a, nbHours), 0)
   const autoPriceCents = (room ? rentalPriceCentsAt(room, nbDow, nbStart, nbHours) : 0) + nbAddonsCents
-  const priceCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
+  const baseCents = nbPrice.trim() === '' ? autoPriceCents : dollarsToCents(nbPrice)
+  const nbAdjustCents = signedCents(nbAdjust)
+  const priceCents = Math.max(0, baseCents + nbAdjustCents)
 
   // Grey out extras someone else already has for this window.
   useEffect(() => {
@@ -188,6 +201,10 @@ export default function AdminBookingsPage() {
       packageId: nbPackage || null,
       contactEmail: nbEmail.trim() || null,
       ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
+      // The adjustment's paper trail rides on the booking note.
+      ...(nbAdjustCents !== 0
+        ? { note: `Adjustment: ${nbAdjustCents < 0 ? '−' : '+'}${formatCents(Math.abs(nbAdjustCents))}${nbAdjustWhy.trim() ? ` (${nbAdjustWhy.trim()})` : ''}` }
+        : {}),
     })
     if (res.ok && nbPay === 'stripe') {
       const fresh = await getStaffBookings()
@@ -205,7 +222,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail('')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy('')
     } else if (res.conflict) {
       if (res.addonConflict) setAddonConflictMsg(true)
       else setConflictMsg(true)
@@ -481,6 +498,24 @@ export default function AdminBookingsPage() {
                     <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
                       onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
                   </div>
+                  <div>
+                    <label className="sq-label">Adjust once ($)</label>
+                    {/* ± amount, Enter applies: changes the price one time and
+                        logs the adjustment in the booking's notes. */}
+                    <input className="sq-input" inputMode="decimal" placeholder="±, Enter applies" key={`badj-${b.id}`}
+                      onKeyDown={async (e) => {
+                        if (e.key !== 'Enter') return
+                        const el = e.target as HTMLInputElement
+                        const cents = signedCents(el.value)
+                        if (cents === 0) return
+                        const tag = `Adjustment: ${cents < 0 ? '−' : '+'}${formatCents(Math.abs(cents))}`
+                        const ok = await updateBookingFields(b.id, {
+                          price_cents: Math.max(0, b.priceCents + cents),
+                          note: b.note ? `${b.note} · ${tag}` : tag,
+                        }, me?.id ?? null)
+                        if (ok) el.value = ''
+                      }} />
+                  </div>
                   {b.runByStaffId !== undefined && allStaff.length > 0 && (
                     <div>
                       <label className="sq-label">Run by</label>
@@ -685,6 +720,29 @@ export default function AdminBookingsPage() {
                 <option value="">— assign later —</option>
                 {allStaff.map((s) => <option key={s.id} value={s.id}>{s.name} · {ROLE_LABEL[s.role]}</option>)}
               </select>
+            </div>
+          )}
+
+          {/* One-time price adjustment — its own line above the total */}
+          <span className="sq-label">One-time adjustment (optional)</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, maxWidth: 620 }}>
+            <input className="sq-input" style={{ width: 120 }} inputMode="decimal" placeholder="-25.00 or 25.00"
+              value={nbAdjust} onChange={(e) => setNbAdjust(e.target.value)} />
+            <input className="sq-input" style={{ flex: 1, minWidth: 180 }} placeholder="why — returning customer, comp, damage fee…"
+              value={nbAdjustWhy} onChange={(e) => setNbAdjustWhy(e.target.value)} />
+          </div>
+          {nbAdjustCents !== 0 && (
+            <div style={{ maxWidth: 320, marginBottom: 14, fontSize: 12.5, color: SUB, fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                <span>Room, extras &amp; package</span><span>{formatCents(baseCents)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', color: nbAdjustCents < 0 ? GREEN : '#b07818', fontWeight: 600 }}>
+                <span>Adjustment{nbAdjustWhy.trim() ? ` — ${nbAdjustWhy.trim()}` : ''}</span>
+                <span>{nbAdjustCents < 0 ? '−' : '+'}{formatCents(Math.abs(nbAdjustCents))}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 0', borderTop: `1px solid ${LINE}`, color: INK, fontWeight: 800 }}>
+                <span>Total</span><span>{formatCents(priceCents)}</span>
+              </div>
             </div>
           )}
 
