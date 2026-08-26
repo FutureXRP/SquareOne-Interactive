@@ -76,6 +76,12 @@ export interface BookingFacts {
   // How it ended (0038): who the customer hears it from matters.
   canceledVia?: 'staff' | 'member' | 'hold_expired'
   canceledByName?: string
+  // The unbilled setup/cleanup window (0039) — staff running the event
+  // arrive before it and stay after it.
+  setupMin?: number
+  cleanupMin?: number
+  arriveBy?: string // "1 PM"
+  stayUntil?: string // "5:30 PM"
 }
 
 // The button on any email about a booking with money still owed. Sends
@@ -182,7 +188,11 @@ export function bookingStaffAssigned(b: BookingFacts, s: { staffName: string; pa
        ${detailRows([
          ['What', b.what],
          ['Room', b.room],
-         ['When', `${b.date}, ${b.time}`],
+         ['Event hours', `${b.date}, ${b.time}`],
+         // Setup and cleanup are the staff member's hours, not the
+         // customer's — say exactly when to show up and when they're done.
+         ...(b.arriveBy ? [['Arrive by', `${b.arriveBy} — ${b.setupMin} min of setup before the event`] as [string, string]] : []),
+         ...(b.stayUntil ? [['Stay until', `${b.stayUntil} — ${b.cleanupMin} min of cleanup after`] as [string, string]] : []),
          ['Booked for', b.name],
          ['Confirmation', b.code],
          ...(b.addons ? [['Extras to set up', b.addons] as [string, string]] : []),

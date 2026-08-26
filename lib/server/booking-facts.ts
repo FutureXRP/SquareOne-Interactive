@@ -21,10 +21,13 @@ export interface BookingRecord {
   canceled_via?: string | null
   canceled_by_staff?: { name: string } | null
   facilities: { name: string } | null
+  setup_min?: number
+  cleanup_min?: number
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, facilities:facility_id(name), payments(amount_cents, status)',
@@ -72,6 +75,10 @@ export async function bookingFactsAny(bookingId: string):
   if (!b) return null
   const to = await recipientFor(b.account_id, b.contact_email ?? null)
   const range = parseRange(b.during)
+  // The unbilled buffer around the event (0039) — what staff running it
+  // need for arrive-by and stay-until times.
+  const setupMin = b.setup_min ?? 0
+  const cleanupMin = b.cleanup_min ?? 0
   const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
   const addons = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : undefined
   return {
@@ -90,6 +97,10 @@ export async function bookingFactsAny(bookingId: string):
       addons,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
+      setupMin: setupMin > 0 ? setupMin : undefined,
+      cleanupMin: cleanupMin > 0 ? cleanupMin : undefined,
+      arriveBy: range && setupMin > 0 ? hour(new Date(range.from.getTime() - setupMin * 60_000)) : undefined,
+      stayUntil: range && cleanupMin > 0 ? hour(new Date(range.to.getTime() + cleanupMin * 60_000)) : undefined,
       canceledVia: (b.canceled_via as BookingFacts['canceledVia']) ?? undefined,
       canceledByName: b.canceled_by_staff?.name ?? undefined,
     },

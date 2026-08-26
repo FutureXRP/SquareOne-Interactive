@@ -12,6 +12,7 @@ import {
   EVENTS_EVENT, type StaffEvent, type EventKind, type EventStatus,
 } from '@/lib/events-store'
 import { getStaff, getMyStaff, CAN_BOOK, type StaffMember } from '@/lib/staff-store'
+import { getSiteConfig, saveSiteConfig, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { isSupabaseConfigured, supabase as supabaseClient } from '@/lib/supabase'
 
 const START_TIMES = Array.from({ length: 30 }, (_, i) => 7 + i * 0.5) // 7 AM – 9:30 PM
@@ -34,6 +35,10 @@ export default function CalendarPage() {
   const [bookings, setBookings] = useState<StaffBooking[]>([])
   const [rooms, setRooms] = useState<RoomConfig[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  // Site config carries the holiday closures — the store refuses closed
+  // days while staff booking here stays open.
+  const [cfg, setCfg] = useState<SiteConfig | null>(null)
+  const [closureLabel, setClosureLabel] = useState('')
   const [events, setEvents] = useState<StaffEvent[] | null>(null)
   const [staff, setStaffList] = useState<StaffMember[]>([])
   const [me, setMe] = useState<StaffMember | null>(null)
@@ -138,6 +143,24 @@ export default function CalendarPage() {
 
   const monthCount = Array.from({ length: daysInMonth }, (_, i) => byDate.get(isoOf(year, month, i + 1))?.length ?? 0).reduce((a, b) => a + b, 0)
   const dayList = selected ? byDate.get(selected) ?? [] : []
+  const selectedClosure = cfg && selected ? closureFor(cfg, selected) : null
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    getSiteConfig().then(setCfg).catch(() => {})
+  }, [])
+
+  const toggleClosure = async () => {
+    if (!cfg || !selected || cfg.closures === undefined) return
+    const cur = cfg.closures ?? []
+    const closures = cur.some((c) => c.date === selected)
+      ? cur.filter((c) => c.date !== selected)
+      : [...cur, { date: selected, label: closureLabel.trim() || 'Closed' }]
+    const next = { ...cfg, closures }
+    setCfg(next)
+    setClosureLabel('')
+    await saveSiteConfig(next)
+  }
 
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
@@ -171,7 +194,12 @@ export default function CalendarPage() {
                 border: `1.5px solid ${isSel ? BLUE : isToday ? '#9db9dd' : LINE}`,
                 background: isSel ? '#eef4fb' : '#fff', overflow: 'hidden',
               }}>
-                <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: isToday ? BLUE : INK, marginBottom: 3, fontVariantNumeric: 'tabular-nums' }}>{d}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: isToday ? BLUE : INK, marginBottom: 3, fontVariantNumeric: 'tabular-nums' }}>
+                  {d}
+                  {cfg && closureFor(cfg, iso) && (
+                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#8c2f24', background: '#fdeceb', padding: '0 6px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.04em' }}>closed</span>
+                  )}
+                </span>
                 {(eventsByDate.get(iso) ?? []).slice(0, 2).map((e) => (
                   <span key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: SUB, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: KIND_COLOR[e.kind], flexShrink: 0 }} />
@@ -211,6 +239,31 @@ export default function CalendarPage() {
               <Link href="/admin/bookings?new=1" style={{ fontSize: 12.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>+ Book a room</Link>
             </span>
           </div>
+
+          {/* Holiday closure: the store refuses this day; staff can still book */}
+          {cfg?.closures !== undefined && (
+            <div style={{ padding: '10px 20px', borderBottom: `1px solid ${LINE}`, background: selectedClosure ? '#fdeceb' : '#fafbfd', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {selectedClosure ? (
+                <>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#8c2f24' }}>
+                    Closed to customers — {selectedClosure.label}. Staff can still book this day from the admin side.
+                  </span>
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 13px', fontSize: 11.5, marginLeft: 'auto' }} onClick={toggleClosure}>
+                    Reopen this day
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input className="sq-input" style={{ width: 220, padding: '6px 10px', fontSize: 12 }} placeholder="Christmas Day, staff training…"
+                    value={closureLabel} onChange={(e) => setClosureLabel(e.target.value)} />
+                  <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 13px', fontSize: 11.5 }} onClick={toggleClosure}>
+                    Close this day to customers
+                  </button>
+                  <span style={{ fontSize: 11, color: FAINT }}>Blocks store bookings only — staff booking stays open.</span>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Schedule a tour on this day */}
           {showNew && (

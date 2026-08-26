@@ -56,8 +56,10 @@ export interface StaffBooking {
   // The account behind a member booking (null = guest/desk booking).
   accountId: string | null
   // Guest contact email typed at the desk (0029). Member bookings carry
-  // their address on the account instead — see emailsForAccounts().
+  // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
+  // Reserved extras (0022). undefined = column not selected/migrated.
+  addonIds?: string[]
 }
 
 export function isoDate(offset = 0): string {
@@ -106,6 +108,7 @@ interface Row {
   canceled_by_staff?: { name: string } | null
   pay_token?: string | null
   contact_email?: string | null
+  addon_ids?: string[] | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -114,7 +117,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
-  `contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
+  `addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -161,24 +164,33 @@ function fromRow(r: Row): StaffBooking | null {
     payToken: 'pay_token' in r ? (r.pay_token ?? null) : undefined,
     accountId: r.account_id ?? null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
+    addonIds: 'addon_ids' in r ? (r.addon_ids ?? []) : undefined,
   }
 }
 
-// The email behind each member account — for showing who to reach on a
-// booking made through the store, where contact_email is empty because
-// the address lives on the account. Primary member's address wins.
-export async function emailsForAccounts(accountIds: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
+// The email and phone behind each member account — for showing who to
+// reach on a booking made through the store, where contact details live
+// on the account, not the booking row. Primary member wins.
+export interface AccountContact { email: string | null; phone: string | null }
+
+export async function contactsForAccounts(accountIds: string[]): Promise<Map<string, AccountContact>> {
+  const out = new Map<string, AccountContact>()
   const ids = [...new Set(accountIds)].filter(Boolean)
   if (ids.length === 0) return out
   const { data, error } = await supabase()
     .from('clients')
-    .select('account_id, email, is_primary')
+    .select('account_id, email, phone, is_primary')
     .in('account_id', ids)
     .order('is_primary', { ascending: false })
   if (error) return out
-  for (const r of data as { account_id: string; email: string | null }[]) {
-    if (r.email && !out.has(r.account_id)) out.set(r.account_id, r.email)
+  for (const r of data as { account_id: string; email: string | null; phone: string | null }[]) {
+    const cur = out.get(r.account_id)
+    if (!cur) out.set(r.account_id, { email: r.email ?? null, phone: r.phone?.trim() || null })
+    else {
+      // A later (non-primary) row can still fill a blank.
+      if (!cur.email && r.email) cur.email = r.email
+      if (!cur.phone && r.phone?.trim()) cur.phone = r.phone.trim()
+    }
   }
   return out
 }
