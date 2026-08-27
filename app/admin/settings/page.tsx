@@ -116,23 +116,23 @@ export default function SettingsPage() {
               {cfg.membershipAlertEmail !== undefined && (
                 <div>
                   <label className="sq-label" htmlFor="s-member-alert">New-member alerts go to</label>
-                  <input id="s-member-alert" className="sq-input" type="email" value={cfg.membershipAlertEmail} placeholder="owner@squareoneinteractive.com"
+                  <input id="s-member-alert" className="sq-input" type="text" value={cfg.membershipAlertEmail} placeholder="owner@…, frontdesk@…"
                     onChange={(e) => patchCfg({ membershipAlertEmail: e.target.value })} />
                   <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
-                    Every time someone joins the fitness membership, this address gets a heads-up email
-                    with their name, email, and plan. Leave blank to turn it off.
+                    Every time someone joins the fitness membership, these addresses get a heads-up with
+                    their name, email, and plan. One or several, separated by commas. Blank turns it off.
                   </p>
                 </div>
               )}
               {cfg.bookingAlertEmail !== undefined && (
                 <div>
                   <label className="sq-label" htmlFor="s-booking-alert">New-reservation alerts go to</label>
-                  <input id="s-booking-alert" className="sq-input" type="email" value={cfg.bookingAlertEmail} placeholder="frontdesk@squareoneinteractive.com"
+                  <input id="s-booking-alert" className="sq-input" type="text" value={cfg.bookingAlertEmail} placeholder="frontdesk@…, matt@…, christina@…"
                     onChange={(e) => patchCfg({ bookingAlertEmail: e.target.value })} />
                   <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
-                    Every customer reservation that needs approval sends a heads-up here — who, what
-                    room, when, and what&rsquo;s owed, with a link to the approval queue. Leave blank
-                    to turn it off.
+                    Every customer reservation that needs approval sends a heads-up to each of these —
+                    who, what room, when, and what&rsquo;s owed, with a link to the approval queue.
+                    One or several addresses, separated by commas. Blank turns it off.
                   </p>
                 </div>
               )}

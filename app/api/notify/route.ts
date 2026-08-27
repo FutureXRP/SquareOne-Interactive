@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { serviceDb, sendAndLog } from '@/lib/server/billing'
+import { serviceDb, sendAndLog, alertRecipients } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
   bookingRemoved, bookingPayment, bookingApproved, bookingApprovalAlert, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
@@ -60,8 +60,8 @@ export async function POST(req: Request) {
       if (kind === 'booking.hold' && !resolved.b.approved_at) {
         try {
           const { data: cfgRow } = await serviceDb().from('site_config').select('booking_alert_email').limit(1).maybeSingle()
-          const alertTo = ((cfgRow as { booking_alert_email?: string } | null)?.booking_alert_email ?? '').trim()
-          if (alertTo && alertTo.toLowerCase() !== resolved.to.email.toLowerCase()) {
+          const raw = (cfgRow as { booking_alert_email?: string } | null)?.booking_alert_email ?? ''
+          for (const alertTo of alertRecipients(raw, resolved.to.email)) {
             await sendAndLog('booking.approval_alert', alertTo, bookingApprovalAlert(resolved.facts), { bookingId: resolved.b.id })
           }
         } catch {

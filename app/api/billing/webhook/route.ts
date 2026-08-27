@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
-import { stripe, stripeConfigured, serviceDb, sendEmail, sendAndLog } from '@/lib/server/billing'
+import { stripe, stripeConfigured, serviceDb, sendEmail, sendAndLog, alertRecipients } from '@/lib/server/billing'
 import {
   membershipWelcome, membershipStaffAlert, membershipCanceled, membershipEnded, membershipResumed, renewalReceipt, paymentFailed,
   bookingPayment,
@@ -122,8 +122,8 @@ export async function POST(req: Request) {
             // The internal heads-up, to whoever Settings names (0044).
             try {
               const { data: cfgRow } = await serviceDb().from('site_config').select('membership_alert_email').limit(1).maybeSingle()
-              const alertTo = ((cfgRow as { membership_alert_email?: string } | null)?.membership_alert_email ?? '').trim()
-              if (alertTo && alertTo.toLowerCase() !== email.toLowerCase()) {
+              const raw = (cfgRow as { membership_alert_email?: string } | null)?.membership_alert_email ?? ''
+              for (const alertTo of alertRecipients(raw, email)) {
                 await sendAndLog('membership.staff_alert', alertTo, membershipStaffAlert({
                   name: memberName,
                   email,
