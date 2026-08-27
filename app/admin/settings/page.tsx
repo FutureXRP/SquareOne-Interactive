@@ -136,6 +136,18 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
+              {cfg.bookingAlertEmail !== undefined && (
+                <div>
+                  <label className="sq-label" htmlFor="s-booking-alert">New-reservation alerts go to</label>
+                  <input id="s-booking-alert" className="sq-input" type="email" value={cfg.bookingAlertEmail} placeholder="frontdesk@squareoneinteractive.com"
+                    onChange={(e) => patchCfg({ bookingAlertEmail: e.target.value })} />
+                  <p style={{ fontSize: 11, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Every customer reservation that needs approval sends a heads-up here — who, what
+                    room, when, and what&rsquo;s owed, with a link to the approval queue. Leave blank
+                    to turn it off.
+                  </p>
+                </div>
+              )}
             </div>
             {cfg.hoursByDay === undefined ? (
               <>
