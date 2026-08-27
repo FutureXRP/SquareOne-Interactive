@@ -32,6 +32,8 @@ export interface SiteConfig {
   // Who gets a heads-up email when someone joins the fitness membership.
   // Empty = nobody. Arrives with 0044.
   membershipAlertEmail?: string
+  // Who hears about new customer reservations waiting on approval (0045).
+  bookingAlertEmail?: string
 }
 
 interface Row {
@@ -48,6 +50,7 @@ interface Row {
   closures?: unknown
   cashapp_cashtag?: string
   membership_alert_email?: string
+  booking_alert_email?: string
 }
 
 const FALLBACK: SiteConfig = {
@@ -101,6 +104,7 @@ export async function getSiteConfig(): Promise<SiteConfig> {
     closures: 'closures' in r ? normalizeClosures(r.closures) : undefined,
     cashappCashtag: 'cashapp_cashtag' in r ? (r.cashapp_cashtag ?? '') : undefined,
     membershipAlertEmail: 'membership_alert_email' in r ? (r.membership_alert_email ?? '') : undefined,
+    bookingAlertEmail: 'booking_alert_email' in r ? (r.booking_alert_email ?? '') : undefined,
   }
 }
 
@@ -124,6 +128,7 @@ export async function saveSiteConfig(cfg: SiteConfig): Promise<boolean> {
     ...(cfg.closures !== undefined ? { closures: cfg.closures } : {}),
     ...(cfg.cashappCashtag !== undefined ? { cashapp_cashtag: cfg.cashappCashtag.replace(/^\$/, '').trim() } : {}),
     ...(cfg.membershipAlertEmail !== undefined ? { membership_alert_email: cfg.membershipAlertEmail.trim() } : {}),
+    ...(cfg.bookingAlertEmail !== undefined ? { booking_alert_email: cfg.bookingAlertEmail.trim() } : {}),
   }).eq('org_id', orgIdCache))
   if (ok) emit(SITE_CONFIG_EVENT)
   return ok

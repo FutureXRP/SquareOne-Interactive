@@ -300,6 +300,33 @@ export function paymentVoided(b: BookingFacts, pay: { amountCents: number; metho
   }
 }
 
+// The house's heads-up: a customer reservation just landed and is
+// waiting on approval. Goes to the address chosen on Settings.
+export function bookingApprovalAlert(b: BookingFacts): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  return {
+    subject: `Approval needed — ${b.what}, ${b.date}`,
+    html: shell(
+      'A reservation is waiting on you',
+      `<p style="margin:0 0 6px;">A customer just booked through the store. It holds the room now, but
+        stays "in review" until someone confirms it.</p>
+       ${detailRows([
+         ['Who', b.name],
+         ['What', b.what],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ['Confirmation', b.code],
+         ['Total', money(b.priceCents)],
+         ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
+         ...(owed > 0 ? [['Still owed', money(owed)] as [string, string]] : []),
+         ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+       ])}
+       <p style="margin:0;">Unpaid holds release themselves after 24 hours — confirm it before then if it's good.</p>`,
+      { label: 'Review & approve', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
 export function bookingRescheduled(b: BookingFacts): EmailBody {
   return {
     subject: `Moved — ${b.room} is now ${b.date}`,
