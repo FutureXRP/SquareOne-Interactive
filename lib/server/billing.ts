@@ -231,3 +231,21 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
   return body.id ?? ''
 }
+
+// One or many alert addresses from a Settings field — comma, semicolon,
+// or space separated. Deduped case-insensitively, the excluded address
+// (usually the customer's own) dropped, junk without an @ ignored.
+export function alertRecipients(raw: string, excludeEmail?: string | null): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const part of (raw ?? '').split(/[,;\s]+/)) {
+    const addr = part.trim()
+    if (!addr || !addr.includes('@')) continue
+    const key = addr.toLowerCase()
+    if (seen.has(key)) continue
+    if (excludeEmail && key === excludeEmail.toLowerCase()) continue
+    seen.add(key)
+    out.push(addr)
+  }
+  return out
+}
