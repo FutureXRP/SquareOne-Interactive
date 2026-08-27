@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb } from '@/lib/server/billing'
 import { applyEmailOverrides } from '@/lib/server/email-overrides'
 import {
-  bookingHeld, bookingApproved, bookingConfirmed, bookingPayment, bookingRescheduled,
+  bookingHeld, bookingApproved, bookingApprovalAlert, bookingConfirmed, bookingPayment, bookingRescheduled,
   bookingUpdated, bookingCanceled, bookingRemoved, bookingStaffAssigned,
   paymentReceipt, paymentVoided, refundIssued,
   membershipWelcome, membershipStaffAlert, membershipChanged, renewalReceipt, paymentFailed,
@@ -70,6 +70,7 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.canceled': return bookingCanceled({ ...b, canceledVia: 'member' })
     case 'booking.deleted': return bookingRemoved(b)
     case 'booking.staff_assigned': return bookingStaffAssigned(b, { staffName: 'Alexis Henson', payoutCents: 5000 })
+    case 'booking.approval_alert': return bookingApprovalAlert(b)
     case 'payment.receipt': return paymentReceipt({ name: 'Jordan Alvarez', amountCents: 10000, method: 'Card', what: 'Birthday party · BK-1234', code: 'PM-1234', balanceCents: 20000 })
     case 'payment.voided': return paymentVoided(b, { amountCents: 10000, method: 'Cash App', code: 'PM-1234' })
     case 'refund.issued': return refundIssued({ name: 'Jordan Alvarez', amountCents: 5000, method: 'stripe', what: 'Birthday party · BK-1234', reason: 'Rained out' })

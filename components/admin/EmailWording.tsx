@@ -23,6 +23,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.canceled', label: 'Booking canceled', blurb: 'Canceled by the customer, staff, or an expired hold.' },
       { kind: 'booking.deleted', label: 'Booking removed', blurb: 'A booking row was deleted outright.' },
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
+      { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books.' },
     ],
   },
   {

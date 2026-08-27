@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
-  bookingRemoved, bookingPayment, bookingApproved, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
+  bookingRemoved, bookingPayment, bookingApproved, bookingApprovalAlert, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
   membershipCanceled, membershipResumed,
   eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
@@ -54,6 +54,20 @@ export async function POST(req: Request) {
         : kind === 'booking.deleted' ? bookingRemoved(resolved.facts)
         : bookingCanceled(resolved.facts)
       await sendAndLog(kind, resolved.to.email, body, { accountId: resolved.b.account_id, bookingId: resolved.b.id })
+      // A customer hold that nobody has approved also wakes the house —
+      // to whatever address Settings names (0045). Staff-made bookings
+      // carry approved_at from birth and stay silent here.
+      if (kind === 'booking.hold' && !resolved.b.approved_at) {
+        try {
+          const { data: cfgRow } = await serviceDb().from('site_config').select('booking_alert_email').limit(1).maybeSingle()
+          const alertTo = ((cfgRow as { booking_alert_email?: string } | null)?.booking_alert_email ?? '').trim()
+          if (alertTo && alertTo.toLowerCase() !== resolved.to.email.toLowerCase()) {
+            await sendAndLog('booking.approval_alert', alertTo, bookingApprovalAlert(resolved.facts), { bookingId: resolved.b.id })
+          }
+        } catch {
+          // pre-0045 — no alert address to consult
+        }
+      }
       return NextResponse.json({ ok: true })
     }
 
