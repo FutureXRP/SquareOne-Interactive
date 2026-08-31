@@ -89,8 +89,17 @@ export function RefundRow({
               </span>
             )}
           </p>
-          <p style={{ fontSize: 12, color: SUB, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {payment.memo} · {PAY_LABEL[payment.method] ?? payment.method} · {payment.when} · by {payment.takenBy}
+          {/* The whole story, never truncated — how they paid gets its own
+              chip so the method reads at a glance, and the rest wraps. */}
+          <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 9px', textTransform: 'uppercase', letterSpacing: '0.04em',
+              color: payment.method === 'stripe' ? '#2f6db8' : payment.method === 'cashapp' ? '#0f7a3d' : '#5b4708',
+              background: payment.method === 'stripe' ? '#eef4fb' : payment.method === 'cashapp' ? '#e6f7ec' : '#faf0dc',
+            }}>
+              {PAY_LABEL[payment.method] ?? payment.method}
+            </span>
+            <span>{payment.memo} · {payment.when} · {payment.takenBy === '—' ? 'paid online' : `taken by ${payment.takenBy}`}</span>
           </p>
         </div>
         <span style={{ fontSize: 13.5, fontWeight: 700, color: remaining <= 0 ? FAINT : GREEN, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums', textDecoration: remaining <= 0 ? 'line-through' : 'none' }}>
