@@ -57,6 +57,8 @@ export default function CalendarPage() {
   const [evStart, setEvStart] = useState(14)
   const [evLength, setEvLength] = useState(0.5)
   const [evStaff, setEvStaff] = useState('')
+  // Room to hold for this tour/event — blank = roaming, holds nothing.
+  const [evRoom, setEvRoom] = useState('')
   const [evNotes, setEvNotes] = useState('')
 
   useEffect(() => {
@@ -97,7 +99,7 @@ export default function CalendarPage() {
   const createEvent = async () => {
     if (!selected || busy) return
     setBusy(true)
-    const id = await addEvent({
+    const res = await addEvent({
       kind: evKind,
       title: evTitle.trim() || (evGuest.trim() ? `${KIND_LABEL[evKind]} — ${evGuest.trim()}` : KIND_LABEL[evKind]),
       guestName: evGuest,
@@ -108,13 +110,18 @@ export default function CalendarPage() {
       startH: evStart,
       hours: evLength,
       assignedStaffId: evStaff || null,
+      facilityId: evRoom || null,
       notes: evNotes,
       createdBy: me?.id ?? null,
     })
     setBusy(false)
-    if (id) {
+    if (res === 'conflict') {
+      window.alert('That room is already booked for that time — the calendar blocked the double-booking. Pick another room or time.')
+      return
+    }
+    if (res) {
       setShowNew(false)
-      setEvTitle(''); setEvGuest(''); setEvEmail(''); setEvPhone(''); setEvParty(''); setEvNotes(''); setEvStaff('')
+      setEvTitle(''); setEvGuest(''); setEvEmail(''); setEvPhone(''); setEvParty(''); setEvNotes(''); setEvStaff(''); setEvRoom('')
     }
   }
 
@@ -298,6 +305,16 @@ export default function CalendarPage() {
                       <select className="sq-select" value={evStaff} onChange={(e) => setEvStaff(e.target.value)}>
                         <option value="">— assign later —</option>
                         {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="sq-label">Room (holds it)</label>
+                      {/* Picking a room blocks it on the one calendar — the
+                          store can't book it, and this can't land on a booked
+                          slot either. Blank = roaming, holds nothing. */}
+                      <select className="sq-select" value={evRoom} onChange={(e) => setEvRoom(e.target.value)}>
+                        <option value="">— no room / roaming —</option>
+                        {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
                     </div>
                   </div>
