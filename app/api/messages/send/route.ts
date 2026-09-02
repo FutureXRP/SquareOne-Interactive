@@ -31,12 +31,15 @@ async function callerIsAdmin(req: Request): Promise<{ ok: boolean; name: string 
   return { ok: !!row && (row.role === 'owner' || row.role === 'admin'), name: row?.name ?? '' }
 }
 
-async function recipientEmails(audience: Audience): Promise<string[]> {
+async function recipientEmails(audience: Audience, planId?: string | null): Promise<string[]> {
   const db = serviceDb()
   let accountIds: string[] | null = null
 
   if (audience === 'members') {
-    const { data } = await db.from('member_subscriptions').select('account_id').in('status', ['active', 'canceling'])
+    let q = db.from('member_subscriptions').select('account_id').in('status', ['active', 'canceling'])
+    // Narrow to one plan when asked — how "email the Family members" works.
+    if (planId) q = q.eq('plan_id', planId)
+    const { data } = await q
     accountIds = [...new Set(((data ?? []) as { account_id: string }[]).map((r) => r.account_id))]
   } else if (audience === 'bookers') {
     const { data } = await db.from('bookings').select('account_id').not('account_id', 'is', null).limit(5000)
@@ -59,14 +62,14 @@ export async function POST(req: Request) {
   const caller = await callerIsAdmin(req)
   if (!caller.ok) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { audience, subject, body, dryRun } = (await req.json().catch(() => ({}))) as {
-    audience?: Audience; subject?: string; body?: string; dryRun?: boolean
+  const { audience, subject, body, dryRun, planId } = (await req.json().catch(() => ({}))) as {
+    audience?: Audience; subject?: string; body?: string; dryRun?: boolean; planId?: string | null
   }
   if (!audience || !['members', 'bookers', 'everyone'].includes(audience)) {
     return NextResponse.json({ error: 'bad_audience' }, { status: 400 })
   }
 
-  const emails = await recipientEmails(audience)
+  const emails = await recipientEmails(audience, planId)
   if (dryRun) return NextResponse.json({ count: emails.length })
 
   if (!subject?.trim() || !body?.trim()) return NextResponse.json({ error: 'missing_content' }, { status: 400 })

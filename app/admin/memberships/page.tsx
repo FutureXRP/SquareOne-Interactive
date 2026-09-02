@@ -5,7 +5,7 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getMembershipStats, type MembershipStats } from '@/lib/membership-stats'
+import { getMembershipStats, getMemberRoster, type MembershipStats, type MemberRosterRow } from '@/lib/membership-stats'
 import { getPlans, savePlan, addPlan as addPlanLive, deletePlan, type EditablePlan } from '@/lib/plans-store'
 import { slugify } from '@/lib/facilities-store'
 import { getFormLinks, setPlanWaiver, planRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
@@ -49,10 +49,13 @@ export default function AdminMembershipsPage() {
     window.setTimeout(() => setSavedNote(false), 1800)
   })
 
+  const [roster, setRoster] = useState<MemberRosterRow[]>([])
+
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     getPlans().then(setPlans).catch(() => {})
     getMembershipStats().then(setStats).catch(() => {})
+    getMemberRoster().then(setRoster).catch(() => {})
     const syncLinks = () => { getFormLinks().then(setFormLinks).catch(() => {}) }
     syncLinks()
     window.addEventListener(FORM_LINKS_EVENT, syncLinks)
@@ -216,6 +219,55 @@ export default function AdminMembershipsPage() {
           <div className="sq-card" style={{ ...card, padding: '30px 32px', alignSelf: 'start', textAlign: 'center' }}>
             <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>Select a plan to edit its price, features, and visibility — or create a new one.</p>
           </div>
+        )}
+      </div>
+
+      {/* Every current member, by plan — with a direct line to email them */}
+      <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${LINE}`, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>All members</span>
+          <span style={{ fontSize: 11.5, color: FAINT }}>
+            {roster.length} account{roster.length === 1 ? '' : 's'} · {roster.reduce((n, r) => n + Math.max(r.people.length, 1), 0)} people
+          </span>
+          <Link href="/admin/messages?audience=members" className="sq-btn sq-btn-ghost" style={{ padding: '5px 13px', fontSize: 11.5, marginLeft: 'auto', textDecoration: 'none' }}>
+            Email all members →
+          </Link>
+        </div>
+        {roster.length === 0 ? (
+          <p style={{ fontSize: 13, color: SUB, padding: '16px 20px', margin: 0 }}>No members yet — every membership shows here the moment it starts.</p>
+        ) : (
+          [...new Map(roster.map((r) => [r.plan, r.planId] as [string, string | null])).entries()].map(([planName, planId]) => {
+            const inPlan = roster.filter((r) => r.plan === planName)
+            return (
+              <div key={planName}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 6px', flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+                    {planName} · {inPlan.length} account{inPlan.length === 1 ? '' : 's'}
+                  </p>
+                  <Link href={`/admin/messages?audience=members${planId ? `&plan=${planId}` : ''}`}
+                    style={{ fontSize: 11.5, color: BLUE, fontWeight: 600, textDecoration: 'none' }}>
+                    Email {planName} members →
+                  </Link>
+                </div>
+                {inPlan.map((r, i) => (
+                  <div key={r.accountId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 20px', borderTop: i > 0 ? `1px solid #f0f4fa` : 'none', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{r.account}</p>
+                      <p style={{ fontSize: 12, color: SUB, margin: 0, lineHeight: 1.5 }}>
+                        {r.people.length > 0 ? r.people.join(', ') : '—'}
+                        {r.email && <> · <a href={`mailto:${r.email}`} style={{ color: BLUE, fontWeight: 600 }}>{r.email}</a></>}
+                      </p>
+                    </div>
+                    {r.status === 'canceling'
+                      ? <span style={{ fontSize: 10, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '1px 8px', borderRadius: 999 }}>canceling</span>
+                      : r.status === 'past_due'
+                        ? <span style={{ fontSize: 10, fontWeight: 700, color: RED, background: '#fae7e4', padding: '1px 8px', borderRadius: 999 }}>past due</span>
+                        : <span style={{ fontSize: 10, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '1px 8px', borderRadius: 999 }}>active</span>}
+                  </div>
+                ))}
+              </div>
+            )
+          })
         )}
       </div>
 
