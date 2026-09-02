@@ -4,6 +4,7 @@ import { PageHero } from '@/components/admin/PageHero'
 import { AdminOnly } from '@/components/admin/AdminOnly'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { getPlans, type EditablePlan } from '@/lib/plans-store'
 
 type Audience = 'members' | 'bookers' | 'everyone'
 
@@ -24,6 +25,8 @@ interface SentMessage {
 
 export default function MessagesPage() {
   const [audience, setAudience] = useState<Audience>('members')
+  const [planId, setPlanId] = useState('')
+  const [plans, setPlans] = useState<EditablePlan[]>([])
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [count, setCount] = useState<number | null>(null)
@@ -49,6 +52,13 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     loadHistory()
+    getPlans().then(setPlans).catch(() => {})
+    // The Memberships tab deep-links here: ?audience=members&plan=<id>
+    // pre-picks the audience and narrows to one plan's members.
+    const q = new URLSearchParams(window.location.search)
+    const aud = q.get('audience')
+    if (aud === 'members' || aud === 'bookers' || aud === 'everyone') setAudience(aud)
+    if (q.get('plan')) setPlanId(q.get('plan')!)
   }, [])
 
   // Live recipient count for the picked audience.
@@ -56,21 +66,22 @@ export default function MessagesPage() {
     if (!isSupabaseConfigured()) return
     let on = true
     setCount(null)
-    authedPost({ audience, dryRun: true })
+    authedPost({ audience, planId: audience === 'members' && planId ? planId : null, dryRun: true })
       .then(async (res) => { if (on && res.ok) setCount(((await res.json()) as { count: number }).count) })
       .catch(() => {})
     return () => { on = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audience])
+  }, [audience, planId])
 
   const send = async () => {
     if (sending || !subject.trim() || !body.trim()) return
-    const label = AUDIENCES.find((a) => a.id === audience)?.label
+    const planName = audience === 'members' && planId ? plans.find((p) => p.id === planId)?.name : null
+    const label = planName ? `${planName} members` : AUDIENCES.find((a) => a.id === audience)?.label
     if (!window.confirm(`Send "${subject.trim()}" to ${count ?? '?'} ${label}? This emails real people.`)) return
     setSending(true)
     setResult(null)
     try {
-      const res = await authedPost({ audience, subject, body })
+      const res = await authedPost({ audience, planId: audience === 'members' && planId ? planId : null, subject, body })
       const json = (await res.json().catch(() => ({}))) as { sent?: number; total?: number; error?: string }
       if (res.ok) {
         setResult({ ok: true, text: `Sent to ${json.sent} of ${json.total} recipients.` })
@@ -116,6 +127,18 @@ export default function MessagesPage() {
               </label>
             ))}
           </div>
+
+          {audience === 'members' && plans.length > 0 && (
+            <div style={{ marginBottom: 14, marginTop: -6 }}>
+              <label className="sq-label" htmlFor="msg-plan">Which members</label>
+              <select id="msg-plan" className="sq-input" value={planId} onChange={(e) => setPlanId(e.target.value)} style={{ width: '100%' }}>
+                <option value="">All plans</option>
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} members only</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div style={{ marginBottom: 12 }}>
             <label className="sq-label" htmlFor="msg-subject">Subject</label>

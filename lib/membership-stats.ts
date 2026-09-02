@@ -53,3 +53,55 @@ export async function getMembershipStats(): Promise<MembershipStats> {
     })),
   }
 }
+
+// Every current member, with everyone on the account — the roster the
+// Fitness Memberships tab shows under the plans. Family plans list each
+// household member; the email is the primary person's.
+export interface MemberRosterRow {
+  accountId: string
+  account: string
+  planId: string | null
+  plan: string
+  status: string
+  people: string[]
+  email: string | null
+}
+
+export async function getMemberRoster(): Promise<MemberRosterRow[]> {
+  const { data, error } = await supabase()
+    .from('member_subscriptions')
+    .select('account_id, plan_id, status, created_at, membership_plans(name), client_accounts(name)')
+    .in('status', ['active', 'canceling', 'past_due'])
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  interface SubRow {
+    account_id: string; plan_id: string | null; status: string
+    membership_plans: { name: string } | null
+    client_accounts: { name: string } | null
+  }
+  const subs = data as unknown as SubRow[]
+  const ids = [...new Set(subs.map((s) => s.account_id))]
+  const people = new Map<string, { names: string[]; email: string | null }>()
+  if (ids.length > 0) {
+    const { data: cl } = await supabase()
+      .from('clients')
+      .select('account_id, full_name, email, is_primary')
+      .in('account_id', ids)
+      .order('is_primary', { ascending: false })
+    for (const c of (cl ?? []) as { account_id: string; full_name: string; email: string | null }[]) {
+      const cur = people.get(c.account_id) ?? { names: [], email: null }
+      cur.names.push(c.full_name)
+      if (!cur.email && c.email) cur.email = c.email
+      people.set(c.account_id, cur)
+    }
+  }
+  return subs.map((s) => ({
+    accountId: s.account_id,
+    account: s.client_accounts?.name ?? '—',
+    planId: s.plan_id,
+    plan: s.membership_plans?.name ?? '—',
+    status: s.status,
+    people: people.get(s.account_id)?.names ?? [],
+    email: people.get(s.account_id)?.email ?? null,
+  }))
+}
