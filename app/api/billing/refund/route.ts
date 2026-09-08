@@ -32,9 +32,21 @@ async function callerStaffId(req: Request): Promise<string | null> {
 async function paymentIntentFor(sb: Stripe, stripeId: string): Promise<string | null> {
   if (stripeId.startsWith('pi_')) return stripeId
   if (stripeId.startsWith('in_')) {
-    const invoice = await sb.invoices.retrieve(stripeId)
-    const pi = (invoice as unknown as { payment_intent: string | { id: string } | null }).payment_intent
-    return typeof pi === 'string' ? pi : pi?.id ?? null
+    // Newer Stripe API versions dropped invoice.payment_intent — the
+    // invoice now carries a list of payments, each pointing at the
+    // intent that settled it. Ask for that list, but still read the old
+    // field if this account's API version predates the change.
+    const invoice = await sb.invoices.retrieve(stripeId, { expand: ['payments'] })
+    const legacy = (invoice as unknown as { payment_intent?: string | { id: string } | null }).payment_intent
+    if (legacy) return typeof legacy === 'string' ? legacy : legacy.id
+    const payments = (invoice as unknown as {
+      payments?: { data?: { status?: string; payment?: { payment_intent?: string | { id: string } | null } }[] }
+    }).payments?.data ?? []
+    for (const ip of [...payments.filter((x) => x.status === 'paid'), ...payments]) {
+      const pi = ip.payment?.payment_intent
+      if (pi) return typeof pi === 'string' ? pi : pi.id
+    }
+    return null
   }
   if (stripeId.startsWith('cs_')) {
     const session = await sb.checkout.sessions.retrieve(stripeId)
