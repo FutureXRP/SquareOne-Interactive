@@ -257,7 +257,7 @@ export interface NewBooking {
 }
 
 // Returns the new booking's code, or a conflict/error marker.
-export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
+export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const sb = supabase()
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
   const { fromIso, toIso } = localRange(b.date, b.startH, b.hours)
@@ -306,7 +306,74 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   if (b.hold) notify('booking.hold', row.id)
   // Somebody named as running this at the desk gets their shift email now.
   if (b.runByStaffId) notify('booking.staff_assigned', row.id)
-  return { ok: true, code: row.code }
+  return { ok: true, code: row.code, id: row.id }
+}
+
+// One event, several rooms — a facility-wide promotion, a party that
+// spills across spaces. The lead room carries the price, deposit, extras
+// and emails exactly like a normal booking; every other room gets a $0
+// confirmed companion under the same name, so each calendar is blocked
+// and nothing lands in the unpaid queue twice. All or nothing: if any
+// room is already taken, everything created here is quietly removed and
+// the taken room names come back so staff can see exactly what's in the
+// way.
+export async function addStaffBookingMulti(
+  b: NewBooking,
+  extraRoomIds: string[],
+  roomName: (id: string) => string,
+): Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean; takenRooms?: string[] }> {
+  // Companions go in first: they send no emails, so if any room turns out
+  // to be taken the whole thing unwinds before a single word reaches
+  // anyone. The lead booking — the one that emails — is created last,
+  // only once every room is secured.
+  const companionIds: string[] = []
+  const taken: string[] = []
+  for (const roomId of extraRoomIds) {
+    if (roomId === b.roomId) continue
+    const res = await addStaffBooking({
+      roomId,
+      title: b.title,
+      client: b.client,
+      date: b.date,
+      startH: b.startH,
+      hours: b.hours,
+      priceCents: 0,
+      hold: false, // $0 companions confirm silently — no hold email, no expiry
+      createdBy: b.createdBy,
+      accountId: b.accountId ?? null,
+      ...(b.depositCents !== undefined ? { depositCents: null } : {}),
+      note: 'Companion room hold — priced on the lead booking.',
+    })
+    if (res.ok) companionIds.push(res.id)
+    else taken.push(roomName(roomId))
+  }
+
+  const unwind = async () => {
+    if (companionIds.length > 0) {
+      await supabase().from('bookings').delete().in('id', companionIds)
+      emit(BOOKINGS_EVENT)
+    }
+  }
+  if (taken.length > 0) {
+    await unwind()
+    return { ok: false, conflict: true, takenRooms: taken }
+  }
+
+  const primary = await addStaffBooking(b)
+  if (!primary.ok) {
+    await unwind()
+    if (primary.conflict && !primary.addonConflict) {
+      return { ...primary, takenRooms: [roomName(b.roomId)] }
+    }
+    return primary
+  }
+  // Stamp the companions with the lead booking's code for the paper trail.
+  if (companionIds.length > 0) {
+    await supabase().from('bookings')
+      .update({ note: `Companion room hold — priced on ${primary.code}.` })
+      .in('id', companionIds)
+  }
+  return { ok: true, code: primary.code }
 }
 
 // Staff sign-off on a reservation. This is what turns "in review" into a

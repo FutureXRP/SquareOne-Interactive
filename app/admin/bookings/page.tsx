@@ -9,7 +9,7 @@ import { getMyStaff, getStaff, ROLE_LABEL, CAN_BOOK, type StaffMember } from '@/
 import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
-  getStaffBookings, addStaffBooking, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
+  getStaffBookings, addStaffBooking, addStaffBookingMulti, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
   markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, type AccountContact,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
@@ -110,6 +110,10 @@ export default function AdminBookingsPage() {
   const [nbClient, setNbClient] = useState('')
   const [nbTitle, setNbTitle] = useState('')
   const [nbRoom, setNbRoom] = useState('')
+  // Extra rooms held for the same window — a promotion or facility-wide
+  // event blocks every room it touches, priced once on the lead room.
+  const [nbMoreRooms, setNbMoreRooms] = useState<string[]>([])
+  const [conflictRooms, setConflictRooms] = useState<string[] | null>(null)
   const [nbDate, setNbDate] = useState('')
   const [nbStart, setNbStart] = useState(17)
   const [nbHours, setNbHours] = useState(2)
@@ -185,7 +189,9 @@ export default function AdminBookingsPage() {
     setBusyWrite(true)
     setConflictMsg(false)
     setAddonConflictMsg(false)
-    const res = await addStaffBooking({
+    setConflictRooms(null)
+    const extraRooms = nbMoreRooms.filter((id) => id !== room.id && rooms.some((r) => r.id === id))
+    const details = {
       roomId: room.id,
       title: nbTitle.trim() || `${room.name} rental`,
       client: nbClient.trim(),
@@ -205,7 +211,10 @@ export default function AdminBookingsPage() {
       ...(nbAdjustCents !== 0
         ? { note: `Adjustment: ${nbAdjustCents < 0 ? '−' : '+'}${formatCents(Math.abs(nbAdjustCents))}${nbAdjustWhy.trim() ? ` (${nbAdjustWhy.trim()})` : ''}` }
         : {}),
-    })
+    }
+    const res = extraRooms.length > 0
+      ? await addStaffBookingMulti(details, extraRooms, (id) => rooms.find((r) => r.id === id)?.name ?? 'a room')
+      : await addStaffBooking(details)
     if (res.ok && nbPay === 'stripe') {
       const fresh = await getStaffBookings()
       const mine = fresh.find((b) => b.code === res.code)
@@ -222,9 +231,11 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy('')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([])
     } else if (res.conflict) {
+      const takenRooms = (res as { takenRooms?: string[] }).takenRooms
       if (res.addonConflict) setAddonConflictMsg(true)
+      else if (takenRooms && takenRooms.length > 0) setConflictRooms(takenRooms)
       else setConflictMsg(true)
     }
   }
@@ -663,11 +674,43 @@ export default function AdminBookingsPage() {
             )}
             <div>
               <label className="sq-label" htmlFor="nb-room">Room</label>
-              <select id="nb-room" className="sq-select" value={room?.id ?? ''} onChange={(e) => { setNbRoom(e.target.value); setNbPrice('') }}>
+              <select id="nb-room" className="sq-select" value={room?.id ?? ''} onChange={(e) => { setNbRoom(e.target.value); setNbPrice(''); setNbMoreRooms((cur) => cur.filter((id) => id !== e.target.value)) }}>
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
           </div>
+          {/* One event can take over several rooms — a promotion, an
+              all-facility party. Extras are held at $0 under the same
+              name; the price above covers the whole thing. */}
+          {rooms.length > 1 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span className="sq-label" style={{ marginBottom: 0 }}>Also hold these rooms (same time)</span>
+                <button type="button" className="sq-btn sq-btn-ghost" style={{ padding: '2px 9px', fontSize: 10.5 }}
+                  onClick={() => setNbMoreRooms((cur) => {
+                    const others = rooms.filter((r) => r.id !== room?.id).map((r) => r.id)
+                    return cur.length === others.length ? [] : others
+                  })}>
+                  {nbMoreRooms.length === rooms.filter((r) => r.id !== room?.id).length ? 'Clear' : 'Every room'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 6 }}>
+                {rooms.filter((r) => r.id !== room?.id).map((r) => (
+                  <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: INK, cursor: 'pointer' }}>
+                    <input type="checkbox" style={{ accentColor: BLUE }} checked={nbMoreRooms.includes(r.id)}
+                      onChange={(e) => setNbMoreRooms((cur) => e.target.checked ? [...cur, r.id] : cur.filter((id) => id !== r.id))} />
+                    {r.name}
+                  </label>
+                ))}
+              </div>
+              {nbMoreRooms.length > 0 && (
+                <p style={{ fontSize: 11, color: FAINT, margin: '6px 0 0' }}>
+                  {nbMoreRooms.length + 1} rooms will be blocked for this window. The price below covers the whole event —
+                  the extra rooms are held at $0 under the same booking name.
+                </p>
+              )}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 14 }}>
             <div>
               <label className="sq-label" htmlFor="nb-date">Date</label>
@@ -771,6 +814,12 @@ export default function AdminBookingsPage() {
           {conflictMsg && (
             <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 12px' }}>
               That room is already booked for that time — the database blocked the double-booking. Pick another slot.
+            </p>
+          )}
+          {conflictRooms && (
+            <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 12px' }}>
+              {conflictRooms.join(', ')} {conflictRooms.length === 1 ? 'is' : 'are'} already booked for that time, so nothing
+              was booked — every room has to be free to block them together. Move that booking or pick another slot, then try again.
             </p>
           )}
           {addonConflictMsg && (
