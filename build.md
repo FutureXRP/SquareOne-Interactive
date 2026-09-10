@@ -8,7 +8,8 @@ Compassion, a 501(c)(3)). This replaces **Amilia SmartRec** entirely: admin
 dashboard, booking engine, memberships, programs, payments, POS, check-in/door
 access, forms/waivers, communications, and the public-facing store.
 
-- Public site (must flow with): https://www.squareonecompassion.com
+- Public site (must flow with): https://squareonecompassion.com
+- This store's public address: https://store.squareoneinteractive.com (set NEXT_PUBLIC_SITE_URL to it)
 - Current system being replaced: Amilia SmartRec
   (store at app.amilia.com/store/en/squareonecompassion)
 - Facility: 5323 S 65th W Ave, Tulsa, OK 74107
