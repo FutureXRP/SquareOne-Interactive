@@ -122,6 +122,9 @@ export default function AdminBookingsPage() {
   // line above the total and written into the booking's notes.
   const [nbAdjust, setNbAdjust] = useState('')
   const [nbAdjustWhy, setNbAdjustWhy] = useState('')
+  // Free-text for the people working the event — room changes, allergies,
+  // where the tables go. Rides on the booking and lands in the run-by email.
+  const [nbNote, setNbNote] = useState('')
   const [nbDeposit, setNbDeposit] = useState('') // '' = room default
   const [nbPay, setNbPay] = useState<PayMethod | 'hold'>('hold')
   const [nbAddons, setNbAddons] = useState<string[]>([])
@@ -207,9 +210,16 @@ export default function AdminBookingsPage() {
       packageId: nbPackage || null,
       contactEmail: nbEmail.trim() || null,
       ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
-      // The adjustment's paper trail rides on the booking note.
-      ...(nbAdjustCents !== 0
-        ? { note: `Adjustment: ${nbAdjustCents < 0 ? '−' : '+'}${formatCents(Math.abs(nbAdjustCents))}${nbAdjustWhy.trim() ? ` (${nbAdjustWhy.trim()})` : ''}` }
+      // Staff notes and the adjustment's paper trail ride on the booking note.
+      ...((nbNote.trim() || nbAdjustCents !== 0)
+        ? {
+          note: [
+            nbNote.trim(),
+            nbAdjustCents !== 0
+              ? `Adjustment: ${nbAdjustCents < 0 ? '−' : '+'}${formatCents(Math.abs(nbAdjustCents))}${nbAdjustWhy.trim() ? ` (${nbAdjustWhy.trim()})` : ''}`
+              : '',
+          ].filter(Boolean).join(' · '),
+        }
         : {}),
     }
     const res = extraRooms.length > 0
@@ -231,7 +241,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([])
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([]); setNbNote('')
     } else if (res.conflict) {
       const takenRooms = (res as { takenRooms?: string[] }).takenRooms
       if (res.addonConflict) setAddonConflictMsg(true)
@@ -552,6 +562,22 @@ export default function AdminBookingsPage() {
                     </div>
                   )}
                 </div>
+                {/* Staff notes — free text the crew reads before the event.
+                    Edits save when you click away; adjustments append their
+                    own paper trail here too, so keep what's worth keeping. */}
+                {b.note !== undefined && (
+                  <div style={{ marginBottom: 12, maxWidth: 620 }}>
+                    <label className="sq-label" htmlFor={`bn-${b.id}`}>Staff notes</label>
+                    <textarea id={`bn-${b.id}`} className="sq-textarea" rows={2} maxLength={500} key={`bn-${b.id}`}
+                      defaultValue={b.note ?? ''}
+                      placeholder="room changes, setup details, anything the crew needs to know — saves when you click away"
+                      onBlur={async (e) => {
+                        const next = e.target.value.trim()
+                        if (next === (b.note ?? '').trim()) return
+                        await updateBookingFields(b.id, { note: next || null }, me?.id ?? null)
+                      }} />
+                  </div>
+                )}
                 {(() => {
                   const pending = b.id in pendingRunBy ? pendingRunBy[b.id] : undefined
                   if (pending === undefined || pending === (b.runByStaffId ?? null)) return null
@@ -776,6 +802,16 @@ export default function AdminBookingsPage() {
             </div>
           )}
 
+          {/* What the people working this event need to know */}
+          <div style={{ marginBottom: 12, maxWidth: 620 }}>
+            <label className="sq-label" htmlFor="nb-note">Notes for staff (optional)</label>
+            <textarea id="nb-note" className="sq-textarea" rows={2} maxLength={500}
+              placeholder="room changes, table layout, allergies — anything the person running it should know"
+              value={nbNote} onChange={(e) => setNbNote(e.target.value)} />
+            <p style={{ fontSize: 10.5, color: FAINT, margin: '3px 0 0' }}>
+              Shows on the booking&apos;s details and goes out in the run-by assignment email.
+            </p>
+          </div>
           {/* One-time price adjustment — its own line above the total */}
           <span className="sq-label">One-time adjustment (optional)</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, maxWidth: 620 }}>

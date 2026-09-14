@@ -185,10 +185,12 @@ export async function contactsForAccounts(accountIds: string[]): Promise<Map<str
   if (error) return out
   for (const r of data as { account_id: string; email: string | null; phone: string | null }[]) {
     const cur = out.get(r.account_id)
-    if (!cur) out.set(r.account_id, { email: r.email ?? null, phone: r.phone?.trim() || null })
+    // Old signups can carry '' instead of null — either way it's "none".
+    const email = r.email?.trim() || null
+    if (!cur) out.set(r.account_id, { email, phone: r.phone?.trim() || null })
     else {
       // A later (non-primary) row can still fill a blank.
-      if (!cur.email && r.email) cur.email = r.email
+      if (!cur.email && email) cur.email = email
       if (!cur.phone && r.phone?.trim()) cur.phone = r.phone.trim()
     }
   }
