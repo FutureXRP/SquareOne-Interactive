@@ -95,6 +95,9 @@ export async function bookingFactsAny(bookingId: string):
       depositCents: b.deposit_cents ?? null,
       name: to?.name || b.client_name,
       addons,
+      // The raw note reaches staff emails; the legacy Add-ons: shape
+      // already surfaces through addons above.
+      note: b.note && !b.note.startsWith('Add-ons:') ? b.note : undefined,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
       setupMin: setupMin > 0 ? setupMin : undefined,

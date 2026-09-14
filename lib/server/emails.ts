@@ -70,6 +70,9 @@ export interface BookingFacts {
   depositCents?: number | null
   name: string
   addons?: string
+  // Free-text riding on the booking — staff instructions, requests,
+  // adjustment paper trail. Shown to the person running the event.
+  note?: string
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
@@ -196,6 +199,7 @@ export function bookingStaffAssigned(b: BookingFacts, s: { staffName: string; pa
          ['Booked for', b.name],
          ['Confirmation', b.code],
          ...(b.addons ? [['Extras to set up', b.addons] as [string, string]] : []),
+         ...(b.note ? [['Notes', b.note] as [string, string]] : []),
          ...(s.payoutCents && s.payoutCents > 0 ? [['You earn', money(s.payoutCents)] as [string, string]] : []),
        ])}
        <p style="margin:0;">If you can't make it, tell a manager so it can be handed to someone else.</p>`,
