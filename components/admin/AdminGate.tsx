@@ -80,10 +80,10 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
             <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px 18px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px 18px', flexWrap: 'wrap' }}>
                 {([
-                  ['Early Learning Center', 'https://www.squareonecompassion.com/elc/'],
+                  ['Early Learning Center', 'https://squareonecompassion.com/early-learning'],
                   ['Interactive', null],
-                  ['Medical Center', 'https://www.squareonecompassion.com/medical/'],
-                  ['Donate', 'https://www.squareonecompassion.com/donate/'],
+                  ['Medical Center', 'https://squareonecompassion.com/medical'],
+                  ['Donate', 'https://squareonecompassion.com/give'],
                 ] as [string, string | null][]).map(([s, href], i) => (
                   <span key={s} style={{ fontSize: 11.5, fontWeight: s === 'Interactive' ? 700 : 500, color: s === 'Interactive' ? '#fff' : 'rgba(255,255,255,0.62)', display: 'inline-flex', alignItems: 'center', gap: 18 }}>
                     {i > 0 && <span style={{ width: 4, height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 1, transform: 'rotate(45deg)' }} />}
