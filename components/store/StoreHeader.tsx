@@ -12,6 +12,10 @@ export function StoreHeader() {
   const pathname = usePathname()
   const [cartCount, setCartCount] = useState(0)
   const [userName, setUserName] = useState<string | null>(null)
+  // Phone nav: the tab row collapses into a hamburger dropdown — no
+  // finger-sliding an invisible strip. Closes itself on navigation.
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { setMenuOpen(false) }, [pathname])
   const { data: content } = useLive<SiteContent | null>(getSiteContent, [CONTENT_EVENT], null)
   const links = (content?.nav ?? NAV_DEFAULT).filter((l) => l.visible)
 
@@ -64,8 +68,41 @@ export function StoreHeader() {
               <Link href="/signup" className="sq-btn sq-btn-primary" style={{ padding: '8px 14px' }}>Join</Link>
             </>
           )}
+          {/* The three-lines menu, phones only — the top-right way into
+              every store tab. CSS shows it under 900px. */}
+          <button
+            className="sq-store-menu-btn"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+            style={{ font: 'inherit', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1.5px solid #dbe4f0', borderRadius: 10, padding: 9, cursor: 'pointer' }}
+          >
+            <span aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+              <span style={{ width: 17, height: 2, background: '#1f2c42', borderRadius: 2, display: 'block' }} />
+              <span style={{ width: 17, height: 2, background: '#1f2c42', borderRadius: 2, display: 'block' }} />
+              <span style={{ width: 17, height: 2, background: '#1f2c42', borderRadius: 2, display: 'block' }} />
+            </span>
+          </button>
         </div>
       </div>
+
+      {/* The same tabs as a dropdown under the header bar, phones only */}
+      {menuOpen && (
+        <div className="sq-store-menu" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', borderBottom: '1px solid #dbe4f0', boxShadow: '0 14px 30px rgba(24,39,64,0.16)' }}>
+          {links.map((l, i) => {
+            const active = !l.href.startsWith('http') && pathname.startsWith(l.href)
+            const itemStyle = {
+              display: 'block', fontSize: 14, fontWeight: active ? 700 : 500,
+              color: active ? '#2f6db8' : '#1f2c42', background: active ? '#eef4fb' : '#fff',
+              textDecoration: 'none', padding: '14px 20px',
+              borderBottom: i < links.length - 1 ? '1px solid #eef2f8' : 'none',
+            } as const
+            return l.href.startsWith('http')
+              ? <a key={l.id} href={l.href} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)} style={itemStyle}>{l.label}</a>
+              : <Link key={l.id} href={l.href} onClick={() => setMenuOpen(false)} style={itemStyle}>{l.label}</Link>
+          })}
+        </div>
+      )}
     </header>
   )
 }

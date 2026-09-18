@@ -69,10 +69,13 @@ table { border-collapse: collapse; width: 100%; }
 .sq-store-nav a { font-size: 13.5px; font-weight: 500; color: #64748c; text-decoration: none; padding: 7px 12px; border-radius: 8px; transition: background .12s ease, color .12s ease; }
 .sq-store-nav a:hover { background: #eef4fb; color: #2f6db8; }
 .sq-store-nav a.active { background: #eef4fb; color: #2f6db8; font-weight: 600; }
+/* Phones: the tab row becomes a three-lines menu in the top-right — the
+   old horizontal slide-strip collapsed to an invisible sliver (its
+   flex-basis of 0 beat the width rule), so nobody could see the tabs. */
+.sq-store-menu-btn { display: none; }
 @media (max-width: 900px) {
-  .sq-store-header { flex-wrap: wrap; }
-  .sq-store-nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 4px; }
-  .sq-store-nav a { white-space: nowrap; }
+  .sq-store-nav { display: none; }
+  .sq-store-menu-btn { display: flex; }
 }
 
 /* Account tabs: the underlined row on desktop, a hamburger dropdown on
