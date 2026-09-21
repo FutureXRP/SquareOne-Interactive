@@ -10,7 +10,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, addStaffBookingMulti, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, type AccountContact,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, findAccountByEmail, type AccountContact,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -131,6 +131,9 @@ export default function AdminBookingsPage() {
   const [nbRunBy, setNbRunBy] = useState('')
   const [nbPackage, setNbPackage] = useState('')
   const [nbEmail, setNbEmail] = useState('')
+  // Does the typed email belong to an existing account? undefined = still
+  // checking or nothing typed; null = no account; else the match.
+  const [nbAcct, setNbAcct] = useState<{ accountId: string; name: string } | null | undefined>(undefined)
   const [nbTaken, setNbTaken] = useState<string[]>([]) // extras booked elsewhere for this window
   const [packages, setPackages] = useState<EventPackage[]>([])
 
@@ -156,6 +159,18 @@ export default function AdminBookingsPage() {
     window.addEventListener(BOOKINGS_EVENT, sync)
     return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync) }
   }, [])
+
+  // Watch the email field: a short pause after typing, then check whether
+  // it belongs to an existing account so staff see the link before booking.
+  useEffect(() => {
+    const email = nbEmail.trim()
+    if (!email || !email.includes('@') || !isSupabaseConfigured()) { setNbAcct(undefined); return }
+    let on = true
+    const t = setTimeout(() => {
+      findAccountByEmail(email).then((m) => { if (on) setNbAcct(m) }).catch(() => { if (on) setNbAcct(null) })
+    }, 400)
+    return () => { on = false; clearTimeout(t) }
+  }, [nbEmail])
 
   const room = rooms.find((r) => r.id === nbRoom) ?? rooms[0]
   const nbDow = nbDate ? new Date(`${nbDate}T00:00:00`).getDay() : 0
@@ -189,7 +204,17 @@ export default function AdminBookingsPage() {
 
   const createBooking = async () => {
     if (!room || !nbClient.trim() || !me || busyWrite) return
+    // Every booking should carry an email — it's how the confirmation, the
+    // pay link, and the account connection all reach the customer. Staff
+    // can still book without one, but only on purpose.
+    const email = nbEmail.trim()
+    if (!email && !window.confirm(
+      'No customer email — they won\'t get a confirmation or pay link, and the booking can\'t connect to an account. Book anyway?',
+    )) return
     setBusyWrite(true)
+    // The authoritative match happens here, not from the display state —
+    // so a booking is never linked to a stale lookup.
+    const match = email ? await findAccountByEmail(email).catch(() => null) : null
     setConflictMsg(false)
     setAddonConflictMsg(false)
     setConflictRooms(null)
@@ -208,7 +233,8 @@ export default function AdminBookingsPage() {
       addonIds: nbAddons,
       runByStaffId: nbRunBy || null,
       packageId: nbPackage || null,
-      contactEmail: nbEmail.trim() || null,
+      contactEmail: email || null,
+      accountId: match?.accountId ?? null,
       ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
       // Staff notes and the adjustment's paper trail ride on the booking note.
       ...((nbNote.trim() || nbAdjustCents !== 0)
@@ -241,7 +267,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([]); setNbNote('')
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([]); setNbNote(''); setNbAcct(undefined)
     } else if (res.conflict) {
       const takenRooms = (res as { takenRooms?: string[] }).takenRooms
       if (res.addonConflict) setAddonConflictMsg(true)
@@ -673,8 +699,15 @@ export default function AdminBookingsPage() {
               <input id="nb-title" className="sq-input" value={nbTitle} onChange={(e) => setNbTitle(e.target.value)} placeholder="Birthday party" />
             </div>
             <div>
-              <label className="sq-label" htmlFor="nb-email">Their email (for the confirmation)</label>
+              <label className="sq-label" htmlFor="nb-email">Their email — confirmation &amp; account link</label>
               <input id="nb-email" type="email" className="sq-input" value={nbEmail} onChange={(e) => setNbEmail(e.target.value)} placeholder="parent@email.com" />
+              {nbEmail.trim().includes('@') && nbAcct !== undefined && (
+                <p style={{ fontSize: 11, fontWeight: 600, color: nbAcct ? GREEN : SUB, margin: '4px 0 0', lineHeight: 1.45 }}>
+                  {nbAcct
+                    ? `✓ ${nbAcct.name}'s account — this booking will show under their My bookings.`
+                    : 'No account with this email yet — their confirmation will invite them to sign up, and the booking attaches when they do.'}
+                </p>
+              )}
             </div>
             {packages.length > 0 && (
               <div>

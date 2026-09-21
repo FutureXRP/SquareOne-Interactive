@@ -98,6 +98,9 @@ export async function bookingFactsAny(bookingId: string):
       // The raw note reaches staff emails; the legacy Add-ons: shape
       // already surfaces through addons above.
       note: b.note && !b.note.startsWith('Add-ons:') ? b.note : undefined,
+      // Whether a member account is behind this booking — a booking taken
+      // at the desk against a bare email gets a sign-up nudge instead.
+      hasAccount: !!b.account_id,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
       setupMin: setupMin > 0 ? setupMin : undefined,
