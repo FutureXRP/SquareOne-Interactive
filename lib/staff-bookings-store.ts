@@ -256,6 +256,26 @@ export interface NewBooking {
   // Free-text that rides on the booking — one-time price adjustments and
   // their reasons land here so the paper trail survives.
   note?: string
+  // Skip the customer-facing email for this insert — companion room holds
+  // and other synthetic rows that must never speak to the customer.
+  quiet?: boolean
+}
+
+// The account behind an email address, if one exists — so a staff-made
+// booking lands in the customer's own My bookings instead of floating
+// free. Case-insensitive; the primary person on the account wins.
+export async function findAccountByEmail(email: string): Promise<{ accountId: string; name: string } | null> {
+  const cleaned = email.trim()
+  if (!cleaned || !cleaned.includes('@')) return null
+  const { data, error } = await supabase()
+    .from('clients')
+    .select('account_id, full_name, is_primary')
+    .ilike('email', cleaned)
+    .order('is_primary', { ascending: false })
+    .limit(1)
+  if (error) return null
+  const row = (data as { account_id: string; full_name: string }[] | null)?.[0]
+  return row ? { accountId: row.account_id, name: row.full_name } : null
 }
 
 // Returns the new booking's code, or a conflict/error marker.
@@ -303,9 +323,13 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   }
   emit(BOOKINGS_EVENT)
   const row = res.data as { id: string; code: string }
-  // Holds email a "we're holding it" note; paid bookings get confirmed
-  // by recordPayment right after.
+  // Holds email a "we're holding it" note. Confirmed staff bookings used
+  // to send nothing at all — now the customer gets their confirmation
+  // (with the pay link if anything is owed, and a sign-up nudge when no
+  // account is behind the booking). Skipped silently when there's no
+  // email to reach.
   if (b.hold) notify('booking.hold', row.id)
+  else if (!b.quiet) notify('booking.confirmed', row.id)
   // Somebody named as running this at the desk gets their shift email now.
   if (b.runByStaffId) notify('booking.staff_assigned', row.id)
   return { ok: true, code: row.code, id: row.id }
@@ -341,6 +365,7 @@ export async function addStaffBookingMulti(
       hours: b.hours,
       priceCents: 0,
       hold: false, // $0 companions confirm silently — no hold email, no expiry
+      quiet: true,
       createdBy: b.createdBy,
       accountId: b.accountId ?? null,
       ...(b.depositCents !== undefined ? { depositCents: null } : {}),

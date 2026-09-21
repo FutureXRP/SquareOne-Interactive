@@ -73,6 +73,9 @@ export interface BookingFacts {
   // Free-text riding on the booking — staff instructions, requests,
   // adjustment paper trail. Shown to the person running the event.
   note?: string
+  // False when the booking floats free of any member account — customer
+  // emails then invite them to sign up so it lands in My bookings.
+  hasAccount?: boolean
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
@@ -118,10 +121,23 @@ export function bookingHeld(b: BookingFacts): EmailBody {
        <p style="margin:0 0 6px;"><strong style="color:${INK};">This is a hold, not a confirmed booking yet.</strong>
        It locks in once we have ${money(due)}${b.depositCents && b.depositCents > 0 ? ' as a deposit' : ''}.
        Holds expire after 24 hours so the room doesn't sit empty.</p>
-       <p style="margin:10px 0 0;">Need to change something? Reply here or call the front desk — we're happy to move things around.</p>`,
+       <p style="margin:10px 0 0;">Need to change something? Reply here or call the front desk — we're happy to move things around.</p>
+       ${signupNudge(b)}`,
       bookingCta(b),
     ),
   }
+}
+
+// The invitation that turns a desk booking into a customer relationship:
+// sign up with this same email and the booking attaches to your account
+// automatically — view it, pay it, cancel it, all without calling us.
+function signupNudge(b: BookingFacts): string {
+  if (b.hasAccount !== false) return ''
+  return `<p style="margin:10px 0 0;padding:10px 14px;background:#f4f7fb;border-radius:10px;">
+    <strong style="color:${INK};">Manage this booking online:</strong> create a free account at
+    <a href="${siteLink('/signup')}" style="color:#2f6db8;font-weight:600;">${siteLink('/signup').replace('https://', '')}</a>
+    using this same email address, and this booking appears under <strong style="color:${INK};">My bookings</strong>
+    automatically — see the details, pay your balance, or make changes anytime.</p>`
 }
 
 export function bookingConfirmed(b: BookingFacts): EmailBody {
@@ -141,7 +157,8 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
          ...(b.priceCents > b.paidCents ? [['Balance due', money(b.priceCents - b.paidCents)] as [string, string]] : []),
        ])}
        <p style="margin:0;">Come a few minutes early so we can get you settled. If anyone in your party hasn't
-       signed a waiver yet, they can do it at the door.</p>`,
+       signed a waiver yet, they can do it at the door.</p>
+       ${signupNudge(b)}`,
       bookingCta(b),
     ),
   }
