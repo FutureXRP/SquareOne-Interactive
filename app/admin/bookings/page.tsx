@@ -948,7 +948,12 @@ export default function AdminBookingsPage() {
           </div>
           {[...inReview].sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH).map((b, i) => (
             <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: i < inReview.length - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 210 }}>
+              {/* The row itself jumps to the booking in the list below,
+                  details open — Confirm stays its own button. */}
+              <div role="button" tabIndex={0} title="Jump to this booking below"
+                style={{ flex: 1, minWidth: 210, cursor: 'pointer' }}
+                onClick={() => { setEditingId(b.id); setPayingId(null); setScrollToId(b.id) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setEditingId(b.id); setPayingId(null); setScrollToId(b.id) } }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
                 <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
                   {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {formatCents(b.priceCents)}
@@ -972,7 +977,7 @@ export default function AdminBookingsPage() {
               {unpaid.length} booking{unpaid.length === 1 ? '' : 's'} not paid in full · {formatCents(unpaid.reduce((n, b) => n + (b.priceCents - b.paidCents), 0))} outstanding
             </p>
             <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
-              Soonest event first. Collect opens that booking&rsquo;s payment panel right where it sits in the list.
+              Soonest event first. Click a booking to jump to it below; Collect opens its payment panel.
             </p>
           </div>
           {unpaid.slice(0, 15).map((b, i) => {
@@ -980,7 +985,12 @@ export default function AdminBookingsPage() {
             const depositMet = b.depositCents != null && b.depositCents > 0 && b.paidCents >= b.depositCents
             return (
               <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: i < Math.min(unpaid.length, 15) - 1 ? `1px solid ${LINE}` : 'none', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 210 }}>
+                {/* Click the row to jump to the booking in the list below,
+                    details open; Collect still opens the payment panel. */}
+                <div role="button" tabIndex={0} title="Jump to this booking below"
+                  style={{ flex: 1, minWidth: 210, cursor: 'pointer' }}
+                  onClick={() => { setEditingId(b.id); setPayingId(null); setScrollToId(b.id) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setEditingId(b.id); setPayingId(null); setScrollToId(b.id) } }}>
                   <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
                   <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
                     {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)}
