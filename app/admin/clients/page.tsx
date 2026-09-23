@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
-import { getClients, addClientAccount, patchClientAccount, recordLedgerEntry, deleteClientAccount, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
+import { getClients, addClientAccount, patchClientAccount, patchClientPerson, recordLedgerEntry, deleteClientAccount, CLIENTS_EVENT, type ClientAccount } from '@/lib/clients-store'
 import { useLive } from '@/lib/use-live'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { ResetPasswordButton } from '@/components/admin/ResetPasswordButton'
@@ -22,12 +22,29 @@ export default function ClientsPage() {
   const [adjAmount, setAdjAmount] = useState('')
   const [adjReason, setAdjReason] = useState('')
   const [myRole, setMyRole] = useState<StaffRole | undefined>(undefined)
+  // Find anyone by name, email, or phone — the desk shouldn't scroll.
+  const [q, setQ] = useState('')
+  // Per-person contact edits, saved a moment after typing stops.
+  const [contactDrafts, setContactDrafts] = useState<Record<string, { email?: string; phone?: string }>>({})
 
   useEffect(() => { getMyStaff().then((me) => setMyRole(me?.role)).catch(() => {}) }, [])
 
   const debouncedPatch = useDebouncedSave(async (p: { id: string; name?: string; flag?: string | null }) => {
     await patchClientAccount(p.id, { name: p.name, flag: p.flag })
   })
+
+  const debouncedContact = useDebouncedSave(async (p: { clientId: string; email?: string | null; phone?: string | null }) => {
+    await patchClientPerson(p.clientId, { email: p.email, phone: p.phone })
+  })
+
+  const editContact = (clientId: string, current: { email: string | null; phone: string | null }, p: { email?: string; phone?: string }) => {
+    const next = {
+      email: p.email ?? contactDrafts[clientId]?.email ?? current.email ?? '',
+      phone: p.phone ?? contactDrafts[clientId]?.phone ?? current.phone ?? '',
+    }
+    setContactDrafts((d) => ({ ...d, [clientId]: next }))
+    debouncedContact({ clientId, email: next.email || null, phone: next.phone || null })
+  }
 
   const draftFor = (c: ClientAccount) => ({ name: drafts[c.id]?.name ?? c.account, flag: drafts[c.id]?.flag ?? (c.flag ?? '') })
 
@@ -57,6 +74,16 @@ export default function ClientsPage() {
 
   const owingCents = clients.reduce((n, c) => n + Math.max(c.balanceCents, 0), 0)
 
+  // Match against account name, every person's name, email, and phone.
+  const needle = q.trim().toLowerCase()
+  const digits = needle.replace(/\D/g, '')
+  const shown = needle === '' ? clients : clients.filter((c) =>
+    c.account.toLowerCase().includes(needle)
+    || c.contacts.some((p) =>
+      p.name.toLowerCase().includes(needle)
+      || (p.email ?? '').toLowerCase().includes(needle)
+      || (digits.length >= 3 && (p.phone ?? '').replace(/\D/g, '').includes(digits))))
+
   return (
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Clients" sub="Family accounts and members — balances are the sum of ledger entries, adjusted only by recorded charges and credits." chip={`${clients.length} accounts`}>
@@ -66,18 +93,28 @@ export default function ClientsPage() {
         </div>
       </PageHero>
 
+      <div style={{ marginBottom: 12 }}>
+        <input className="sq-input" style={{ maxWidth: 380 }} placeholder="Search by name, email, or phone…"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+
       <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
         {clients.length === 0 && (
           <p style={{ fontSize: 13, color: SUB, padding: '18px 20px', margin: 0 }}>
             {loading ? 'Loading accounts…' : 'No client accounts yet — they appear here when people sign up in the store, or add one for a walk-in.'}
           </p>
         )}
-        {clients.map((c, i) => {
+        {clients.length > 0 && shown.length === 0 && (
+          <p style={{ fontSize: 13, color: SUB, padding: '18px 20px', margin: 0 }}>
+            Nobody matches &ldquo;{q.trim()}&rdquo; — check the spelling or clear the search.
+          </p>
+        )}
+        {shown.map((c, i) => {
           const bal = c.balanceCents
           const isEditing = editingId === c.id
           const draft = draftFor(c)
           return (
-            <div key={c.id} style={{ borderBottom: i < clients.length - 1 ? `1px solid ${LINE}` : 'none' }}>
+            <div key={c.id} style={{ borderBottom: i < shown.length - 1 ? `1px solid ${LINE}` : 'none' }}>
               <div className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', flexWrap: 'wrap' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef4fb', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800, flexShrink: 0, textTransform: 'uppercase' }}>{draft.name.charAt(0)}</div>
                 <div style={{ flex: 1, minWidth: 160 }}>
@@ -88,6 +125,18 @@ export default function ClientsPage() {
                   <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
                     {c.people.length > 1 ? c.people.join(', ') : `${c.members} member${c.members > 1 ? 's' : ''}`} · {c.plan === 'None' ? 'no membership' : `${c.plan} plan`}
                   </p>
+                  {/* How to reach them, right on the row — no digging. */}
+                  {(() => {
+                    const primary = c.contacts.find((p) => p.email || p.phone)
+                    if (!primary) return <p style={{ fontSize: 11.5, color: FAINT, margin: 0 }}>no contact info on file</p>
+                    return (
+                      <p style={{ fontSize: 11.5, margin: 0 }}>
+                        {primary.email && <a href={`mailto:${primary.email}`} style={{ color: BLUE, fontWeight: 600, textDecoration: 'none' }}>{primary.email}</a>}
+                        {primary.email && primary.phone && <span style={{ color: FAINT }}> · </span>}
+                        {primary.phone && <a href={`tel:${primary.phone}`} style={{ color: BLUE, fontWeight: 600, textDecoration: 'none' }}>{primary.phone}</a>}
+                      </p>
+                    )
+                  })()}
                 </div>
                 <span style={{ fontSize: 13.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: bal > 0 ? RED : bal < 0 ? GREEN : FAINT, minWidth: 74, textAlign: 'right' }}>
                   {bal === 0 ? '—' : bal < 0 ? `+${formatCents(-bal)}` : formatCents(bal)}
@@ -107,6 +156,33 @@ export default function ClientsPage() {
                       <input className="sq-input" value={draft.flag} placeholder="past due" onChange={(e) => edit(c, { flag: e.target.value })} />
                     </div>
                   </div>
+
+                  {/* Everyone on the account with how to reach them —
+                      editable right here, saved as they type. */}
+                  {c.contacts.length > 0 && (
+                    <div style={{ marginBottom: 14, maxWidth: 620 }}>
+                      <span className="sq-label">People &amp; contact info</span>
+                      {c.contacts.map((p) => {
+                        const d = contactDrafts[p.id]
+                        return (
+                          <div key={p.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: INK, minWidth: 140 }}>
+                              {p.name}{p.hasLogin && <span style={{ fontSize: 10, fontWeight: 700, color: BLUE, marginLeft: 6 }}>login</span>}
+                            </span>
+                            <input className="sq-input" type="email" style={{ flex: 1, minWidth: 170, padding: '6px 10px', fontSize: 12 }}
+                              placeholder="email" value={d?.email ?? p.email ?? ''}
+                              onChange={(e) => editContact(p.id, { email: p.email, phone: p.phone }, { email: e.target.value })} />
+                            <input className="sq-input" type="tel" style={{ width: 140, padding: '6px 10px', fontSize: 12 }}
+                              placeholder="phone" value={d?.phone ?? p.phone ?? ''}
+                              onChange={(e) => editContact(p.id, { email: p.email, phone: p.phone }, { phone: e.target.value })} />
+                          </div>
+                        )
+                      })}
+                      <p style={{ fontSize: 10.5, color: FAINT, margin: '2px 0 0' }}>
+                        Phone needs migration 0049 — changes save a moment after you stop typing.
+                      </p>
+                    </div>
+                  )}
 
                   <span className="sq-label">Record a balance change</span>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
