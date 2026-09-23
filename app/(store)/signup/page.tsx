@@ -21,6 +21,7 @@ function SignupForm() {
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [step, setStep] = useState<'checking' | 'form' | 'waiver' | 'confirm-email'>('checking')
   const [waivers, setWaivers] = useState<RequiredWaiver[]>([])
@@ -64,7 +65,7 @@ function SignupForm() {
     if (!canSubmit) return
     setSubmitting(true)
     setError(null)
-    const res = await signUpAuth(name.trim(), email.trim(), password)
+    const res = await signUpAuth(name.trim(), email.trim(), password, phone.trim() || undefined)
     setSubmitting(false)
     if (!res.ok) { setError(res.error ?? 'Signup failed'); return }
     if (res.needsConfirm) { setStep('confirm-email'); return }
@@ -157,6 +158,10 @@ function SignupForm() {
         <div style={{ marginBottom: 14 }}>
           <label className="sq-label" htmlFor="email">Email</label>
           <input id="email" type="email" className="sq-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label className="sq-label" htmlFor="phone">Phone (optional)</label>
+          <input id="phone" type="tel" className="sq-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(918) 555-0123" autoComplete="tel" />
         </div>
         <div style={{ marginBottom: 18 }}>
           <label className="sq-label" htmlFor="password">Password</label>

@@ -177,13 +177,19 @@ export async function contactsForAccounts(accountIds: string[]): Promise<Map<str
   const out = new Map<string, AccountContact>()
   const ids = [...new Set(accountIds)].filter(Boolean)
   if (ids.length === 0) return out
-  const { data, error } = await supabase()
-    .from('clients')
-    .select('account_id, email, phone, is_primary')
-    .in('account_id', ids)
-    .order('is_primary', { ascending: false })
-  if (error) return out
-  for (const r of data as { account_id: string; email: string | null; phone: string | null }[]) {
+  // clients.phone arrives with 0049 — before it, the phoned select fails
+  // outright, so fall back to email-only rather than showing nothing.
+  let data: unknown[] | null = null
+  for (const cols of ['account_id, email, phone, is_primary', 'account_id, email, is_primary']) {
+    const res = await supabase()
+      .from('clients')
+      .select(cols)
+      .in('account_id', ids)
+      .order('is_primary', { ascending: false })
+    if (!res.error) { data = res.data; break }
+  }
+  if (!data) return out
+  for (const r of data as { account_id: string; email: string | null; phone?: string | null }[]) {
     const cur = out.get(r.account_id)
     // Old signups can carry '' instead of null — either way it's "none".
     const email = r.email?.trim() || null

@@ -36,13 +36,22 @@ function hookAuth() {
 }
 
 // ── Auth ─────────────────────────────────────────────────────
-export async function signUpAuth(name: string, email: string, password: string):
+export async function signUpAuth(name: string, email: string, password: string, phone?: string):
   Promise<{ ok: boolean; needsConfirm: boolean; error?: string }> {
   hookAuth()
   const { data, error } = await supabase().auth.signUp({ email, password })
   if (error) return { ok: false, needsConfirm: false, error: error.message }
   if (!data.session) return { ok: true, needsConfirm: true } // email confirmation is on
-  await supabase().rpc('ensure_my_account', { p_full_name: name })
+  // p_phone arrives with migration 0049 — before it runs, the phoned call
+  // has no matching function, so fall back to the plain one rather than
+  // letting signup fail over an optional field.
+  const cleaned = phone?.trim()
+  if (cleaned) {
+    const { error: rpcErr } = await supabase().rpc('ensure_my_account', { p_full_name: name, p_phone: cleaned })
+    if (rpcErr) await supabase().rpc('ensure_my_account', { p_full_name: name })
+  } else {
+    await supabase().rpc('ensure_my_account', { p_full_name: name })
+  }
   emit(SESSION_EVENT)
   return { ok: true, needsConfirm: false }
 }
