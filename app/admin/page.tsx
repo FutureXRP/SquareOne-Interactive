@@ -217,16 +217,26 @@ export default function TodayPage() {
         {payments.length === 0 ? (
           <p style={{ fontSize: 13, color: SUB, padding: '16px 18px', margin: 0 }}>No payments yet today.</p>
         ) : (
-          payments.slice(0, 5).map((p, i) => (
-            <div key={p.code} className="sq-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px', borderBottom: i < Math.min(payments.length, 5) - 1 ? `1px solid ${LINE}` : 'none' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: FAINT, minWidth: 62 }}>{p.code}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: INK, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.client} · {p.memo}</p>
-                <p style={{ fontSize: 11.5, color: SUB, margin: 0 }}>{p.when} · by {p.takenBy}</p>
-              </div>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.amountCents)}</span>
-            </div>
-          ))
+          payments.slice(0, 5).map((p, i) => {
+            const row = (
+              <>
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: FAINT, minWidth: 62 }}>{p.code}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: INK, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.client} · {p.memo}</p>
+                  <p style={{ fontSize: 11.5, color: SUB, margin: 0 }}>{p.when} · by {p.takenBy}</p>
+                </div>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>{formatCents(p.amountCents)}</span>
+              </>
+            )
+            const style = { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px', borderBottom: i < Math.min(payments.length, 5) - 1 ? `1px solid ${LINE}` : 'none' } as const
+            // A payment with a booking behind it clicks straight through to
+            // that booking, opened under its date on the Bookings tab.
+            return p.bookingId ? (
+              <Link key={p.code} href={`/admin/bookings?open=${p.bookingId}`} className="sq-row" style={{ ...style, textDecoration: 'none', cursor: 'pointer' }}>{row}</Link>
+            ) : (
+              <div key={p.code} className="sq-row" style={style}>{row}</div>
+            )
+          })
         )}
       </div>
     </div>

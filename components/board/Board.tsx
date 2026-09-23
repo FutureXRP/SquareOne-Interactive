@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { ZONES, LINE, INK, SUB, FAINT, RED } from '@/lib/theme'
 import { getActiveRooms, ROOMS_EVENT } from '@/lib/facilities-store'
+import Link from 'next/link'
 import { bookingsForDate, isoDate, BOOKINGS_EVENT } from '@/lib/staff-bookings-store'
 import { BOARD_START, BOARD_END } from '@/lib/demo-data'
 import { formatHour } from '@/lib/format'
@@ -35,10 +36,14 @@ function pct(hour: number) {
 function Block({ b, color }: { b: BoardBooking; color: string }) {
   const label = b.isHold ? `${b.title} · HOLD` : b.title
   const detail = `${formatHour(b.start)}–${formatHour(b.end)} · ${b.client}${b.note ? ` · ${b.note}` : ''}`
+  // Every block is a door: click through to this booking on the Bookings
+  // tab, opened to its details under the right date.
   return (
-    <div
+    <Link
+      href={`/admin/bookings?open=${b.id}`}
       title={detail}
       style={{
+        textDecoration: 'none',
         position: 'absolute',
         left: `${pct(b.start)}%`,
         width: `${pct(b.end) - pct(b.start)}%`,
@@ -61,7 +66,7 @@ function Block({ b, color }: { b: BoardBooking; color: string }) {
       <p style={{ fontSize: 9.5, color: SUB, margin: 0, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>
         {formatHour(b.start)}–{formatHour(b.end)} · {b.client}
       </p>
-    </div>
+    </Link>
   )
 }
 
