@@ -179,7 +179,7 @@ export default function ClientsPage() {
                         )
                       })}
                       <p style={{ fontSize: 10.5, color: FAINT, margin: '2px 0 0' }}>
-                        Phone needs migration 0049 — changes save a moment after you stop typing.
+                        Changes save a moment after you stop typing.
                       </p>
                     </div>
                   )}
