@@ -76,6 +76,9 @@ export interface BookingFacts {
   // False when the booking floats free of any member account — customer
   // emails then invite them to sign up so it lands in My bookings.
   hasAccount?: boolean
+  // The customer's phone — staff emails show it so whoever runs the
+  // event can call about details.
+  phone?: string
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
@@ -214,6 +217,7 @@ export function bookingStaffAssigned(b: BookingFacts, s: { staffName: string; pa
          ...(b.arriveBy ? [['Arrive by', `${b.arriveBy} — ${b.setupMin} min of setup before the event`] as [string, string]] : []),
          ...(b.stayUntil ? [['Stay until', `${b.stayUntil} — ${b.cleanupMin} min of cleanup after`] as [string, string]] : []),
          ['Booked for', b.name],
+         ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
          ['Confirmation', b.code],
          ...(b.addons ? [['Extras to set up', b.addons] as [string, string]] : []),
          ...(b.note ? [['Notes', b.note] as [string, string]] : []),
@@ -333,6 +337,7 @@ export function bookingApprovalAlert(b: BookingFacts): EmailBody {
         stays "in review" until someone confirms it.</p>
        ${detailRows([
          ['Who', b.name],
+         ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
          ['What', b.what],
          ['Room', b.room],
          ['When', `${b.date}, ${b.time}`],

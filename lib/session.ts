@@ -215,7 +215,17 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   })
 }
 
-export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }):
+// The member's own phone on file, to prefill the booking form. Null
+// before 0049 or when they never gave one.
+export async function getMyPhone(): Promise<string | null> {
+  const { data: u } = await supabase().auth.getUser()
+  if (!u.user) return null
+  const res = await supabase().from('clients').select('phone').eq('user_id', u.user.id).maybeSingle()
+  if (res.error) return null
+  return (res.data as { phone?: string | null } | null)?.phone?.trim() || null
+}
+
+export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }, phone?: string):
   Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
@@ -240,17 +250,18 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     // guarded by the calendar.
     ...(buffers ? { setup_min: buffers.setupMin, cleanup_min: buffers.cleanupMin } : {}),
   }
-  // The member's login email rides on the booking itself (0029), so the
-  // desk sees who to reach even before any account lookup.
+  // The member's login email and phone ride on the booking itself
+  // (0029/0050), so the desk sees who to reach without any lookup.
   const extras = {
     ...(addonIds && addonIds.length > 0 ? { addon_ids: addonIds } : {}),
     ...(profile.email ? { contact_email: profile.email } : {}),
+    ...(phone?.trim() ? { contact_phone: phone.trim() } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
   let res = await sb.from('bookings').insert(payload).select('id, code').single()
-  // addon_ids / contact_email arrive with 0022/0029 — before those run,
-  // retry the plain insert.
+  // addon_ids / contact_email / contact_phone arrive with 0022/0029/0050
+  // — before those run, retry the plain insert.
   if (res.error && hasExtras && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
     res = await sb.from('bookings').insert(base).select('id, code').single()
   }

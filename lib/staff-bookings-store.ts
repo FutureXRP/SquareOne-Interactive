@@ -58,6 +58,7 @@ export interface StaffBooking {
   // Guest contact email typed at the desk (0029). Member bookings carry
   // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
+  contactPhone?: string | null
   // Reserved extras (0022). undefined = column not selected/migrated.
   addonIds?: string[]
 }
@@ -108,6 +109,7 @@ interface Row {
   canceled_by_staff?: { name: string } | null
   pay_token?: string | null
   contact_email?: string | null
+  contact_phone?: string | null
   addon_ids?: string[] | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
@@ -117,6 +119,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -164,6 +167,7 @@ function fromRow(r: Row): StaffBooking | null {
     payToken: 'pay_token' in r ? (r.pay_token ?? null) : undefined,
     accountId: r.account_id ?? null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
+    contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,
     addonIds: 'addon_ids' in r ? (r.addon_ids ?? []) : undefined,
   }
 }
@@ -256,6 +260,7 @@ export interface NewBooking {
   runByStaffId?: string | null // who runs the event (0023)
   packageId?: string | null // party package this booking sells (0026)
   contactEmail?: string | null // where the guest's confirmation goes (0029)
+  contactPhone?: string | null // the number the desk can call (0050)
   // Unbilled buffer copied from the room at creation (0039).
   setupMin?: number
   cleanupMin?: number
@@ -308,6 +313,7 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     ...(b.runByStaffId ? { run_by_staff_id: b.runByStaffId } : {}),
     ...(b.packageId ? { package_id: b.packageId } : {}),
     ...(b.contactEmail ? { contact_email: b.contactEmail } : {}),
+    ...(b.contactPhone ? { contact_phone: b.contactPhone } : {}),
     // A staff member writing the booking is the sign-off; only what
     // customers book themselves waits in review.
     ...(b.createdBy ? { approved_at: new Date().toISOString(), approved_by: b.createdBy } : {}),

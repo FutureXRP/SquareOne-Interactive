@@ -15,6 +15,7 @@ export interface BookingRecord {
   price_cents: number; status: string; account_id: string | null
   deposit_cents?: number | null
   contact_email?: string | null
+  contact_phone?: string | null
   note?: string | null
   approved_at?: string | null
   pay_token?: string | null
@@ -27,6 +28,7 @@ export interface BookingRecord {
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, facilities:facility_id(name), payments(amount_cents, status)',
@@ -38,17 +40,22 @@ const COL_SETS = [
 
 // The address we write to: the booking's own contact email first (walk-ins
 // booked at the desk), otherwise the account holder's.
-export async function recipientFor(accountId: string | null, contactEmail: string | null): Promise<{ email: string; name: string } | null> {
+export async function recipientFor(accountId: string | null, contactEmail: string | null): Promise<{ email: string; name: string; phone?: string | null } | null> {
   if (contactEmail) return { email: contactEmail, name: '' }
   if (!accountId) return null
-  const { data } = await serviceDb()
-    .from('clients')
-    .select('full_name, email, is_primary')
-    .eq('account_id', accountId)
-    .order('is_primary', { ascending: false })
-    .limit(1)
-  const row = (data as { full_name: string; email: string | null }[] | null)?.[0]
-  return row?.email ? { email: row.email, name: row.full_name } : null
+  // clients.phone arrives with 0049 — fall back to email-only before it.
+  let data: unknown[] | null = null
+  for (const cols of ['full_name, email, phone, is_primary', 'full_name, email, is_primary']) {
+    const res = await serviceDb()
+      .from('clients')
+      .select(cols)
+      .eq('account_id', accountId)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+    if (!res.error) { data = res.data; break }
+  }
+  const row = (data as { full_name: string; email: string | null; phone?: string | null }[] | null)?.[0]
+  return row?.email ? { email: row.email, name: row.full_name, phone: row.phone?.trim() || null } : null
 }
 
 function parseRange(during: string): { from: Date; to: Date } | null {
@@ -101,6 +108,9 @@ export async function bookingFactsAny(bookingId: string):
       // Whether a member account is behind this booking — a booking taken
       // at the desk against a bare email gets a sign-up nudge instead.
       hasAccount: !!b.account_id,
+      // The number staff can call about this event: the booking's own
+      // phone first, else the account's primary member.
+      phone: b.contact_phone?.trim() || to?.phone || undefined,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
       setupMin: setupMin > 0 ? setupMin : undefined,

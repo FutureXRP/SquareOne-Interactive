@@ -6,7 +6,7 @@ import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, rentalPriceCents, rentalPriceCentsAt, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
-import { isSignedIn, requestMemberHold, SESSION_EVENT } from '@/lib/session'
+import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
 import { checkCoupon, couponDiscountCents, couponLabel, couponMessage, recordRedemption, type Coupon } from '@/lib/coupons-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -43,6 +43,9 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [addonConflict, setAddonConflict] = useState(false)
   // What the customer wants the desk to know — decorations, timing, etc.
   const [requests, setRequests] = useState('')
+  // A number we can call about this event — required, prefilled from
+  // their profile when they've given one before.
+  const [phone, setPhone] = useState('')
   // Promo code applied to this rental
   const [promo, setPromo] = useState('')
   const [coupon, setCoupon] = useState<Coupon | null>(null)
@@ -79,11 +82,20 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         getActiveAddons().then((all) => setAddons(all.filter((a) => room.addonIds!.includes(a.id)))).catch(() => {})
       }
     }).catch(() => {})
-    const sync = () => { isSignedIn().then(setSignedIn) }
+    const sync = () => {
+      isSignedIn().then((on) => {
+        setSignedIn(on)
+        // Prefill the phone from their profile, without clobbering typing.
+        if (on) getMyPhone().then((p) => { if (p) setPhone((cur) => cur || p) }).catch(() => {})
+      })
+    }
     sync()
     window.addEventListener(SESSION_EVENT, sync)
     return () => window.removeEventListener(SESSION_EVENT, sync)
   }, [facilityId])
+
+  // Enough digits to dial — the desk must be able to call about this event.
+  const phoneOk = phone.replace(/\D/g, '').length >= 7
 
   const day = customDay ?? days[dayIdx]
 
@@ -224,7 +236,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   }
 
   const placeHold = async () => {
-    if (!day || startH == null || requesting) return
+    if (!day || startH == null || requesting || !phoneOk) return
     setRequesting(true)
     setConflict(false)
     setAddonConflict(false)
@@ -239,7 +251,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
       f.depositCents === undefined ? undefined : depositCents, note, picked,
       // The room's unbilled setup/cleanup window rides along so the
       // calendar holds it (0039).
-      f.setupMin !== undefined ? { setupMin: f.setupMin, cleanupMin: f.cleanupMin ?? 0 } : undefined)
+      f.setupMin !== undefined ? { setupMin: f.setupMin, cleanupMin: f.cleanupMin ?? 0 } : undefined,
+      phone.trim())
     setRequesting(false)
     setNeedsWaiver(false)
     if (res.ok) {
@@ -501,6 +514,22 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             </div>
           )}
 
+          {/* A number we can call about this event — required */}
+          <div style={{ padding: '10px 0 2px' }}>
+            <label className="sq-label" htmlFor={`ph-${f.id}`}>Phone number</label>
+            <input
+              id={`ph-${f.id}`} type="tel" className="sq-input" autoComplete="tel"
+              style={{ fontSize: 12.5, maxWidth: 240 }}
+              placeholder="(918) 555-0123"
+              value={phone} onChange={(e) => setPhone(e.target.value)}
+            />
+            {!phoneOk && (
+              <p style={{ fontSize: 11, color: SUB, margin: '4px 0 0' }}>
+                Required — so we can reach you about your event.
+              </p>
+            )}
+          </div>
+
           {/* Anything the desk should know — rides on the booking for staff */}
           <div style={{ padding: '10px 0 2px' }}>
             <label className="sq-label" htmlFor={`req-${f.id}`}>Anything we should know? (optional)</label>
@@ -525,8 +554,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             </span>
           </div>
           {signedIn ? (
-            <button className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={startH == null || requesting} onClick={requestHold}>
-              {requesting ? 'Booking…' : 'Request this slot'}
+            <button className="sq-btn sq-btn-primary" style={{ width: '100%' }} disabled={startH == null || requesting || !phoneOk} onClick={requestHold}>
+              {requesting ? 'Booking…' : !phoneOk && startH != null ? 'Add your phone number to book' : 'Request this slot'}
             </button>
           ) : (
             <>
