@@ -131,6 +131,7 @@ export default function AdminBookingsPage() {
   const [nbRunBy, setNbRunBy] = useState('')
   const [nbPackage, setNbPackage] = useState('')
   const [nbEmail, setNbEmail] = useState('')
+  const [nbPhone, setNbPhone] = useState('')
   // Does the typed email belong to an existing account? undefined = still
   // checking or nothing typed; null = no account; else the match.
   const [nbAcct, setNbAcct] = useState<{ accountId: string; name: string } | null | undefined>(undefined)
@@ -204,13 +205,16 @@ export default function AdminBookingsPage() {
 
   const createBooking = async () => {
     if (!room || !nbClient.trim() || !me || busyWrite) return
-    // Every booking should carry an email — it's how the confirmation, the
-    // pay link, and the account connection all reach the customer. Staff
-    // can still book without one, but only on purpose.
+    // Every booking should carry an email and a phone — how the
+    // confirmation reaches them and how the desk calls them. Staff can
+    // still book without, but only on purpose.
     const email = nbEmail.trim()
-    if (!email && !window.confirm(
-      'No customer email — they won\'t get a confirmation or pay link, and the booking can\'t connect to an account. Book anyway?',
-    )) return
+    const phoneVal = nbPhone.trim()
+    const missing = [
+      ...(!email ? ['email — no confirmation, no pay link, no account connection'] : []),
+      ...(phoneVal.replace(/\D/g, '').length < 7 ? ['phone — nobody can call them about this event'] : []),
+    ]
+    if (missing.length > 0 && !window.confirm(`Missing customer ${missing.join('; and ')}. Book anyway?`)) return
     setBusyWrite(true)
     // The authoritative match happens here, not from the display state —
     // so a booking is never linked to a stale lookup.
@@ -234,6 +238,7 @@ export default function AdminBookingsPage() {
       runByStaffId: nbRunBy || null,
       packageId: nbPackage || null,
       contactEmail: email || null,
+      contactPhone: phoneVal || null,
       accountId: match?.accountId ?? null,
       ...(room.setupMin !== undefined ? { setupMin: room.setupMin, cleanupMin: room.cleanupMin ?? 0 } : {}),
       // Staff notes and the adjustment's paper trail ride on the booking note.
@@ -267,7 +272,7 @@ export default function AdminBookingsPage() {
     setBusyWrite(false)
     if (res.ok) {
       setShowNew(false)
-      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([]); setNbNote(''); setNbAcct(undefined)
+      setNbClient(''); setNbTitle(''); setNbPrice(''); setNbDeposit(''); setNbPay('hold'); setNbAddons([]); setNbRunBy(''); setNbPackage(''); setNbEmail(''); setNbPhone(''); setNbAdjust(''); setNbAdjustWhy(''); setNbMoreRooms([]); setNbNote(''); setNbAcct(undefined)
     } else if (res.conflict) {
       const takenRooms = (res as { takenRooms?: string[] }).takenRooms
       if (res.addonConflict) setAddonConflictMsg(true)
@@ -495,7 +500,7 @@ export default function AdminBookingsPage() {
                 {(() => {
                   const acct = b.accountId ? accountContacts.get(b.accountId) : undefined
                   const email = b.contactEmail || acct?.email
-                  const phone = acct?.phone
+                  const phone = b.contactPhone || acct?.phone
                   const extras = (b.addonIds ?? []).map((id) => allAddons.find((a) => a.id === id)?.name ?? id)
                   return (
                     <div style={{ background: '#fafbfd', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5, color: SUB, lineHeight: 1.7, maxWidth: 620 }}>
@@ -708,6 +713,10 @@ export default function AdminBookingsPage() {
                     : 'No account with this email yet — their confirmation will invite them to sign up, and the booking attaches when they do.'}
                 </p>
               )}
+            </div>
+            <div>
+              <label className="sq-label" htmlFor="nb-phone">Their phone</label>
+              <input id="nb-phone" type="tel" className="sq-input" value={nbPhone} onChange={(e) => setNbPhone(e.target.value)} placeholder="(918) 555-0123" />
             </div>
             {packages.length > 0 && (
               <div>

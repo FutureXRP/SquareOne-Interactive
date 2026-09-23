@@ -58,7 +58,8 @@ function SignupForm() {
     return () => { on = false }
   }, [planParam, promoCode, router])
 
-  const canSubmit = name.trim() && /.+@.+\..+/.test(email) && password.length >= 8 && !submitting
+  const phoneOk = phone.replace(/\D/g, '').length >= 7
+  const canSubmit = name.trim() && /.+@.+\..+/.test(email) && phoneOk && password.length >= 8 && !submitting
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -160,7 +161,7 @@ function SignupForm() {
           <input id="email" type="email" className="sq-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label className="sq-label" htmlFor="phone">Phone (optional)</label>
+          <label className="sq-label" htmlFor="phone">Phone</label>
           <input id="phone" type="tel" className="sq-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(918) 555-0123" autoComplete="tel" />
         </div>
         <div style={{ marginBottom: 18 }}>
