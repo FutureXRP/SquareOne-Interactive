@@ -225,7 +225,7 @@ export async function getMyPhone(): Promise<string | null> {
   return (res.data as { phone?: string | null } | null)?.phone?.trim() || null
 }
 
-export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }, phone?: string):
+export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }, phone?: string, opts?: { packageId?: string }):
   Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
@@ -256,11 +256,14 @@ export async function requestMemberHold(roomId: string, title: string, date: str
     ...(addonIds && addonIds.length > 0 ? { addon_ids: addonIds } : {}),
     ...(profile.email ? { contact_email: profile.email } : {}),
     ...(phone?.trim() ? { contact_phone: phone.trim() } : {}),
+    // A package request links the booking to the package it sells (0026)
+    // so the desk sees which bundle was asked for and payouts follow it.
+    ...(opts?.packageId ? { package_id: opts.packageId } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
   let res = await sb.from('bookings').insert(payload).select('id, code').single()
-  // addon_ids / contact_email / contact_phone arrive with 0022/0029/0050
+  // addon_ids / contact_email / contact_phone / package_id arrive with 0022/0029/0050/0026
   // — before those run, retry the plain insert.
   if (res.error && hasExtras && (res.error.code === '42703' || res.error.code === 'PGRST204')) {
     res = await sb.from('bookings').insert(base).select('id, code').single()
