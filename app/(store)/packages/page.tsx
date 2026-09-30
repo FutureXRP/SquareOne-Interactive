@@ -7,10 +7,10 @@ import { getActivePackages, PACKAGES_EVENT, type EventPackage } from '@/lib/pack
 import { getRooms, roomLabel, ROOMS_EVENT } from '@/lib/facilities-store'
 import { isSignedIn, SESSION_EVENT } from '@/lib/session'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { PackageRequest } from '@/components/store/PackageRequest'
 
 export default function PackagesPage() {
   const [packages, setPackages] = useState<EventPackage[]>([])
-  const [requested, setRequested] = useState<string | null>(null)
   const [signedIn, setSignedIn] = useState(false)
 
   useEffect(() => {
@@ -75,15 +75,8 @@ export default function PackagesPage() {
               <p style={{ fontSize: 24, fontWeight: 800, color: INK, margin: '0 0 10px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
                 {formatCents(p.priceCents)} <span style={{ fontSize: 12, fontWeight: 500, color: FAINT }}>flat</span>
               </p>
-              {requested === p.id ? (
-                <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 10, padding: '10px 13px' }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Request received!</p>
-                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>The front desk will call to lock in your date and take the deposit.</p>
-                </div>
-              ) : signedIn ? (
-                <button className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%' }} onClick={() => setRequested(p.id)}>
-                  Request this package
-                </button>
+              {signedIn ? (
+                <PackageRequest pkg={p} primary={p.featured} />
               ) : (
                 <Link href="/signup" className={`sq-btn ${p.featured ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%' }}>
                   Create a profile to request
