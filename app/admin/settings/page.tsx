@@ -6,6 +6,7 @@ import { AdminOnly } from '@/components/admin/AdminOnly'
 import { StaffManager } from '@/components/admin/StaffManager'
 import { PermissionsMatrix } from '@/components/admin/PermissionsMatrix'
 import { CashAppQRCard } from '@/components/admin/CashAppQRCard'
+import { SiteQRCard } from '@/components/admin/SiteQRCard'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { formatCents, formatHour } from '@/lib/format'
 import { getSiteConfig, saveSiteConfig, type SiteConfig, type Closure } from '@/lib/site-config-store'
@@ -113,6 +114,14 @@ export default function SettingsPage() {
                   <CashAppQRCard cashtag={cfg.cashappCashtag} />
                 </div>
               )}
+              <div>
+                <span className="sq-label">Website QR</span>
+                <p style={{ fontSize: 11, color: FAINT, margin: '0 0 0', lineHeight: 1.5 }}>
+                  Points at this site&rsquo;s live address — put it on flyers, the door, and the front desk.
+                  Anyone who scans it lands on the store to book rooms or join.
+                </p>
+                <SiteQRCard />
+              </div>
               {cfg.membershipAlertEmail !== undefined && (
                 <div>
                   <label className="sq-label" htmlFor="s-member-alert">New-member alerts go to</label>
