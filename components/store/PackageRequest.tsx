@@ -5,10 +5,11 @@
 // takes, so the customer gets the hold email, the desk gets the approval
 // alert (Settings → booking alert email), and it shows up under Bookings.
 import { useEffect, useMemo, useState } from 'react'
-import { INK, SUB, FAINT, GREEN, RED } from '@/lib/theme'
+import Link from 'next/link'
+import { BLUE, INK, SUB, FAINT, GREEN, RED } from '@/lib/theme'
 import { formatHour } from '@/lib/format'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
-import { requestMemberHold, getMyPhone } from '@/lib/session'
+import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import type { EventPackage } from '@/lib/packages-store'
 
 function isoToday(offsetDays = 0): string {
@@ -27,6 +28,16 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ code: string } | null>(null)
+
+  // Requests ride the member-hold path, which needs a signed-in account —
+  // show the sign-in door instead of a form that can only fail.
+  const [signedIn, setSignedIn] = useState(false)
+  useEffect(() => {
+    const sync = () => { isSignedIn().then(setSignedIn).catch(() => setSignedIn(false)) }
+    sync()
+    window.addEventListener(SESSION_EVENT, sync)
+    return () => window.removeEventListener(SESSION_EVENT, sync)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -59,6 +70,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     setBusy(false)
     if (res.ok) setDone({ code: res.code })
     else if (res.conflict) setError('That time is already taken in one of the package rooms. Try another start time or date.')
+    else if (!(await isSignedIn().catch(() => false))) setError('Your sign-in expired — sign in again and resend. Everything you typed is still here.')
     else setError('Something went wrong sending your request. Please call the front desk.')
   }
 
@@ -75,6 +87,19 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
 
   if (!roomId) {
     return <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Call the front desk to book this package.</p>
+  }
+
+  if (!signedIn) {
+    return (
+      <>
+        <Link href="/login" className={`sq-btn ${primary ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%', marginBottom: 8, textAlign: 'center' }}>
+          Sign in to request
+        </Link>
+        <p style={{ fontSize: 11.5, color: FAINT, margin: 0, textAlign: 'center' }}>
+          New here? <Link href="/signup" style={{ color: BLUE, fontWeight: 600 }}>Create a profile</Link> — it takes a minute.
+        </p>
+      </>
+    )
   }
 
   if (!open) {
