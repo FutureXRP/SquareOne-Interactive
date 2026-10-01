@@ -11,7 +11,7 @@ import { slugify } from '@/lib/facilities-store'
 import { getFormLinks, setPlanWaiver, planRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { staffApplyCoupon } from '@/lib/billing-client'
-import { isSupabaseConfigured } from '@/lib/supabase'
+import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -39,7 +39,10 @@ export default function AdminMembershipsPage() {
     setCouponNote(null)
     const res = await staffApplyCoupon(accountId, couponCode.trim())
     setCouponNote({ ok: res.ok, text: res.message ?? (res.ok ? 'Applied.' : 'Could not apply that code.') })
-    if (res.ok) getMembershipStats().then(setStats).catch(() => {})
+    if (res.ok) {
+      getMembershipStats().then(setStats).catch(() => {})
+      loadRealMrr() // the discount just changed what next month truly brings
+    }
     setCouponBusy(false)
   }
 
@@ -50,11 +53,27 @@ export default function AdminMembershipsPage() {
   })
 
   const [roster, setRoster] = useState<MemberRosterRow[]>([])
+  // The real monthly number from Stripe — list prices minus live coupons.
+  // Null until it answers; the DB's list-price sum shows meanwhile.
+  const [realMrr, setRealMrr] = useState<{ mrrCents: number; free: number; discounted: number } | null>(null)
+
+  const loadRealMrr = async () => {
+    try {
+      const { data } = await supabase().auth.getSession()
+      const token = data.session?.access_token
+      if (!token) return
+      const res = await fetch('/api/billing/mrr', { method: 'POST', headers: { authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const j = (await res.json()) as { ok?: boolean; mrrCents?: number; free?: number; discounted?: number }
+      if (j.ok && typeof j.mrrCents === 'number') setRealMrr({ mrrCents: j.mrrCents, free: j.free ?? 0, discounted: j.discounted ?? 0 })
+    } catch { /* Stripe not configured or offline — list-price sum stands */ }
+  }
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     getPlans().then(setPlans).catch(() => {})
     getMembershipStats().then(setStats).catch(() => {})
+    loadRealMrr()
     getMemberRoster().then(setRoster).catch(() => {})
     const syncLinks = () => { getFormLinks().then(setFormLinks).catch(() => {}) }
     syncLinks()
@@ -102,7 +121,13 @@ export default function AdminMembershipsPage() {
     <div className="sq-page" style={{ padding: '34px 40px 20px', maxWidth: 1180, margin: '0 auto' }}>
       <PageHero title="Fitness Memberships" sub="Edit the plans the store sells and watch the live subscriber base. Automatic billing arrives with Stripe." chip={`${m.active} active`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <HeroStat label="Monthly recurring" value={formatCents(m.mrrCents)} sub={`${m.active} active member${m.active === 1 ? '' : 's'}`} />
+          <HeroStat
+            label="Monthly recurring"
+            value={formatCents(realMrr ? realMrr.mrrCents : m.mrrCents)}
+            sub={realMrr
+              ? `${m.active} active · after discounts${realMrr.free > 0 ? ` · ${realMrr.free} free` : ''}${realMrr.discounted > 0 ? ` · ${realMrr.discounted} discounted` : ''}`
+              : `${m.active} active member${m.active === 1 ? '' : 's'}`}
+          />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {savedNote && <span style={{ fontSize: 12, fontWeight: 700 }}>Saved ✓</span>}
             <button className="sq-btn" style={{ background: '#fff', color: '#182740' }} onClick={addPlan}>+ New plan</button>
