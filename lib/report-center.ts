@@ -1380,12 +1380,16 @@ const projectedRevenue: ReportDef = {
       return [{ start: range.from, owed, hold: b.status === 'hold' }]
     })
 
+    // months drives the membership share: the month, quarter, and year
+    // rows are exactly 1, 3, and 12 recurring cycles, so the month row
+    // matches the Memberships tab figure to the cent; the two short
+    // windows use the average-month daily rate.
     const WINDOWS = [
-      { label: 'Today', days: 1 },
-      { label: 'Next 7 days', days: 7 },
-      { label: 'Next 30 days', days: 30 },
-      { label: 'Next 90 days (quarter)', days: 90 },
-      { label: 'Next 365 days (year)', days: 365 },
+      { label: 'Today', days: 1, months: 1 / 30.44 },
+      { label: 'Next 7 days', days: 7, months: 7 / 30.44 },
+      { label: 'Next 30 days (month)', days: 30, months: 1 },
+      { label: 'Next 90 days (quarter)', days: 90, months: 3 },
+      { label: 'Next 365 days (year)', days: 365, months: 12 },
     ]
     const rows = WINDOWS.map((w) => {
       const end = new Date(startToday)
@@ -1393,8 +1397,7 @@ const projectedRevenue: ReportDef = {
       const inWindow = upcoming.filter((b) => b.start < end)
       const confirmed = inWindow.filter((b) => !b.hold).reduce((n, b) => n + b.owed, 0)
       const holds = inWindow.filter((b) => b.hold).reduce((n, b) => n + b.owed, 0)
-      // One month of recurring spread across the window's days.
-      const members = Math.round(mrr.cents * (w.days / 30.44))
+      const members = Math.round(mrr.cents * w.months)
       return {
         window: w.label,
         confirmed,
@@ -1418,7 +1421,7 @@ const projectedRevenue: ReportDef = {
         { label: 'Booked balances, next 365 days', value: formatCents(yearRow.confirmed) },
         { label: 'Projected next 30 days', value: formatCents(rows[2].total) },
       ],
-      note: 'Forward-looking: windows are cumulative and always start today, whatever date range is picked above. Bookings count the unpaid balance on events starting inside the window; holds are unconfirmed and expire if never paid; memberships prorate the current recurring base and assume no joins or cancels.',
+      note: 'Forward-looking: windows are cumulative and always start today, whatever date range is picked above. Bookings count the unpaid balance on events starting inside the window; holds are unconfirmed and expire if never paid. The month, quarter, and year rows count exactly 1, 3, and 12 cycles of the current recurring base — the month row matches the Memberships tab figure — and assume no joins or cancels.',
     }
   },
 }
