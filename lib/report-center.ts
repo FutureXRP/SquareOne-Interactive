@@ -1323,8 +1323,108 @@ const messagesLog: ReportDef = {
   },
 }
 
+// ── Projected revenue ────────────────────────────────────────
+// Forward-looking money: unpaid balances on upcoming bookings plus the
+// recurring membership base, laid out by horizon. Always runs from
+// today regardless of the picker — a projection has no past.
+
+// The real monthly recurring (after coupons) comes from Stripe via the
+// staff MRR route; if that can't answer, list prices stand in and the
+// summary says so.
+async function currentMrrCents(): Promise<{ cents: number; how: string }> {
+  try {
+    const { data } = await supabase().auth.getSession()
+    const token = data.session?.access_token
+    if (token) {
+      const res = await fetch('/api/billing/mrr', { method: 'POST', headers: { authorization: `Bearer ${token}` } })
+      if (res.ok) {
+        const j = (await res.json()) as { ok?: boolean; mrrCents?: number }
+        if (j.ok && typeof j.mrrCents === 'number') return { cents: j.mrrCents, how: 'after discounts, live from Stripe' }
+      }
+    }
+  } catch { /* fall through to list prices */ }
+  const { data } = await supabase()
+    .from('member_subscriptions')
+    .select('status, membership_plans(price_cents)')
+    .in('status', ['active', 'past_due'])
+  const rows = (data ?? []) as unknown as { membership_plans: { price_cents: number } | null }[]
+  return { cents: rows.reduce((n, r) => n + (r.membership_plans?.price_cents ?? 0), 0), how: 'at list price — Stripe unavailable' }
+}
+
+const projectedRevenue: ReportDef = {
+  id: 'projected-revenue',
+  name: 'Projected revenue',
+  group: 'Money',
+  blurb: 'Money expected from here forward — unpaid balances on upcoming bookings plus recurring memberships — by day, week, month, quarter, and year.',
+  run: async () => {
+    const now = new Date()
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const [bookingsRes, mrr] = await Promise.all([
+      supabase()
+        .from('bookings')
+        .select('during, price_cents, status, payments(amount_cents, status)')
+        .in('status', ['confirmed', 'hold'])
+        .limit(10000),
+      currentMrrCents(),
+    ])
+    if (bookingsRes.error) return EMPTY('This report needs the base bookings tables — run the core migrations first.')
+    const upcoming = (bookingsRes.data as unknown as {
+      during: string; price_cents: number; status: string
+      payments: { amount_cents: number; status: string }[]
+    }[]).flatMap((b) => {
+      const range = parseRange(b.during)
+      if (!range || range.from < startToday) return [] // already happened — that money lives in Outstanding
+      const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
+      const owed = Math.max(b.price_cents - paid, 0)
+      if (owed <= 0) return []
+      return [{ start: range.from, owed, hold: b.status === 'hold' }]
+    })
+
+    const WINDOWS = [
+      { label: 'Today', days: 1 },
+      { label: 'Next 7 days', days: 7 },
+      { label: 'Next 30 days', days: 30 },
+      { label: 'Next 90 days (quarter)', days: 90 },
+      { label: 'Next 365 days (year)', days: 365 },
+    ]
+    const rows = WINDOWS.map((w) => {
+      const end = new Date(startToday)
+      end.setDate(end.getDate() + w.days)
+      const inWindow = upcoming.filter((b) => b.start < end)
+      const confirmed = inWindow.filter((b) => !b.hold).reduce((n, b) => n + b.owed, 0)
+      const holds = inWindow.filter((b) => b.hold).reduce((n, b) => n + b.owed, 0)
+      // One month of recurring spread across the window's days.
+      const members = Math.round(mrr.cents * (w.days / 30.44))
+      return {
+        window: w.label,
+        confirmed,
+        holds,
+        members,
+        total: confirmed + holds + members,
+      }
+    })
+    const yearRow = rows[rows.length - 1]
+    return {
+      columns: [
+        { key: 'window', label: 'Window (from today)' },
+        { key: 'confirmed', label: 'Booked — balance due', kind: 'money' },
+        { key: 'holds', label: 'Unpaid holds (may expire)', kind: 'money' },
+        { key: 'members', label: 'Memberships (est.)', kind: 'money' },
+        { key: 'total', label: 'Total projected', kind: 'money' },
+      ],
+      rows,
+      summary: [
+        { label: 'Monthly recurring', value: `${formatCents(mrr.cents)} — ${mrr.how}` },
+        { label: 'Booked balances, next 365 days', value: formatCents(yearRow.confirmed) },
+        { label: 'Projected next 30 days', value: formatCents(rows[2].total) },
+      ],
+      note: 'Forward-looking: windows are cumulative and always start today, whatever date range is picked above. Bookings count the unpaid balance on events starting inside the window; holds are unconfirmed and expire if never paid; memberships prorate the current recurring base and assume no joins or cancels.',
+    }
+  },
+}
+
 export const REPORTS: ReportDef[] = [
-  revenueSummary, transactionRegister, refundsReport, byMethod, dailyClose, outstanding, cashBag,
+  revenueSummary, transactionRegister, refundsReport, byMethod, dailyClose, outstanding, projectedRevenue, cashBag,
   bookingsDetail, roomUtilization, peakDemand, packageSales, addonSales, cancellations,
   memberRoster, membershipChanges, planMix,
   attendanceDetail, attendanceDaily, memberFrequency, doorAudit,
