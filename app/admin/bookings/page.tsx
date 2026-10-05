@@ -29,7 +29,7 @@ function dollarsToCents(v: string): number {
 }
 
 const START_TIMES = Array.from({ length: 16 }, (_, i) => i + 6) // 6 AM – 9 PM
-const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp']
+const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check']
 
 function PayButtons({ onPick, picked, disabled }: { onPick: (m: PayMethod) => void; picked?: PayMethod | null; disabled?: boolean }) {
   return (
@@ -478,8 +478,8 @@ export default function AdminBookingsPage() {
                   </p>
                   <p style={{ fontSize: 11.5, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>
                     Card opens the booking&rsquo;s secure payment page — have them pay there (it&rsquo;s the same
-                    link as in their email), and it records itself the moment Stripe confirms. Cash and Cash App
-                    record here directly.
+                    link as in their email), and it records itself the moment Stripe confirms. Cash, Cash App,
+                    and checks record here directly — record a check only once it&rsquo;s physically in hand.
                   </p>
                   {/* Charge without the customer's device: their saved card,
                       or a number read over the phone into Stripe's own field. */}

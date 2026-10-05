@@ -94,8 +94,8 @@ export function RefundRow({
           <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{
               fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 9px', textTransform: 'uppercase', letterSpacing: '0.04em',
-              color: payment.method === 'stripe' ? '#2f6db8' : payment.method === 'cashapp' ? '#0f7a3d' : '#5b4708',
-              background: payment.method === 'stripe' ? '#eef4fb' : payment.method === 'cashapp' ? '#e6f7ec' : '#faf0dc',
+              color: payment.method === 'stripe' ? '#2f6db8' : payment.method === 'cashapp' ? '#0f7a3d' : payment.method === 'check' ? '#5b3b8c' : '#5b4708',
+              background: payment.method === 'stripe' ? '#eef4fb' : payment.method === 'cashapp' ? '#e6f7ec' : payment.method === 'check' ? '#f1ecfa' : '#faf0dc',
             }}>
               {PAY_LABEL[payment.method] ?? payment.method}
             </span>
@@ -142,7 +142,9 @@ export function RefundRow({
                   ? 'Goes back to the card through Stripe — 5–10 business days to land.'
                   : payment.method === 'cash'
                     ? 'Hand the cash back — it comes out of the cash bag.'
-                    : `Send it back by ${PAY_LABEL[payment.method] ?? payment.method}, then record it here.`}
+                    : payment.method === 'check'
+                      ? 'Write them a refund check (or refund another way), then record it here.'
+                      : `Send it back by ${PAY_LABEL[payment.method] ?? payment.method}, then record it here.`}
             </span>
           </div>
           {error && <p style={{ fontSize: 11.5, color: RED, margin: '8px 0 0', fontWeight: 600 }}>{error}</p>}

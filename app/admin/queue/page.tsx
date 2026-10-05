@@ -13,7 +13,7 @@ import { getTodayCheckIns, recordCheckIn, CHECKINS_EVENT, type CheckIn } from '@
 import { getMyStaff, type StaffMember } from '@/lib/staff-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
-const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp']
+const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check']
 const WALKIN_CONTEXTS = ['Gym member', 'Guest / day pass', 'Party guest', 'Program', 'Vendor / other']
 
 function dollarsToCents(v: string): number {
