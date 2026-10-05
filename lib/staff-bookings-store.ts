@@ -8,7 +8,7 @@ import { notify, notifyReport } from '@/lib/notify-client'
 
 export const BOOKINGS_EVENT = 'sq-staff-bookings'
 
-export type PayMethod = 'stripe' | 'cash' | 'cashapp'
+export type PayMethod = 'stripe' | 'cash' | 'cashapp' | 'check'
 
 export const PAY_LABEL: Record<string, string> = {
   stripe: 'Card (Stripe)',
