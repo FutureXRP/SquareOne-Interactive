@@ -5,6 +5,7 @@ import { PageHero, HeroStat } from '@/components/admin/PageHero'
 import { card, INK, SUB, FAINT, LINE, BLUE } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { getReport, type ReportData } from '@/lib/reports-store'
+import { REPORTS } from '@/lib/report-center'
 import { getRooms, roomLabel } from '@/lib/facilities-store'
 import { getPayments, BOOKINGS_EVENT, PAY_LABEL, type PaymentRow } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -52,7 +53,7 @@ export default function ReportsPage() {
       <Link href="/admin/reports/library" style={{ textDecoration: 'none', display: 'block', marginBottom: 16 }}>
         <div className="sq-card" style={{ ...card, padding: '14px 20px', borderLeft: `3px solid ${BLUE}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Report Center — 26 reports, any date range</p>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Report Center — {REPORTS.length} reports, any date range</p>
             <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>
               Revenue, bookings, memberships, attendance, staff pay, waivers — download to CSV or print to PDF for the bookkeeper or the board.
             </p>
