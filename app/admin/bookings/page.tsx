@@ -592,7 +592,41 @@ export default function AdminBookingsPage() {
                       </select>
                     </div>
                   )}
+                  {b.setupMin !== undefined && (
+                    <div>
+                      <label className="sq-label">Arrive early (min)</label>
+                      {/* Staff setup time before the event — moves the arrive-by
+                          in the assignment email and on My Schedule, and holds
+                          the room on the calendar. */}
+                      <input className="sq-input" inputMode="numeric" defaultValue={String(b.setupMin ?? 0)} key={`bsu-${b.id}`}
+                        onBlur={async (e) => {
+                          const n = Math.max(0, Math.round(Number(e.target.value) || 0))
+                          if (n === (b.setupMin ?? 0)) return
+                          const ok = await updateBookingFields(b.id, { setup_min: n }, me?.id ?? null)
+                          if (!ok) window.alert('That setup window overlaps the previous booking in this room — shorten it or move one of them.')
+                        }} />
+                    </div>
+                  )}
+                  {b.cleanupMin !== undefined && (
+                    <div>
+                      <label className="sq-label">Stay after (min)</label>
+                      <input className="sq-input" inputMode="numeric" defaultValue={String(b.cleanupMin ?? 0)} key={`bcl-${b.id}`}
+                        onBlur={async (e) => {
+                          const n = Math.max(0, Math.round(Number(e.target.value) || 0))
+                          if (n === (b.cleanupMin ?? 0)) return
+                          const ok = await updateBookingFields(b.id, { cleanup_min: n }, me?.id ?? null)
+                          if (!ok) window.alert('That cleanup window overlaps the next booking in this room — shorten it or move one of them.')
+                        }} />
+                    </div>
+                  )}
                 </div>
+                {b.setupMin !== undefined && (b.setupMin > 0 || (b.cleanupMin ?? 0) > 0 || b.runByStaffId) && (
+                  <p style={{ fontSize: 11, color: FAINT, margin: '-6px 0 12px', lineHeight: 1.5, maxWidth: 620 }}>
+                    Staff hours for this event: arrive by <strong style={{ color: INK }}>{formatHour(Math.max(b.startH - (b.setupMin ?? 0) / 60, 0))}</strong>,
+                    stay until <strong style={{ color: INK }}>{formatHour(b.startH + b.hours + (b.cleanupMin ?? 0) / 60)}</strong>.
+                    These show on the assigned person&rsquo;s My Schedule; re-confirm the run-by to resend their email with new times.
+                  </p>
+                )}
                 {/* Staff notes — free text the crew reads before the event.
                     Edits save when you click away; adjustments append their
                     own paper trail here too, so keep what's worth keeping. */}

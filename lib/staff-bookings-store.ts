@@ -59,7 +59,10 @@ export interface StaffBooking {
   // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
   contactPhone?: string | null
-  // Reserved extras (0022). undefined = column not selected/migrated.
+  // Minutes of unbilled staff time around the event (0039) — drive the
+  // arrive-by / stay-until times in emails and on My Schedule.
+  setupMin?: number
+  cleanupMin?: number  // Reserved extras (0022). undefined = column not selected/migrated.
   addonIds?: string[]
 }
 
@@ -110,6 +113,8 @@ interface Row {
   pay_token?: string | null
   contact_email?: string | null
   contact_phone?: string | null
+  setup_min?: number | null
+  cleanup_min?: number | null
   addon_ids?: string[] | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
@@ -119,6 +124,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -168,6 +174,8 @@ function fromRow(r: Row): StaffBooking | null {
     accountId: r.account_id ?? null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
     contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,
+    setupMin: 'setup_min' in r ? (r.setup_min ?? 0) : undefined,
+    cleanupMin: 'cleanup_min' in r ? (r.cleanup_min ?? 0) : undefined,
     addonIds: 'addon_ids' in r ? (r.addon_ids ?? []) : undefined,
   }
 }
@@ -515,7 +523,7 @@ export async function rescheduleBooking(id: string, date: string, startH: number
   return { ok: true, conflict: false }
 }
 
-export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null; note?: string | null }, byStaffId?: string | null): Promise<boolean> {
+export async function updateBookingFields(id: string, patch: { price_cents?: number; status?: string; title?: string; client_name?: string; deposit_cents?: number | null; contact_email?: string | null; note?: string | null; setup_min?: number; cleanup_min?: number }, byStaffId?: string | null): Promise<boolean> {
   const sb = supabase()
   // A staff cancel stamps who did it and when. The stamp columns arrive
   // with 0038 — before that, retry the plain update rather than fail.
