@@ -11,7 +11,7 @@ import { bookingForToken } from '@/lib/server/pay-links'
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   if (!stripeConfigured()) return NextResponse.json({ error: 'stripe_not_configured' }, { status: 501 })
   const { token } = await params
-  const { which } = (await req.json().catch(() => ({}))) as { which?: 'deposit' | 'balance' }
+  const { which, amountCents } = (await req.json().catch(() => ({}))) as { which?: 'deposit' | 'balance' | 'custom'; amountCents?: number }
 
   const found = await bookingForToken(token)
   if (!found) return NextResponse.json({ error: 'not_found' }, { status: 404 })
@@ -24,14 +24,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: 'already_paid', message: 'This booking is already paid in full.' }, { status: 409 })
   }
 
-  const amount = which === 'deposit' && target.depositDueCents > 0
+  // Partial payments: any amount from the deposit (or $10 when no deposit
+  // is set) up to the balance. The floor keeps a token payment from
+  // locking a room; the server clamps so the browser never names a price.
+  const minPartial = target.depositDueCents > 0
     ? Math.min(target.depositDueCents, target.balanceCents)
-    : target.balanceCents
+    : Math.min(1000, target.balanceCents)
+  let amount: number
+  if (which === 'deposit' && target.depositDueCents > 0) {
+    amount = Math.min(target.depositDueCents, target.balanceCents)
+  } else if (which === 'custom') {
+    const asked = Math.round(Number(amountCents) || 0)
+    if (asked < minPartial) {
+      return NextResponse.json({ error: 'too_small', message: `The minimum payment on this booking is ${(minPartial / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}.` }, { status: 400 })
+    }
+    amount = Math.min(asked, target.balanceCents)
+  } else {
+    amount = target.balanceCents
+  }
   if (amount <= 0) return NextResponse.json({ error: 'nothing_due' }, { status: 409 })
 
   try {
     const base = siteUrl(req)
-    const label = amount < target.balanceCents ? 'Deposit' : 'Balance'
+    const label = which === 'custom' && amount < target.balanceCents
+      ? 'Partial payment'
+      : amount < target.balanceCents ? 'Deposit' : 'Balance'
     // When the booking belongs to an account with a Stripe customer, tie
     // the payment to it and save the card for later desk charges.
     const { serviceDb } = await import('@/lib/server/billing')

@@ -59,14 +59,22 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
   const stage = stageOf(b)
   const balance = Math.max(0, b.priceCents - b.paidCents)
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(0, b.depositCents - b.paidCents) : 0
+  // Partial payments: anything from the deposit (or $10 with none set) up
+  // to the balance — the server enforces the same floor.
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customAmount, setCustomAmount] = useState('')
+  const minPartial = depositDue > 0 ? Math.min(depositDue, balance) : Math.min(1000, balance)
+  const customCents = Math.round((Number.parseFloat(customAmount.replace(/[$,\s]/g, '')) || 0) * 100)
+  const customOk = customCents >= minPartial && customCents <= balance
   const notice = room?.minNoticeHours ?? 48
   const canPay = balance > 0 && b.status !== 'canceled' && stage !== 'done'
   const extras = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : null
 
-  const pay = async (which: 'deposit' | 'balance') => {
+  const pay = async (which: 'deposit' | 'balance' | 'custom') => {
     if (busy) return
+    if (which === 'custom' && !customOk) return
     setBusy(true); setMsg(null)
-    const started = await startBookingCheckout(b.id, which)
+    const started = await startBookingCheckout(b.id, which, which === 'custom' ? customCents : undefined)
     if (!started) { setMsg('Card payments aren’t switched on yet — give us a call and we’ll take it at the desk.'); setBusy(false) }
     // On success the browser is already on its way to Stripe.
   }
@@ -127,6 +135,28 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
             Pay {formatCents(balance)} in full
           </button>
         </div>
+      )}
+
+      {/* Any amount in between — a partial payment toward the balance. */}
+      {canPay && minPartial < balance && (
+        !customOpen ? (
+          <button onClick={() => setCustomOpen(true)}
+            style={{ font: 'inherit', fontSize: 12, fontWeight: 600, color: INK, background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: '8px 0 0', textDecoration: 'underline' }}>
+            Pay a different amount
+          </button>
+        ) : (
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input className="sq-input" style={{ width: 110, padding: '8px 11px' }} inputMode="decimal"
+              placeholder={`${(minPartial / 100).toFixed(2)}+`}
+              value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} />
+            <button className="sq-btn sq-btn-primary" style={{ padding: '8px 15px' }} disabled={busy || !customOk} onClick={() => pay('custom')}>
+              {customOk ? `Pay ${formatCents(customCents)}` : 'Pay this amount'}
+            </button>
+            <span style={{ fontSize: 11, color: FAINT }}>
+              {formatCents(minPartial)} to {formatCents(balance)} — the rest stays due.
+            </span>
+          </div>
+        )
       )}
 
       {stage !== 'done' && b.status !== 'canceled' && (
