@@ -30,8 +30,8 @@ export async function POST(req: Request) {
   const caller = await getCaller(req)
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { bookingId, which } = (await req.json().catch(() => ({}))) as
-    { bookingId?: string; which?: 'deposit' | 'balance' }
+  const { bookingId, which, amountCents } = (await req.json().catch(() => ({}))) as
+    { bookingId?: string; which?: 'deposit' | 'balance' | 'custom'; amountCents?: number }
   if (!bookingId) return NextResponse.json({ error: 'missing bookingId' }, { status: 400 })
 
   try {
@@ -52,13 +52,25 @@ export async function POST(req: Request) {
 
     // A deposit only means something while it's still smaller than what's
     // left; past that point "deposit" and "balance" are the same button.
+    // Partial payments run from the deposit (or $10 when none is set) up
+    // to the balance — clamped here, never trusted from the browser.
     const depositDue = b.deposit_cents && b.deposit_cents > 0 ? Math.max(0, b.deposit_cents - paid) : 0
-    const amount = which === 'deposit' && depositDue > 0 ? Math.min(depositDue, balance) : balance
+    const minPartial = depositDue > 0 ? Math.min(depositDue, balance) : Math.min(1000, balance)
+    let amount: number
+    if (which === 'deposit' && depositDue > 0) {
+      amount = Math.min(depositDue, balance)
+    } else if (which === 'custom') {
+      const asked = Math.round(Number(amountCents) || 0)
+      if (asked < minPartial) return NextResponse.json({ error: 'too_small', minCents: minPartial }, { status: 400 })
+      amount = Math.min(asked, balance)
+    } else {
+      amount = balance
+    }
     if (amount <= 0) return NextResponse.json({ error: 'nothing_due' }, { status: 409 })
 
     const customer = await ensureCustomer(caller)
     const base = siteUrl(req)
-    const label = amount < balance ? 'Deposit' : 'Balance'
+    const label = which === 'custom' && amount < balance ? 'Partial payment' : amount < balance ? 'Deposit' : 'Balance'
 
     const session = await stripe().checkout.sessions.create({
       mode: 'payment',

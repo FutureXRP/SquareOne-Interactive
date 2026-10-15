@@ -21,8 +21,16 @@ export function PayPanel({ token, target, cashtag = '', bookingCode = '', cashQr
   const [error, setError] = useState<string | null>(null)
   const [cashOpen, setCashOpen] = useState(false)
   const [claimed, setClaimed] = useState(false)
+  // "Pay a different amount" — any figure from the minimum up to the balance.
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customAmount, setCustomAmount] = useState('')
 
   const showDeposit = target.depositDueCents > 0 && target.depositDueCents < target.balanceCents
+  const minPartialCents = target.depositDueCents > 0
+    ? Math.min(target.depositDueCents, target.balanceCents)
+    : Math.min(1000, target.balanceCents)
+  const customCents = Math.round((Number.parseFloat(customAmount.replace(/[$,\s]/g, '')) || 0) * 100)
+  const customOk = customCents >= minPartialCents && customCents <= target.balanceCents
   const tag = cashtag.replace(/^\$/, '')
   const cashAmount = showDeposit ? target.depositDueCents : target.balanceCents
 
@@ -43,15 +51,16 @@ export function PayPanel({ token, target, cashtag = '', bookingCode = '', cashQr
     setBusy(false)
   }
 
-  const pay = async (which: 'deposit' | 'balance') => {
+  const pay = async (which: 'deposit' | 'balance' | 'custom') => {
     if (busy) return
+    if (which === 'custom' && !customOk) return
     setBusy(true)
     setError(null)
     try {
       const res = await fetch(`/api/pay/${token}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ which }),
+        body: JSON.stringify({ which, ...(which === 'custom' ? { amountCents: customCents } : {}) }),
       })
       const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string }
       if (res.ok && json.url) { window.location.assign(json.url); return }
@@ -77,6 +86,28 @@ export function PayPanel({ token, target, cashtag = '', bookingCode = '', cashQr
           {busy ? 'One moment…' : `Pay ${formatCents(target.balanceCents)} in full`}
         </button>
       </div>
+
+      {/* Any amount in between — a partial payment toward the balance. */}
+      {minPartialCents < target.balanceCents && (
+        !customOpen ? (
+          <button onClick={() => setCustomOpen(true)}
+            style={{ font: 'inherit', fontSize: 12.5, fontWeight: 600, color: INK, background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: '10px 0 0', textDecoration: 'underline' }}>
+            Pay a different amount
+          </button>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input className="sq-input" style={{ width: 120, padding: '9px 12px' }} inputMode="decimal"
+              placeholder={`${(minPartialCents / 100).toFixed(2)}+`}
+              value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} />
+            <button className="sq-btn sq-btn-primary" style={{ padding: '10px 18px' }} disabled={busy || !customOk} onClick={() => pay('custom')}>
+              {busy ? 'One moment…' : customOk ? `Pay ${formatCents(customCents)}` : 'Pay this amount'}
+            </button>
+            <span style={{ fontSize: 11.5, color: FAINT }}>
+              Anything from {formatCents(minPartialCents)} to {formatCents(target.balanceCents)} — the rest stays due.
+            </span>
+          </div>
+        )
+      )}
       {error && (
         <p style={{ fontSize: 12.5, color: RED, margin: '12px 0 0', fontWeight: 600, lineHeight: 1.5 }}>{error}</p>
       )}
