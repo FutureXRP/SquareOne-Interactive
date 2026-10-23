@@ -124,9 +124,28 @@ export async function recordLedgerEntry(accountId: string, cents: number, reason
 }
 
 // Deleting an account removes its members, ledger, and waiver links
-// (bookings keep the name but unlink). Confirm before calling.
-export async function deleteClientAccount(id: string): Promise<boolean> {
+// (bookings keep the name but unlink). Any Stripe subscription behind it
+// is canceled FIRST — our database forgetting a member never stops
+// Stripe's billing, so the delete refuses to proceed until Stripe has
+// confirmed the charges are dead. Confirm before calling.
+export async function deleteClientAccount(id: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const { data } = await supabase().auth.getSession()
+    const token = data.session?.access_token
+    if (!token) return { ok: false, message: 'Sign in again and retry.' }
+    const res = await fetch('/api/billing/cancel-account', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ accountId: id }),
+    })
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { message?: string }
+      return { ok: false, message: `The account was NOT deleted: its Stripe billing could not be stopped (${j.message ?? 'Stripe unreachable'}). Try again, or cancel the subscription in the Stripe dashboard first.` }
+    }
+  } catch {
+    return { ok: false, message: 'The account was NOT deleted — could not reach the billing server to stop its charges. Check your connection and try again.' }
+  }
   const ok = await tryWrite(() => supabase().from('client_accounts').delete().eq('id', id))
   if (ok) emit(CLIENTS_EVENT)
-  return ok
+  return ok ? { ok: true } : { ok: false, message: 'Billing is stopped, but the account rows could not be deleted — try again.' }
 }
