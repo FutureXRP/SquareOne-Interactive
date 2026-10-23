@@ -67,9 +67,10 @@ export default function ClientsPage() {
   }
 
   const removeAccount = async (id: string, name: string) => {
-    if (!window.confirm(`Delete the ${name} account? Its members, ledger, and waivers are removed. This can't be undone.`)) return
-    const ok = await deleteClientAccount(id)
-    if (ok) setEditingId(null)
+    if (!window.confirm(`Delete the ${name} account? Any membership billing at Stripe is canceled first, then its members, ledger, and waivers are removed. This can't be undone.`)) return
+    const res = await deleteClientAccount(id)
+    if (res.ok) setEditingId(null)
+    else window.alert(res.message ?? 'Could not delete the account.')
   }
 
   const owingCents = clients.reduce((n, c) => n + Math.max(c.balanceCents, 0), 0)
