@@ -67,6 +67,9 @@ export const NAV_DEFAULT: NavItem[] = [
   { id: 'packages', href: '/packages', label: 'Event Packages', visible: true },
   { id: 'memberships', href: '/memberships', label: 'Fitness Memberships', visible: true },
   { id: 'shop', href: '/shop', label: 'Shop', visible: true },
+  // Giving is its own thing — not a rental, not a membership. The link
+  // hands visitors to the nonprofit's own give page in a new tab.
+  { id: 'donate', href: 'https://squareonecompassion.com/give', label: 'Donate', visible: true },
 ]
 
 const NAV_KEY = '__nav__'
@@ -81,9 +84,15 @@ const DEFAULT_CONTENT: SiteContent = { text: { ...TEXT_DEFAULTS }, nav: NAV_DEFA
 
 function normalizeNav(v: unknown): NavItem[] {
   if (!Array.isArray(v) || v.length === 0) return NAV_DEFAULT
-  return v
+  const saved = v
     .filter((n): n is NavItem => !!n && typeof (n as NavItem).href === 'string' && typeof (n as NavItem).label === 'string')
     .map((n) => ({ id: n.id ?? n.href, href: n.href, label: n.label, visible: n.visible !== false, custom: !!n.custom }))
+  // A nav saved before a new default tab existed (e.g. Donate) would
+  // silently hide it forever — append any default the saved list lacks,
+  // still toggleable from Site Content like everything else.
+  const have = new Set(saved.map((n) => n.id))
+  for (const d of NAV_DEFAULT) if (!have.has(d.id)) saved.push({ ...d, custom: false })
+  return saved
 }
 
 export async function getSiteContent(): Promise<SiteContent> {
