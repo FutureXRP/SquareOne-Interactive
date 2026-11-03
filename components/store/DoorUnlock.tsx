@@ -17,10 +17,36 @@ function offlineDetail(dashboardStatus: number | undefined): string {
   }
 }
 
-// The member's fitness-door button. Rendered only while a membership is
-// current (active or paid-through-cancellation); the server re-checks the
-// membership on every press, so the button is convenience — not the lock.
+// The member's door buttons — one card per door they're allowed to
+// open, each saying plainly which door it is. Rendered only while a
+// membership is current (active or paid-through-cancellation); the
+// server re-checks the membership on every press, so the buttons are
+// convenience — not the lock.
+
+const MEMBER_DOORS = [
+  {
+    id: 'fitnesszone',
+    title: 'Fitness center door',
+    hint: 'The FitnessZone gym entrance — one tap opens it once.',
+  },
+  {
+    id: 'medicalent',
+    title: 'Medical building entrance',
+    hint: 'The MedicalEnt door into the medical building — one tap opens it once.',
+  },
+]
+
 export function DoorUnlock({ memberName }: { memberName: string }) {
+  return (
+    <>
+      {MEMBER_DOORS.map((d) => (
+        <DoorCard key={d.id} door={d.id} title={d.title} hint={d.hint} memberName={memberName} />
+      ))}
+    </>
+  )
+}
+
+function DoorCard({ door, title, hint, memberName }: { door: string; title: string; hint: string; memberName: string }) {
   const [state, setState] = useState<DoorState>('idle')
   const [seconds, setSeconds] = useState(7)
   const [detail, setDetail] = useState('')
@@ -36,7 +62,8 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
       const token = data.session?.access_token
       const res = await fetch('/api/door/unlock', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { 'content-type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ door }),
       })
       if (res.ok) {
         const json = (await res.json()) as { relockSeconds?: number }
@@ -63,7 +90,7 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
   }
 
   return (
-    <div className="sq-card" style={{ ...card, padding: '20px 24px', marginBottom: 24, background: state === 'open' ? '#e5f2ea' : '#fff' }}>
+    <div className="sq-card" style={{ ...card, padding: '20px 24px', marginBottom: 14, background: state === 'open' ? '#e5f2ea' : '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ width: 44, height: 44, borderRadius: 12, background: state === 'open' ? GREEN : '#eef4fb', color: state === 'open' ? '#fff' : '#2f6db8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {state === 'open' ? (
@@ -74,11 +101,11 @@ export function DoorUnlock({ memberName }: { memberName: string }) {
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
           <p style={{ fontSize: 14.5, fontWeight: 800, color: INK, margin: 0 }}>
-            {state === 'open' ? 'Door unlocked — head on in!' : 'Fitness center door'}
+            {state === 'open' ? 'Door unlocked — head on in!' : title}
           </p>
           <p style={{ fontSize: 12.5, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
             {state === 'open' && `It relocks itself in about ${seconds} seconds.`}
-            {state === 'idle' && 'One tap opens the door once — no card scan needed.'}
+            {state === 'idle' && hint}
             {state === 'unlocking' && 'Unlocking…'}
             {state === 'offline' && (detail || 'The door system didn’t answer — scan your member card or see the front desk.')}
             {state === 'denied' && 'This needs an active fitness membership.'}
