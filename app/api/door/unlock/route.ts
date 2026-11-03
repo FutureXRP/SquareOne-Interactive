@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getCaller, serviceDb } from '@/lib/server/billing'
 
-// Fitness-door unlock for members. Verifies the caller holds a current
-// fitness membership (active, or canceling but still inside the paid
-// period), then asks the SquareOne Dashboard to open the fitness door once.
+// Member-door unlock. Verifies the caller holds a current fitness
+// membership (active, or canceling but still inside the paid period),
+// then asks the SquareOne Dashboard to open the requested door once.
+// Members get two: the FitnessZone gym entrance and the MedicalEnt
+// building door — only names on the allowlist ever reach the Dashboard.
 //
 // Env (both required): DASHBOARD_URL — the deployed SquareOne-Dashboard
 // backend; DOOR_SERVICE_TOKEN — shared secret, same value in both apps.
+const MEMBER_DOORS = (process.env.MEMBER_DOORS || 'fitnesszone,medicalent')
+  .toLowerCase().split(/[\s,;]+/).filter(Boolean)
+
 export async function POST(req: Request) {
   const dashboardUrl = process.env.DASHBOARD_URL
   const token = process.env.DOOR_SERVICE_TOKEN
@@ -14,6 +19,12 @@ export async function POST(req: Request) {
 
   const caller = await getCaller(req)
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const body = (await req.json().catch(() => ({}))) as { door?: string }
+  const door = (body.door ?? MEMBER_DOORS[0]).toLowerCase().trim()
+  if (!MEMBER_DOORS.includes(door)) {
+    return NextResponse.json({ error: 'unknown_door' }, { status: 400 })
+  }
 
   // Membership check happens server-side — the button in the UI is honest,
   // this is the enforcement.
@@ -31,7 +42,7 @@ export async function POST(req: Request) {
     const res = await fetch(`${dashboardUrl.replace(/\/$/, '')}/api/member-door/unlock`, {
       method: 'POST',
       headers: { 'x-door-token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member: caller.name }),
+      body: JSON.stringify({ member: caller.name, door }),
       signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok) {
@@ -51,7 +62,7 @@ export async function POST(req: Request) {
         org_id: (org as { id: string }).id,
         who: caller.name,
         context: 'Fitness membership · app unlock',
-        entry_point: json.door ?? 'Fitness door',
+        entry_point: json.door ?? door,
         method: 'app unlock',
         outcome: 'in',
       })
