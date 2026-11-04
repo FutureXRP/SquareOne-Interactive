@@ -8,7 +8,7 @@ import { notify, notifyReport } from '@/lib/notify-client'
 
 export const BOOKINGS_EVENT = 'sq-staff-bookings'
 
-export type PayMethod = 'stripe' | 'cash' | 'cashapp' | 'check'
+export type PayMethod = 'stripe' | 'cash' | 'cashapp' | 'check' | 'card'
 
 export const PAY_LABEL: Record<string, string> = {
   stripe: 'Card (Stripe)',
@@ -16,6 +16,9 @@ export const PAY_LABEL: Record<string, string> = {
   cashapp: 'Cash App',
   ach: 'ACH',
   check: 'Check',
+  // Card money collected outside Stripe — the old terminal, pre-cutover
+  // transactions. Recorded by staff, never charged by us.
+  card: 'Card (offline)',
 }
 
 export interface StaffBooking {

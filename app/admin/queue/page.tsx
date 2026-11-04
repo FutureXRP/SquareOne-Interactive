@@ -13,7 +13,7 @@ import { getTodayCheckIns, recordCheckIn, CHECKINS_EVENT, type CheckIn } from '@
 import { getMyStaff, type StaffMember } from '@/lib/staff-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
-const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check']
+const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check', 'card']
 const WALKIN_CONTEXTS = ['Gym member', 'Guest / day pass', 'Party guest', 'Program', 'Vendor / other']
 
 function dollarsToCents(v: string): number {
@@ -79,11 +79,20 @@ export default function FrontDeskPage() {
       else window.alert('Run migration 0037 to turn on card payment links.')
       return
     }
+    if (method === 'card' && !window.confirm(
+      'Card (offline) RECORDS a card payment already collected outside Stripe — it does NOT charge anything. To actually charge, use Card (Stripe). Record it?',
+    )) return
     const cents = payAmount.trim() === '' ? dueNow(b).cents : dollarsToCents(payAmount)
     if (cents <= 0) return
     setBusy(true)
-    await recordPayment(b, method, me.id, cents)
+    const recorded = await recordPayment(b, method, me.id, cents)
     setBusy(false)
+    if (!recorded) {
+      window.alert(method === 'card'
+        ? 'Could not record it — Card (offline) needs migration 0052_offline_card.sql run in Supabase first.'
+        : 'Could not record the payment — try again.')
+      return
+    }
     setPayingId(null)
     setPayAmount('')
   }
