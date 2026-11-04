@@ -4,12 +4,12 @@ import { getCaller, serviceDb } from '@/lib/server/billing'
 // Member-door unlock. Verifies the caller holds a current fitness
 // membership (active, or canceling but still inside the paid period),
 // then asks the SquareOne Dashboard to open the requested door once.
-// Members get two: the FitnessZone gym entrance and the MedicalEnt
+// Members get two: the FitnessZone gym entrance and the FrontDoor
 // building door — only names on the allowlist ever reach the Dashboard.
 //
 // Env (both required): DASHBOARD_URL — the deployed SquareOne-Dashboard
 // backend; DOOR_SERVICE_TOKEN — shared secret, same value in both apps.
-const MEMBER_DOORS = (process.env.MEMBER_DOORS || 'fitnesszone,medicalent')
+const MEMBER_DOORS = (process.env.MEMBER_DOORS || 'fitnesszone,frontdoor')
   .toLowerCase().split(/[\s,;]+/).filter(Boolean)
 
 export async function POST(req: Request) {
