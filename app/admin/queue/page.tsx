@@ -161,7 +161,7 @@ export default function FrontDeskPage() {
                 </div>
                 {paying && !paidUp && (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10, paddingLeft: 20 }}>
-                    <input className="sq-input" style={{ width: 110 }} inputMode="decimal" value={payAmount}
+                    <input className="sq-input" style={{ width: 110 }} inputMode="decimal" value={payAmount} autoComplete="off" name="collect-amount"
                       placeholder={(due.cents / 100).toFixed(2)} onChange={(e) => setPayAmount(e.target.value)} />
                     <span style={{ fontSize: 11.5, color: FAINT }}>{payAmount.trim() === '' ? `${due.label} due` : 'custom amount'}</span>
                     {PAY_METHODS.map((m) => (
