@@ -62,6 +62,14 @@ table { border-collapse: collapse; width: 100%; }
 .sq-input:focus, .sq-select:focus, .sq-textarea:focus {
   border-color: #2f6db8; box-shadow: 0 0 0 3px rgba(47,109,184,.12);
 }
+/* Touch devices: iOS Safari zooms the whole page when a focused input's
+   text is under 16px — which reads as "the page glitched and scrolled
+   away". 16px on coarse pointers kills the zoom; desktop keeps the
+   compact sizing (inline font-size overrides smaller than 16px lose to
+   this on touch, on purpose). */
+@media (pointer: coarse) {
+  .sq-input, .sq-select, .sq-textarea { font-size: 16px !important; }
+}
 .sq-label { display: block; font-size: 11.5px; font-weight: 600; color: #64748c; margin: 0 0 5px; text-transform: uppercase; letter-spacing: .05em; }
 
 /* Store header */
