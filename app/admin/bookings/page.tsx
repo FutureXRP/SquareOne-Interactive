@@ -29,7 +29,7 @@ function dollarsToCents(v: string): number {
 }
 
 const START_TIMES = Array.from({ length: 16 }, (_, i) => i + 6) // 6 AM – 9 PM
-const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check']
+const PAY_METHODS: PayMethod[] = ['stripe', 'cash', 'cashapp', 'check', 'card']
 
 function PayButtons({ onPick, picked, disabled }: { onPick: (m: PayMethod) => void; picked?: PayMethod | null; disabled?: boolean }) {
   return (
@@ -463,9 +463,22 @@ export default function AdminBookingsPage() {
                       else window.alert('Run migration 0037 to turn on card payment links.')
                       return
                     }
+                    // "Card (offline)" is for card money that already moved
+                    // on other rails (the old terminal, pre-Stripe) — it
+                    // records, it never charges. Make sure nobody reaches
+                    // for it instead of a real Stripe charge.
+                    if (m === 'card' && !window.confirm(
+                      'Card (offline) RECORDS a card payment that was already collected outside Stripe — the old terminal, or before the Stripe switchover. It does NOT charge anything. To actually charge a card, use Card (Stripe). Record it?',
+                    )) return
                     setBusyWrite(true)
-                    await recordPayment(b, m, me.id, amount)
+                    const recorded = await recordPayment(b, m, me.id, amount)
                     setBusyWrite(false)
+                    if (!recorded) {
+                      window.alert(m === 'card'
+                        ? 'Could not record it — Card (offline) needs migration 0052_offline_card.sql run in Supabase first.'
+                        : 'Could not record the payment — try again.')
+                      return
+                    }
                     setPayingId(null)
                     setPayAmount('')
                   }} />
