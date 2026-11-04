@@ -442,6 +442,8 @@ export default function AdminBookingsPage() {
                       className="sq-input"
                       style={{ width: 108, padding: '7px 10px', fontSize: 12.5, textAlign: 'right' }}
                       inputMode="decimal"
+                      autoComplete="off"
+                      name="collect-amount"
                       placeholder={(remaining / 100).toFixed(2)}
                       value={payAmount}
                       onChange={(e) => setPayAmount(e.target.value)}
