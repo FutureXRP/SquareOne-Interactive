@@ -30,9 +30,9 @@ const MEMBER_DOORS = [
     hint: 'The FitnessZone gym entrance — one tap opens it once.',
   },
   {
-    id: 'medicalent',
-    title: 'Medical building entrance',
-    hint: 'The MedicalEnt door into the medical building — one tap opens it once.',
+    id: 'frontdoor',
+    title: 'Building front door',
+    hint: 'The FrontDoor main entrance — one tap opens it once.',
   },
 ]
 
