@@ -103,7 +103,11 @@ export default function AdminBookingsPage() {
   useEffect(() => {
     if (!scrollToId || bookings.length === 0) return
     const el = document.getElementById(`bk-${scrollToId}`)
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setScrollToId(null) }
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Clear the target either way — a scroll request that lingers fires
+    // again on the next bookings refresh and yanks the page out from
+    // under whatever staff are typing.
+    setScrollToId(null)
   }, [scrollToId, bookings])
 
   // New-booking form state
