@@ -15,8 +15,26 @@ export async function POST(req: Request) {
   const { planId, couponCode } = (await req.json().catch(() => ({}))) as { planId?: string; couponCode?: string }
   if (!planId) return NextResponse.json({ error: 'missing planId' }, { status: 400 })
 
+  // One membership per account — a member who already has one joining
+  // again is an accident (two tabs, a forgotten signup), and the second
+  // subscription just double-bills them. Checked in our rows AND at
+  // Stripe, so even a half-synced duplicate gets caught.
+  const { data: existingSub } = await serviceDb()
+    .from('member_subscriptions')
+    .select('status')
+    .eq('account_id', caller.accountId)
+    .maybeSingle()
+  const existingStatus = (existingSub as { status: string } | null)?.status
+  if (existingStatus === 'active' || existingStatus === 'canceling' || existingStatus === 'past_due') {
+    return NextResponse.json({ error: 'already_member' }, { status: 409 })
+  }
+
   try {
     const [customer, price] = await Promise.all([ensureCustomer(caller), ensurePlanPrice(planId)])
+    try {
+      const live = await stripe().subscriptions.list({ customer, status: 'active', limit: 5 })
+      if (live.data.length > 0) return NextResponse.json({ error: 'already_member' }, { status: 409 })
+    } catch { /* listing failed — the DB check above still stands */ }
     const coupon = await validCoupon(couponCode, planId, caller.accountId)
     const base = siteUrl(req)
 

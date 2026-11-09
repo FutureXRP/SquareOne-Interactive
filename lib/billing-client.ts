@@ -32,7 +32,7 @@ async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; 
     const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string } & Record<string, unknown>
     // Carry the server's explanation back rather than dropping it — a
     // button that does nothing is the hardest kind of bug to report.
-    if (!res.ok) return { ok: false, message: json.message }
+    if (!res.ok) return { ok: false, message: json.message, error: json.error }
     return { ...json, ok: true }
   } catch {
     return { ok: false, message: 'Could not reach the server.' }
@@ -40,15 +40,18 @@ async function authedPost(path: string, body?: unknown): Promise<{ ok: boolean; 
 }
 
 // Card-first membership signup: redirects to Stripe Checkout.
-// Returns false when Stripe isn't live so callers can fall back.
-export async function startMembershipCheckout(planId: string, couponCode?: string): Promise<boolean> {
-  if (!(await billingConfigured())) return false
+// 'redirected' = the browser is on its way to Stripe; 'already_member' =
+// this account has a live membership and must not be double-billed;
+// 'failed' = Stripe isn't live (or errored) so callers may fall back.
+export async function startMembershipCheckout(planId: string, couponCode?: string): Promise<'redirected' | 'already_member' | 'failed'> {
+  if (!(await billingConfigured())) return 'failed'
   const res = await authedPost('/api/billing/checkout', { planId, couponCode })
   if (res.ok && res.url) {
     window.location.assign(res.url)
-    return true
+    return 'redirected'
   }
-  return false
+  if (res.error === 'already_member') return 'already_member'
+  return 'failed'
 }
 
 // Stripe billing portal — update/change the card, see invoices.

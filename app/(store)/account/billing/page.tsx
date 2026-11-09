@@ -13,6 +13,7 @@ import { useEffect } from 'react'
 function BillingContent() {
   const params = useSearchParams()
   const welcome = params.get('welcome') === '1'
+  const already = params.get('already') === '1'
   const [stripeLive, setStripeLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -45,6 +46,12 @@ function BillingContent() {
               <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 12, padding: '13px 16px', marginBottom: 18 }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Welcome to SquareOne! Your {plan.name} fitness membership is set up.</p>
                 <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Add a payment method below so your fitness membership stays active.</p>
+              </div>
+            )}
+            {already && (
+              <div style={{ background: '#fdf3dc', border: '1px solid #e8d9a8', borderRadius: 12, padding: '13px 16px', marginBottom: 18 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#5b4708', margin: '0 0 2px' }}>You already have an active membership — no second signup needed.</p>
+                <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Nothing was charged. Your current plan is below; questions about it? The front desk is happy to help.</p>
               </div>
             )}
 
