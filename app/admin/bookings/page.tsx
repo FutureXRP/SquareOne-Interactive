@@ -15,6 +15,8 @@ import {
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { ChargeCard } from '@/components/admin/ChargeCard'
+import { BookingAgreementCard } from '@/components/admin/BookingAgreementCard'
+import { getAgreementStatuses, AGREEMENTS_EVENT, type AgreementStatus } from '@/lib/agreements-store'
 
 // Signed dollars → cents: "-25" and "25" both work, for adjustments that
 // can cut or add to a price.
@@ -99,6 +101,8 @@ export default function AdminBookingsPage() {
   const [accountContacts, setAccountContacts] = useState<Map<string, AccountContact>>(new Map())
   // A calendar deep-link waiting to scroll its booking into view.
   const [scrollToId, setScrollToId] = useState<string | null>(null)
+  // booking id → signed rental agreement; null until 0053 runs.
+  const [agreements, setAgreements] = useState<Map<string, AgreementStatus> | null>(null)
 
   useEffect(() => {
     if (!scrollToId || bookings.length === 0) return
@@ -151,6 +155,7 @@ export default function AdminBookingsPage() {
         // Member contact details live on the account, not the booking row.
         contactsForAccounts(b.map((x) => x.accountId ?? '').filter(Boolean))
           .then((em) => { if (on) setAccountContacts(em) }).catch(() => {})
+        getAgreementStatuses().then((m) => { if (on) setAgreements(m) }).catch(() => {})
       }).catch(() => {})
     }
     sync()
@@ -162,7 +167,8 @@ export default function AdminBookingsPage() {
     const openId = new URLSearchParams(window.location.search).get('open')
     if (openId) { setEditingId(openId); setShowCanceled(true); setScrollToId(openId) }
     window.addEventListener(BOOKINGS_EVENT, sync)
-    return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync) }
+    window.addEventListener(AGREEMENTS_EVENT, sync)
+    return () => { on = false; window.removeEventListener(BOOKINGS_EVENT, sync); window.removeEventListener(AGREEMENTS_EVENT, sync) }
   }, [])
 
   // Watch the email field: a short pause after typing, then check whether
@@ -554,6 +560,12 @@ export default function AdminBookingsPage() {
                     </div>
                   )
                 })()}
+                {/* The signed rental agreement and card on file */}
+                <BookingAgreementCard
+                  b={b}
+                  agreement={agreements === null ? undefined : (agreements.get(b.id) ?? null)}
+                  canCharge={!!me && ['owner', 'admin', 'manager'].includes(me.role)}
+                />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
                   <div>
                     <label className="sq-label">Date</label>
@@ -1012,6 +1024,17 @@ export default function AdminBookingsPage() {
                   {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {formatCents(b.priceCents)}
                   {b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ' · unpaid'}
                 </p>
+                {(agreements !== null || b.card !== undefined) && (
+                  <p style={{ fontSize: 11, margin: '2px 0 0', fontWeight: 600 }}>
+                    {agreements !== null && (agreements.has(b.id)
+                      ? <span style={{ color: GREEN }}>✓ agreement signed</span>
+                      : <span style={{ color: RED }}>✗ no signed agreement</span>)}
+                    {agreements !== null && b.card !== undefined && <span style={{ color: FAINT }}> · </span>}
+                    {b.card !== undefined && (b.card
+                      ? <span style={{ color: GREEN }}>✓ card on file</span>
+                      : <span style={{ color: RED }}>✗ no card on file</span>)}
+                  </p>
+                )}
               </div>
               <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 11.5 }} disabled={busyWrite}
                 onClick={async () => { setBusyWrite(true); await approveBooking(b.id, me?.id ?? null); setBusyWrite(false) }}>

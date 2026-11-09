@@ -6,6 +6,7 @@ import {
   bookingPayment,
 } from '@/lib/server/emails'
 import { recordInvoicePayment, recordBookingCheckout, recordBookingIntent } from '@/lib/server/record-payments'
+import { saveCardFromSetupSession } from '@/lib/server/booking-card'
 
 // Stripe webhook — keeps member_subscriptions in sync with what actually
 // happens to the card: subscription created, plan changed, payment failed,
@@ -115,6 +116,11 @@ export async function POST(req: Request) {
         // A member paying their own booking deposit or balance.
         if (session.mode === 'payment' && session.metadata?.kind === 'booking') {
           await recordBookingCheckout(session)
+          break
+        }
+        // A renter adding their card on file for damages (no charge).
+        if (session.mode === 'setup' && session.metadata?.kind === 'booking_card') {
+          await saveCardFromSetupSession(session.id)
           break
         }
         if (session.mode === 'subscription' && session.subscription) {

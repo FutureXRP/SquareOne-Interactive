@@ -102,6 +102,22 @@ export async function staffApplyCoupon(accountId: string, couponCode: string): P
   return { ok: res.ok, message: res.message }
 }
 
+// Staff-only: move a member to another plan (prorated on their existing
+// Stripe subscription, confirmation emailed). Owners/admins/managers.
+export async function staffChangePlan(accountId: string, planId: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await authedPost('/api/billing/staff-change-plan', { accountId, planId })
+  if (res.ok) emit(SESSION_EVENT)
+  return { ok: res.ok, message: res.message }
+}
+
+// Staff-only: charge an extra fee (cleaning, damage, storage, overtime)
+// to a booking's card on file. `notified` confirms the renter was told
+// first, as the rental agreement promises.
+export async function staffChargeFee(bookingId: string, amountCents: number, reason: string, notified: boolean): Promise<{ ok: boolean; message?: string; card?: string }> {
+  const res = await authedPost('/api/billing/booking-fee', { bookingId, amountCents, reason, notified })
+  return { ok: res.ok, message: res.message, card: res.card as string | undefined }
+}
+
 // The member's actual next bill, discounts included — null when Stripe
 // isn't live, the account has no card-billed membership, or the ask fails.
 export async function getNextPayment(): Promise<{ totalCents: number; label: string | null } | null> {

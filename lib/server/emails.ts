@@ -79,6 +79,11 @@ export interface BookingFacts {
   // The customer's phone — staff emails show it so whoever runs the
   // event can call about details.
   phone?: string
+  // Rental agreement and card on file (0053) — undefined before it runs,
+  // so the nudge stays silent rather than nagging about a step that
+  // doesn't exist yet.
+  agreementSigned?: boolean
+  cardOnFile?: boolean
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
@@ -125,6 +130,7 @@ export function bookingHeld(b: BookingFacts): EmailBody {
        It locks in once we have ${money(due)}${b.depositCents && b.depositCents > 0 ? ' as a deposit' : ''}.
        Holds expire after 24 hours so the room doesn't sit empty.</p>
        <p style="margin:10px 0 0;">Need to change something? Reply here or call the front desk — we're happy to move things around.</p>
+       ${agreementNudge(b)}
        ${signupNudge(b)}`,
       bookingCta(b),
     ),
@@ -134,6 +140,21 @@ export function bookingHeld(b: BookingFacts): EmailBody {
 // The invitation that turns a desk booking into a customer relationship:
 // sign up with this same email and the booking attaches to your account
 // automatically — view it, pay it, cancel it, all without calling us.
+// Every event needs a signed rental agreement and a card on file. Until
+// both are done, the booking emails say so and link straight to the page
+// that does them (the booking's pay link — no account needed).
+function agreementNudge(b: BookingFacts): string {
+  if (!b.payUrl) return ''
+  const todo = [
+    ...(b.agreementSigned === false ? ['sign your Event Rental Agreement'] : []),
+    ...(b.cardOnFile === false ? ['add a card on file for damages (nothing is charged)'] : []),
+  ]
+  if (todo.length === 0) return ''
+  return `<p style="margin:10px 0 0;padding:10px 14px;background:#fdf3dc;border-radius:10px;">
+    <strong style="color:${INK};">Before your event:</strong> please ${todo.join(' and ')} —
+    <a href="${b.payUrl}" style="color:#2f6db8;font-weight:600;">it takes about three minutes here</a>.</p>`
+}
+
 function signupNudge(b: BookingFacts): string {
   if (b.hasAccount !== false) return ''
   return `<p style="margin:10px 0 0;padding:10px 14px;background:#f4f7fb;border-radius:10px;">
@@ -161,6 +182,7 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
        ])}
        <p style="margin:0;">Come a few minutes early so we can get you settled. If anyone in your party hasn't
        signed a waiver yet, they can do it at the door.</p>
+       ${agreementNudge(b)}
        ${signupNudge(b)}`,
       bookingCta(b),
     ),
@@ -193,7 +215,8 @@ export function bookingApproved(b: BookingFacts): EmailBody {
             with the button below — no account, no phone call, no waiting until you get here.</p>`
          : `<p style="margin:0 0 6px;">You're paid in full, so there's nothing left to do but show up.</p>`}
        <p style="margin:10px 0 0;">Come a few minutes early so we can get you settled. Anyone in your party
-       without a signed waiver can take care of it at the door.</p>`,
+       without a signed waiver can take care of it at the door.</p>
+       ${agreementNudge(b)}`,
       bookingCta(b),
     ),
   }
@@ -300,6 +323,31 @@ export function bookingPayment(b: BookingFacts, pay: { amountCents: number; meth
 // books. The customer may already hold a receipt email for it, so the
 // correction names that receipt and shows where the booking truly stands
 // now — the facts are read after the void, so the totals are current.
+// An extra fee charged to the card on file — cleaning, damage, storage,
+// or overtime — as the rental agreement allows. The agreement promises
+// the renter is told; staff contact them first, and this is the record.
+export function bookingFeeCharged(b: BookingFacts, f: { amountCents: number; reason: string; card: string }): EmailBody {
+  return {
+    subject: `A ${money(f.amountCents)} charge for ${b.code} — ${f.reason}`,
+    html: shell(
+      'A charge to your card on file',
+      `<p style="margin:0 0 6px;">As covered in your Event Rental Agreement, we've charged the card on
+        file for your event. Here are the details:</p>
+       ${detailRows([
+         ['Charge', money(f.amountCents)],
+         ['Reason', f.reason],
+         ['Card', f.card],
+         ['Event', `${b.what} — ${b.room}`],
+         ['When', `${b.date}, ${b.time}`],
+         ['Confirmation', b.code],
+       ])}
+       <p style="margin:0;">Questions about this charge? Reply to this email or call the front desk —
+        we're glad to walk through it.</p>`,
+      { label: 'View my booking', href: b.payUrl ?? siteLink('/account') },
+    ),
+  }
+}
+
 export function paymentVoided(b: BookingFacts, pay: { amountCents: number; method: string; code: string }): EmailBody {
   const owed = Math.max(b.priceCents - b.paidCents, 0)
   return {

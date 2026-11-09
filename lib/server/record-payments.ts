@@ -2,6 +2,7 @@ import type Stripe from 'stripe'
 import { serviceDb, sendAndLog, stripe } from '@/lib/server/billing'
 import { bookingPayment } from '@/lib/server/emails'
 import { bookingFacts } from '@/lib/server/booking-facts'
+import { saveCardFromPaymentIntent } from '@/lib/server/booking-card'
 
 // Turning a Stripe payment into a row in our ledger. Lives here rather
 // than in the webhook because the webhook is not the only way these
@@ -107,6 +108,15 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   // recorded, because the money is real and somebody now owes a refund.
   if (!wasCanceled) {
     await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
+  }
+
+  // The card they just paid with becomes the booking's card on file when
+  // none is saved yet — the rental agreement requires one for damages.
+  if (typeof session.payment_intent === 'string' && !wasCanceled) {
+    try {
+      const pi = await stripe().paymentIntents.retrieve(session.payment_intent)
+      await saveCardFromPaymentIntent(pi, b.id)
+    } catch { /* the payment is recorded either way */ }
   }
 
   // The receipt reads as a deposit or a paid-in-full note depending on

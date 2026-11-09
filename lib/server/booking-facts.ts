@@ -24,10 +24,12 @@ export interface BookingRecord {
   facilities: { name: string } | null
   setup_min?: number
   cleanup_min?: number
+  card_last4?: string | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), facilities:facility_id(name), payments(amount_cents, status)',
@@ -82,6 +84,11 @@ export async function bookingFactsAny(bookingId: string):
   if (!b) return null
   const to = await recipientFor(b.account_id, b.contact_email ?? null)
   const range = parseRange(b.during)
+  let agreementSigned: boolean | undefined
+  {
+    const { data: ag, error: agErr } = await serviceDb().from('rental_agreements').select('id').eq('booking_id', b.id).maybeSingle()
+    if (!agErr) agreementSigned = !!ag
+  }
   // The unbilled buffer around the event (0039) — what staff running it
   // need for arrive-by and stay-until times.
   const setupMin = b.setup_min ?? 0
@@ -111,6 +118,10 @@ export async function bookingFactsAny(bookingId: string):
       // The number staff can call about this event: the booking's own
       // phone first, else the account's primary member.
       phone: b.contact_phone?.trim() || to?.phone || undefined,
+      // The rental agreement and card on file (0053): undefined before the
+      // migration, so the email nudge only speaks once the step exists.
+      agreementSigned,
+      cardOnFile: 'card_last4' in b ? !!b.card_last4 : undefined,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
       setupMin: setupMin > 0 ? setupMin : undefined,

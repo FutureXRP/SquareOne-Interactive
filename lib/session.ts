@@ -171,11 +171,16 @@ export interface MemberBooking {
   // null = still a reservation in review; undefined = 0033 not run yet
   approvedAt?: string | null
   note?: string | null
+  // The booking's own page (agreement, card on file, pay) and whether a
+  // card is on file — undefined before 0037/0053.
+  payToken?: string
+  cardOnFile?: boolean
 }
 
 export async function getMyBookings(): Promise<MemberBooking[]> {
   // RLS scopes this to the member's own account.
   const sets = [
+    'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, payments(amount_cents, status)',
@@ -184,6 +189,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
     id: string; code: string; facility_id: string; title?: string; during: string
     price_cents: number; status: string; note?: string | null
     deposit_cents?: number | null; approved_at?: string | null
+    pay_token?: string | null; card_last4?: string | null
     payments: { amount_cents: number; status: string }[]
   }
   let rows: Row[] | null = null
@@ -211,6 +217,8 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       status: r.status,
       approvedAt: 'approved_at' in r ? (r.approved_at ?? null) : undefined,
       note: r.note ?? null,
+      payToken: r.pay_token ?? undefined,
+      cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
     }]
   })
 }

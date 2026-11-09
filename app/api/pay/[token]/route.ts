@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { stripe, stripeConfigured, siteUrl } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
+import { bookingDoc, ensureBookingCustomer } from '@/lib/server/booking-card'
 
 // Starts Stripe Checkout from a booking's pay link. No sign-in: holding
 // the link is the authorisation, the same way a payment link on an invoice
@@ -49,14 +50,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const label = which === 'custom' && amount < target.balanceCents
       ? 'Partial payment'
       : amount < target.balanceCents ? 'Deposit' : 'Balance'
-    // When the booking belongs to an account with a Stripe customer, tie
-    // the payment to it and save the card for later desk charges.
-    const { serviceDb } = await import('@/lib/server/billing')
+    // Every payment is tied to a Stripe customer — the member's, or one
+    // minted for a guest — and the card is saved for later use, so the
+    // card they pay with doubles as the booking's card on file for
+    // damages, as the rental agreement requires.
     let customer: string | undefined
-    if (row.account_id) {
-      const { data: acct } = await serviceDb().from('client_accounts')
-        .select('stripe_customer_id').eq('id', row.account_id).maybeSingle()
-      customer = (acct as { stripe_customer_id: string | null } | null)?.stripe_customer_id ?? undefined
+    try {
+      const doc = await bookingDoc(row.id)
+      if (doc) customer = await ensureBookingCustomer(doc)
+    } catch (e) {
+      console.warn('[pay] customer for card on file unavailable', e)
     }
     const session = await stripe().checkout.sessions.create({
       mode: 'payment',
