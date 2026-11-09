@@ -47,7 +47,9 @@ function SignupForm() {
       const due = await unsignedRequiredWaivers({ planId: planParam })
       if (due.length === 0) {
         // Card first when Stripe is live; otherwise activate directly.
-        if (await startMembershipCheckout(planParam, promoCode)) return
+        const started = await startMembershipCheckout(planParam, promoCode)
+        if (started === 'redirected') return
+        if (started === 'already_member') { router.replace('/account/billing?already=1'); return }
         await choosePlan(planParam)
         router.replace('/account/billing?welcome=1')
         return
@@ -82,7 +84,9 @@ function SignupForm() {
     if (plan) {
       // Stripe live: collect the card now and let the subscription activate
       // the membership. Otherwise activate directly (pay at the desk).
-      if (await startMembershipCheckout(plan.id, promoCode)) return
+      const started = await startMembershipCheckout(plan.id, promoCode)
+      if (started === 'redirected') return
+      if (started === 'already_member') { router.push('/account/billing?already=1'); return }
       await choosePlan(plan.id)
     }
     router.push('/account/billing?welcome=1')
