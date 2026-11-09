@@ -40,10 +40,32 @@ async function memberContact(accountId: string): Promise<{ email: string; name: 
 
 async function upsertSubscription(sub: Stripe.Subscription): Promise<void> {
   const accountId = sub.metadata.account_id
-  const planId = sub.metadata.plan_id
   if (!accountId) return
   const db = serviceDb()
-  const status = statusOf(sub)
+  let status = statusOf(sub)
+
+  // A duplicate signup leaves two Stripe subscriptions behind one account
+  // row. When one of them dies — staff canceling the accidental twin —
+  // the member's real membership must not be knocked over with it: if
+  // the customer still has another live subscription, adopt that one
+  // instead of recording the death.
+  if (status === 'canceled' || status === 'canceling') {
+    try {
+      const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id
+      if (customerId) {
+        const live = await stripe().subscriptions.list({ customer: customerId, status: 'active', limit: 10 })
+        const survivor = live.data.find((s) => s.id !== sub.id && (s.metadata.account_id ?? accountId) === accountId)
+        if (survivor) {
+          sub = survivor
+          status = statusOf(survivor)
+        }
+      }
+    } catch (e) {
+      console.warn('[webhook] survivor check failed', e)
+    }
+  }
+
+  const planId = sub.metadata.plan_id
   const row = {
     status,
     stripe_subscription_id: sub.id,
