@@ -9,7 +9,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
 import { checkCoupon, couponDiscountCents, couponLabel, couponMessage, recordRedemption, type Coupon } from '@/lib/coupons-store'
-import { isSupabaseConfigured } from '@/lib/supabase'
+import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 
@@ -51,7 +51,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [coupon, setCoupon] = useState<Coupon | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
   const [promoBusy, setPromoBusy] = useState(false)
-  const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number } | null>(null)
+  const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number; payToken?: string } | null>(null)
 
   // Dates come from the real clock, so this renders client-side only.
   useEffect(() => {
@@ -265,7 +265,15 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           note: `${f.name} rental ${res.code}`,
         }).catch(() => {})
       }
-      setConfirmed({ code: res.code, startH, hours, priceCents })
+      // The booking's own page — where the renter signs the rental
+      // agreement, adds a card on file, and pays. RLS lets a member read
+      // their own booking's token; if not, the email carries the link.
+      let payToken: string | undefined
+      try {
+        const { data } = await supabase().from('bookings').select('pay_token').eq('id', res.id).maybeSingle()
+        payToken = (data as { pay_token?: string } | null)?.pay_token ?? undefined
+      } catch { /* the confirmation email has the link too */ }
+      setConfirmed({ code: res.code, startH, hours, priceCents, payToken })
     } else if (res.conflict) {
       if (res.addonConflict) {
         setAddonConflict(true)
@@ -315,8 +323,20 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             {' '}Unpaid holds release automatically.
           </p>
         </div>
+        {confirmed.payToken && (
+          <div style={{ background: '#eef4fb', border: '1px solid #cfe0f3', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: '0 0 3px' }}>Next: sign the rental agreement &amp; add a card on file</p>
+            <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 10px', lineHeight: 1.55 }}>
+              Every event needs both — the agreement covers the facility rules and fees, and the card is only charged
+              for damages or an unpaid balance (we contact you first). About three minutes.
+            </p>
+            <Link href={`/pay/${confirmed.payToken}/agreement`} className="sq-btn sq-btn-primary" style={{ padding: '9px 16px' }}>Sign the agreement</Link>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <Link href="/account/bookings" className="sq-btn sq-btn-primary">View my bookings</Link>
+          <Link href={confirmed.payToken ? `/pay/${confirmed.payToken}` : '/account/bookings'} className={confirmed.payToken ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}>
+            {confirmed.payToken ? 'Pay & add a card' : 'View my bookings'}
+          </Link>
           <Link href="/facilities" className="sq-btn sq-btn-ghost">Book another room</Link>
         </div>
       </div>

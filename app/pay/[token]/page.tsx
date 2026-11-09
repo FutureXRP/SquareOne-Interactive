@@ -5,6 +5,8 @@ import { bookingForToken } from '@/lib/server/pay-links'
 import { serviceDb } from '@/lib/server/billing'
 import { cashAppQrSvg } from '@/lib/server/cashapp-qr'
 import { PayPanel } from './PayPanel'
+import { bookingDoc, saveCardFromSetupSession } from '@/lib/server/booking-card'
+import { CardOnFileButton } from '@/components/agreement/CardOnFileButton'
 
 // The facility's $cashtag, when staff have set one on Settings. Empty
 // string (or a pre-0040 database) simply hides the Cash App option.
@@ -55,11 +57,21 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 export default async function PayPage({ params, searchParams }: {
   params: Promise<{ token: string }>
-  searchParams: Promise<{ paid?: string }>
+  searchParams: Promise<{ paid?: string; signed?: string; card_session?: string }>
 }) {
   const { token } = await params
-  const { paid } = await searchParams
+  const { paid, signed, card_session: cardSession } = await searchParams
   const [found, tag] = await Promise.all([bookingForToken(token), cashtag()])
+
+  // Back from Stripe's "save a card" page: record the card now rather
+  // than waiting on the webhook (which records it too — idempotently).
+  let cardJustSaved = false
+  if (found && cardSession && /^cs_[A-Za-z0-9_]+$/.test(cardSession)) {
+    try { cardJustSaved = await saveCardFromSetupSession(cardSession, found.row.id) } catch (e) { console.error('[pay] card save', e) }
+  }
+  // The rental agreement and card on file — what every booking needs
+  // before the day. Null before migration 0053 runs.
+  const doc = found ? await bookingDoc(found.row.id).catch(() => null) : null
 
   if (!found) {
     return (
@@ -137,6 +149,49 @@ export default async function PayPage({ params, searchParams }: {
           <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} cashQr={cashQr} />
         )}
       </div>
+
+      {/* Before the day: the signed agreement and a card on file. */}
+      {doc && !canceled && (
+        <div className="sq-card" style={{ ...card, padding: '20px 24px', marginTop: 14 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+            Before your event
+          </p>
+          {(signed === '1' || cardJustSaved) && (
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, margin: '0 0 10px' }}>
+              {signed === '1' ? 'Agreement signed — thank you.' : 'Card saved — thank you.'}
+            </p>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '4px 0 12px', borderBottom: `1px solid ${LINE}` }}>
+            <span style={{ fontSize: 16, lineHeight: '20px', color: doc.agreement ? GREEN : RED }}>{doc.agreement ? '✓' : '1'}</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Event rental agreement</p>
+              <p style={{ fontSize: 12.5, color: SUB, margin: '2px 0 8px', lineHeight: 1.5 }}>
+                {doc.agreement
+                  ? `Signed by ${doc.agreement.signature} on ${new Date(doc.agreement.signedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}.`
+                  : 'Required for every event — facility rules, setup and cleanup, fees, and photo permission. Takes about three minutes.'}
+              </p>
+              <Link href={`/pay/${token}/agreement`} className={doc.agreement ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}
+                style={{ padding: doc.agreement ? '6px 13px' : '9px 16px', fontSize: doc.agreement ? 12 : 13, textDecoration: 'none' }}>
+                {doc.agreement ? 'View your signed copy' : 'Read & sign the agreement'}
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0 0' }}>
+            <span style={{ fontSize: 16, lineHeight: '20px', color: doc.card ? GREEN : RED }}>{doc.card ? '✓' : '2'}</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Card on file</p>
+              <p style={{ fontSize: 12.5, color: SUB, margin: '2px 0 8px', lineHeight: 1.5 }}>
+                {doc.card
+                  ? `${(doc.card.brand ?? 'Card').replace(/^./, (c) => c.toUpperCase())} ending ${doc.card.last4} is on file. It's only charged for damages, cleaning, storage, or an unpaid balance — and we'll contact you before any charge.`
+                  : 'Every reservation keeps a card on file for damages or unpaid balances, as the agreement explains. Nothing is charged when you add it — and we contact you before any charge. Paying online saves your card automatically.'}
+              </p>
+              <CardOnFileButton token={token} replace={!!doc.card} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <p style={{ fontSize: 11.5, color: FAINT, textAlign: 'center', margin: '14px 0 0', lineHeight: 1.6 }}>
         Have an account with us? <Link href="/account" style={{ color: BLUE, fontWeight: 600 }}>Sign in</Link> to

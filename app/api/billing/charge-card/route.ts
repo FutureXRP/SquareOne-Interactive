@@ -37,10 +37,13 @@ interface BookingRow {
   id: string; code: string; title: string; price_cents: number; status: string
   account_id: string | null
   deposit_cents?: number | null
+  card_customer_id?: string | null
+  card_pm_id?: string | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, price_cents, status, account_id, deposit_cents, card_customer_id, card_pm_id, payments(amount_cents, status)',
   'id, code, title, price_cents, status, account_id, deposit_cents, payments(amount_cents, status)',
   'id, code, title, price_cents, status, account_id, payments(amount_cents, status)',
 ]
@@ -75,21 +78,27 @@ export async function POST(req: Request) {
     const s = stripe()
 
     if (mode === 'saved') {
-      if (!b.account_id) {
-        return NextResponse.json({ error: 'no_account', message: 'This booking has no member account, so there is no saved card. Use "type the card" or send the pay link.' }, { status: 409 })
-      }
-      const { data: acct } = await db.from('client_accounts').select('stripe_customer_id').eq('id', b.account_id).maybeSingle()
-      const customerId = (acct as { stripe_customer_id: string | null } | null)?.stripe_customer_id
-      if (!customerId) {
-        return NextResponse.json({ error: 'no_saved_card', message: 'No card on file for this member yet. A card saves automatically the first time they pay online.' }, { status: 409 })
-      }
-      // The default card if one is set, otherwise the most recent.
-      const customer = await s.customers.retrieve(customerId)
-      const defaultPm = !customer.deleted ? customer.invoice_settings?.default_payment_method : null
-      let pmId = typeof defaultPm === 'string' ? defaultPm : defaultPm?.id
+      // The booking's own card on file (0053) wins — it works for guests
+      // too. Otherwise fall back to the member account's saved card.
+      let customerId: string | null | undefined = b.card_pm_id ? b.card_customer_id : null
+      let pmId: string | undefined = b.card_pm_id && b.card_customer_id ? b.card_pm_id : undefined
       if (!pmId) {
-        const pms = await s.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 })
-        pmId = pms.data[0]?.id
+        if (!b.account_id) {
+          return NextResponse.json({ error: 'no_account', message: 'No card on file for this booking yet. Have them add one from the booking\u2019s pay link, use "type the card", or send the pay link.' }, { status: 409 })
+        }
+        const { data: acct } = await db.from('client_accounts').select('stripe_customer_id').eq('id', b.account_id).maybeSingle()
+        customerId = (acct as { stripe_customer_id: string | null } | null)?.stripe_customer_id
+        if (!customerId) {
+          return NextResponse.json({ error: 'no_saved_card', message: 'No card on file for this member yet. A card saves automatically the first time they pay online.' }, { status: 409 })
+        }
+        // The default card if one is set, otherwise the most recent.
+        const customer = await s.customers.retrieve(customerId)
+        const defaultPm = !customer.deleted ? customer.invoice_settings?.default_payment_method : null
+        pmId = typeof defaultPm === 'string' ? defaultPm : defaultPm?.id
+        if (!pmId) {
+          const pms = await s.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 })
+          pmId = pms.data[0]?.id
+        }
       }
       if (!pmId) {
         return NextResponse.json({ error: 'no_saved_card', message: 'No card on file for this member yet. A card saves automatically the first time they pay online.' }, { status: 409 })
@@ -99,7 +108,7 @@ export async function POST(req: Request) {
         const pi = await s.paymentIntents.create({
           amount,
           currency: 'usd',
-          customer: customerId,
+          customer: customerId ?? undefined,
           payment_method: pmId,
           off_session: true,
           confirm: true,

@@ -10,7 +10,7 @@ import { getPlans, savePlan, addPlan as addPlanLive, deletePlan, type EditablePl
 import { slugify } from '@/lib/facilities-store'
 import { getFormLinks, setPlanWaiver, planRequires, FORM_LINKS_EVENT, type FormLink } from '@/lib/form-links-store'
 import { useDebouncedSave } from '@/lib/use-debounced-save'
-import { staffApplyCoupon } from '@/lib/billing-client'
+import { staffApplyCoupon, staffChangePlan } from '@/lib/billing-client'
 import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 
 function dollarsToCents(v: string): number {
@@ -53,6 +53,25 @@ export default function AdminMembershipsPage() {
   })
 
   const [roster, setRoster] = useState<MemberRosterRow[]>([])
+  // Staff-side plan change: which roster row is mid-change.
+  const [planBusy, setPlanBusy] = useState<string | null>(null)
+
+  const movePlan = async (r: MemberRosterRow, planId: string) => {
+    const to = plans.find((p) => p.id === planId)
+    if (!to || planBusy) return
+    if (!window.confirm(
+      `Move ${r.account} from ${r.plan} to ${to.name} (${formatCents(to.priceCents)}/${to.period})? `
+      + `Their existing card subscription is repriced with proration — the difference for the rest of this cycle `
+      + `lands on their next bill — and they're emailed the change. Any coupon on their billing carries over.`,
+    )) return
+    setPlanBusy(r.accountId)
+    const res = await staffChangePlan(r.accountId, planId)
+    setPlanBusy(null)
+    if (!res.ok) { window.alert(res.message ?? 'Could not change the plan.'); return }
+    getMemberRoster().then(setRoster).catch(() => {})
+    getMembershipStats().then(setStats).catch(() => {})
+    loadRealMrr()
+  }
   // The real monthly number from Stripe — list prices minus live coupons.
   // Null until it answers; the DB's list-price sum shows meanwhile.
   const [realMrr, setRealMrr] = useState<{ mrrCents: number; free: number; discounted: number } | null>(null)
@@ -283,6 +302,18 @@ export default function AdminMembershipsPage() {
                         {r.email && <> · <a href={`mailto:${r.email}`} style={{ color: BLUE, fontWeight: 600 }}>{r.email}</a></>}
                       </p>
                     </div>
+                    {/* Staff plan change — prorated on their existing
+                        Stripe subscription, confirmation emailed. */}
+                    {plans.length > 1 && (
+                      <select className="sq-select" style={{ width: 'auto', padding: '4px 8px', fontSize: 11.5 }}
+                        value="" disabled={planBusy === r.accountId}
+                        onChange={(e) => { if (e.target.value) movePlan(r, e.target.value) }}>
+                        <option value="">{planBusy === r.accountId ? 'Changing…' : 'Change plan…'}</option>
+                        {plans.filter((p) => p.active && p.id !== r.planId).map((p) => (
+                          <option key={p.id} value={p.id}>{p.name} · {formatCents(p.priceCents)}/{p.period}</option>
+                        ))}
+                      </select>
+                    )}
                     {r.status === 'canceling'
                       ? <span style={{ fontSize: 10, fontWeight: 700, color: '#7a5a14', background: '#faf0dc', padding: '1px 8px', borderRadius: 999 }}>canceling</span>
                       : r.status === 'past_due'

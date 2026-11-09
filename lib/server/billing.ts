@@ -53,6 +53,26 @@ export async function getCaller(req: Request): Promise<Caller | null> {
   }
 }
 
+export interface StaffCaller {
+  id: string
+  name: string
+  role: string
+}
+
+// Verifies the bearer token belongs to an active staff member. Null for
+// anyone else — members included — so a staff route can refuse cleanly.
+export async function getStaffCaller(req: Request): Promise<StaffCaller | null> {
+  const auth = req.headers.get('authorization') ?? ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
+  if (!token) return null
+  const db = serviceDb()
+  const { data: userData, error } = await db.auth.getUser(token)
+  if (error || !userData.user) return null
+  const { data } = await db.from('staff').select('id, name, role, active').eq('user_id', userData.user.id).maybeSingle()
+  const row = data as { id: string; name: string; role: string; active: boolean } | null
+  return row?.active ? { id: row.id, name: row.name, role: row.role } : null
+}
+
 // The Stripe customer for an account, created on first use.
 //
 // A stored id is checked before it's trusted. Test-mode and live-mode

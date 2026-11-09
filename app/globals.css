@@ -115,3 +115,11 @@ table { border-collapse: collapse; width: 100%; }
   }
   .sq-card:hover { transform: none; }
 }
+
+/* Printing a document (e.g. a signed rental agreement): only the page
+   content — no sidebar, footer, or on-screen controls. */
+@media print {
+  .sq-sidebar, .sq-noprint, .sq-shell footer { display: none !important; }
+  .sq-shell main { overflow: visible !important; }
+  body { background: #fff !important; }
+}

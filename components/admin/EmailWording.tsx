@@ -31,6 +31,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
     items: [
       { kind: 'payment.receipt', label: 'Payment receipt', blurb: 'A standalone receipt for money taken at the desk.' },
       { kind: 'payment.voided', label: 'Payment record corrected', blurb: 'A mistakenly recorded payment was struck.' },
+      { kind: 'booking.fee_charged', label: 'Extra fee charged', blurb: 'A cleaning, damage, storage, or overtime fee was charged to the card on file.' },
       { kind: 'refund.issued', label: 'Refund sent', blurb: 'Money went back to the customer.' },
     ],
   },
