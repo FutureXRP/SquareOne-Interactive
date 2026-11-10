@@ -32,14 +32,19 @@ export function depositPhrase(depositCents?: number | null): string {
   return depositCents && depositCents > 0 ? `the $${(depositCents / 100).toFixed(2).replace(/\.00$/, '')} deposit` : 'the deposit'
 }
 
+// What secures it, as a verb phrase: "pay at least the $50 deposit", or,
+// for a room with no deposit, "make a payment".
+export function securePhrase(depositCents?: number | null): string {
+  return depositCents && depositCents > 0 ? `pay at least ${depositPhrase(depositCents)}` : 'make a payment'
+}
+
 // The one-sentence rule for a booking, as the customer reads it.
 export function depositRuleSentence(o: { start: Date | number; depositCents?: number | null; now?: number }): string {
-  const dep = depositPhrase(o.depositCents)
   if (withinDepositWindow(o.start, o.now)) {
-    return `Your event is within ${DEPOSIT_WINDOW_DAYS} days, so please pay at least ${dep} within ${SECURE_HOURS} hours to secure your rooms — otherwise the booking is removed. You're welcome to pay in full.`
+    return `Your event is within ${DEPOSIT_WINDOW_DAYS} days, so please ${securePhrase(o.depositCents)} within ${SECURE_HOURS} hours to secure your rooms — otherwise the booking is removed. You're welcome to pay in full.`
   }
   const due = clockStartsAt(o.start, o.now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' })
-  return `No payment is needed today. When your event is ${DEPOSIT_WINDOW_DAYS} days away (${due}), you'll have ${SECURE_HOURS} hours to pay at least ${dep} to secure your rooms — otherwise the booking is removed. You're welcome to pay part or all of it sooner.`
+  return `No payment is needed today. When your event is ${DEPOSIT_WINDOW_DAYS} days away (${due}), you'll have ${SECURE_HOURS} hours to ${securePhrase(o.depositCents)} to secure your rooms — otherwise the booking is removed. You're welcome to pay part or all of it sooner.`
 }
 
 // The general rule, for pages that aren't about one booking.
@@ -47,3 +52,10 @@ export const DEPOSIT_RULE_GENERAL =
   `Parties booked within ${DEPOSIT_WINDOW_DAYS} days of the event must pay at least the deposit within ${SECURE_HOURS} hours to secure their rooms. ` +
   `Booked further out? Nothing is due yet — when your event is ${DEPOSIT_WINDOW_DAYS} days away, you'll have ${SECURE_HOURS} hours to pay at least the deposit. ` +
   `Unpaid bookings are removed after those ${SECURE_HOURS} hours. You can always pay in full.`
+
+// Is a booking secured? At least the deposit paid — or, when the booking
+// carries no deposit, any payment at all. One definition for the hourly
+// job, the desk, online payments, and every email.
+export function isSecured(paidCents: number, depositCents?: number | null): boolean {
+  return depositCents && depositCents > 0 ? paidCents >= depositCents : paidCents > 0
+}

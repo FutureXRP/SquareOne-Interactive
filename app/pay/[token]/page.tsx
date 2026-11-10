@@ -241,7 +241,7 @@ export default async function PayPage({ params, searchParams }: {
 
       <p style={{ fontSize: 11.5, color: FAINT, textAlign: 'center', margin: '14px 0 0', lineHeight: 1.6 }}>
         Have an account with us? <Link href="/account" style={{ color: BLUE, fontWeight: 600 }}>Sign in</Link> to
-        see all your bookings, reschedule, or cancel.
+        see all your bookings, request changes, or cancel.
       </p>
     </Shell>
   )

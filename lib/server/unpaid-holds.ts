@@ -1,5 +1,5 @@
 import { serviceDb, sendAndLog, alertRecipients } from '@/lib/server/billing'
-import { withinDepositWindow } from '@/lib/payment-policy'
+import { withinDepositWindow, isSecured } from '@/lib/payment-policy'
 import { bookingFactsAny, deadlinePhrase } from '@/lib/server/booking-facts'
 import { emailForStaffUser } from '@/lib/server/event-facts'
 import {
@@ -16,7 +16,7 @@ import {
 // removed, and the admins are told it's unpaid. When it runs out with still nothing paid, the hold is canceled,
 // the customer gets the "hold ran out" email, and the admins get the
 // list. Any payment confirms the booking (status leaves 'hold'), which
-// is what stops the clock; so does staff confirming it by hand.
+// is what stops the clock; so does staff choosing “Keep without deposit”.
 //
 // Nothing is ever removed without its notice first: the deadline that
 // counts is the one set when the warning went out (hold_warned_at), never
@@ -30,6 +30,7 @@ interface HoldRow {
   client_name: string
   during: string
   price_cents: number
+  deposit_cents?: number | null
   status: string
   approved_at?: string | null
   hold_expires_at: string | null
@@ -97,11 +98,11 @@ export async function adminRecipients(exclude?: string | null): Promise<string[]
 export async function startHoldClock(bookingId: string, now = Date.now()): Promise<string | null> {
   const db = serviceDb()
   const { data, error } = await db.from('bookings')
-    .select('id, during, price_cents, status, hold_warned_at, payments(amount_cents, status)')
+    .select('id, during, price_cents, deposit_cents, status, hold_warned_at, payments(amount_cents, status)')
     .eq('id', bookingId).maybeSingle()
   if (error || !data) return null // 42703 before 0054
-  const r = data as unknown as Pick<HoldRow, 'id' | 'during' | 'price_cents' | 'status' | 'hold_warned_at' | 'payments'>
-  if (r.status !== 'hold' || r.hold_warned_at || r.price_cents <= 0 || paidOn(r) > 0) return null
+  const r = data as unknown as Pick<HoldRow, 'id' | 'during' | 'price_cents' | 'deposit_cents' | 'status' | 'hold_warned_at' | 'payments'>
+  if (r.status !== 'hold' || r.hold_warned_at || r.price_cents <= 0 || isSecured(paidOn(r), r.deposit_cents)) return null
   const start = startOf(r.during)
   if (!start || start.getTime() <= now) return null
   // More than 14 days out: nothing is due yet — the hourly job starts
@@ -149,7 +150,7 @@ async function hasPendingClaim(bookingId: string): Promise<boolean> {
 export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number; released: number; kept: number } | null> {
   const db = serviceDb()
   const { data, error } = await db.from('bookings')
-    .select('id, code, client_name, during, price_cents, status, approved_at, hold_expires_at, hold_warned_at, note, facilities:facility_id(name), payments(amount_cents, status)')
+    .select('id, code, client_name, during, price_cents, deposit_cents, status, approved_at, hold_expires_at, hold_warned_at, note, facilities:facility_id(name), payments(amount_cents, status)')
     .eq('status', 'hold')
     .limit(500)
   // hold_warned_at is missing until 0054 runs — then there is no clock.
@@ -161,7 +162,9 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
   let kept = 0
 
   for (const r of data as unknown as HoldRow[]) {
-    if (r.price_cents <= 0 || paidOn(r) > 0) continue
+    // Secured (at least the deposit, or any payment when there is none) —
+    // nothing to chase. A partial payment below the deposit is not.
+    if (r.price_cents <= 0 || isSecured(paidOn(r), r.deposit_cents)) continue
     const start = startOf(r.during)
     // A hold for something that has already started is history, not a
     // booking anyone can still pay for in time — leave it to the desk.

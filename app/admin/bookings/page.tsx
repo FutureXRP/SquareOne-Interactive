@@ -1,4 +1,6 @@
 'use client'
+import { agreementMatchesTime } from '@/lib/rental-agreement'
+import { tulsaInstant } from '@/lib/tulsa-time'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { PageHero, HeroStat } from '@/components/admin/PageHero'
@@ -10,7 +12,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, addStaffBookingMulti, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, findAccountByEmail, type AccountContact,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, keepWithoutDeposit, reinstateBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, findAccountByEmail, type AccountContact,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -400,11 +402,27 @@ export default function AdminBookingsPage() {
                 </span>
               )}
               <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
-              {b.status !== 'canceled' && canBook && (
+              {b.leadBookingId && (
+                // An extra room on a package/multi-room booking: everything
+                // is done on the main booking, and this room follows it.
+                <span style={{ fontSize: 11, color: FAINT }}>
+                  Part of {bookings.find((x) => x.id === b.leadBookingId)?.code ?? 'another booking'}
+                </span>
+              )}
+              {b.status !== 'canceled' && canBook && !b.leadBookingId && (
                 <span style={{ display: 'flex', gap: 6 }}>
-                  {isInReview(b) && (
+                  {isInReview(b) && !b.leadBookingId && (
                     <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }}
-                      onClick={() => approveBooking(b.id, me?.id ?? null)}>Confirm reservation</button>
+                      onClick={() => approveBooking(b.id, me?.id ?? null)}>Approve request</button>
+                  )}
+                  {b.status === 'hold' && !b.leadBookingId && b.priceCents > 0
+                    && !(b.depositCents && b.depositCents > 0 ? b.paidCents >= b.depositCents : b.paidCents > 0) && (
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
+                      title="Stops the 24-hour deposit clock — the deposit is still owed"
+                      onClick={async () => {
+                        if (!window.confirm(`Keep ${b.code} without its deposit? It won't be removed for non-payment — the deposit is still owed.`)) return
+                        setBusyWrite(true); await keepWithoutDeposit(b.id); setBusyWrite(false)
+                      }}>Keep without deposit</button>
                   )}
                   {b.paidCents < b.priceCents && b.priceCents > 0 && (
                     <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => {
@@ -420,15 +438,15 @@ export default function AdminBookingsPage() {
                   <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => { setEditingId(isEditing ? null : b.id); setPayingId(null) }}>{isEditing ? 'Close' : 'Edit'}</button>
                 </span>
               )}
-              {b.status === 'canceled' && canBook && (
+              {b.status === 'canceled' && canBook && !b.leadBookingId && (
                 // A canceled booking that really happened (a hold that
                 // expired before the party, say) can come back — then
                 // payments and edits work on it like any other booking.
                 <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
                   onClick={async () => {
-                    if (!window.confirm(`Reinstate ${b.code} for ${b.client}? It becomes a live booking again — you can then take payment or edit it.`)) return
+                    if (!window.confirm(`Reinstate ${b.code} for ${b.client}? It comes back as a live booking (on the deposit rule if it isn't secured yet), and the customer is emailed.`)) return
                     setBusyWrite(true)
-                    const ok = await updateBookingFields(b.id, { status: 'confirmed' }, me?.id ?? null)
+                    const ok = await reinstateBooking(b)
                     setBusyWrite(false)
                     if (!ok) window.alert('Could not reinstate — the room may have been rebooked for that time.')
                   }}>
@@ -1023,8 +1041,8 @@ export default function AdminBookingsPage() {
               {inReview.length} reservation{inReview.length === 1 ? '' : 's'} waiting for approval
             </p>
             <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
-              Customer bookings nobody has signed off on yet. Confirming locks the room in and sends
-              their approval email — with a direct pay link if anything is owed.
+              Customer bookings nobody has signed off on yet. Approving sends their approval email with a pay link.
+              It doesn&rsquo;t waive the deposit — an unpaid party within 14 days still has 24 hours to pay it.
             </p>
           </div>
           {[...inReview].sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH).map((b, i) => (
@@ -1040,11 +1058,31 @@ export default function AdminBookingsPage() {
                   {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {formatCents(b.priceCents)}
                   {b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ' · unpaid'}
                 </p>
+                {(() => {
+                  // The store's own price for this room and time (before any
+                  // add-ons or coupon) — so a tampered request stands out.
+                  const r = rooms.find((x) => x.id === b.roomId)
+                  if (!r || b.packageId) return null
+                  const [yy, mm, dd] = b.date.split('-').map(Number)
+                  const storeCents = rentalPriceCentsAt(r, new Date(yy, mm - 1, dd).getDay(), b.startH, Math.round(b.hours))
+                  if (storeCents <= 0 || b.priceCents >= storeCents) return null
+                  return (
+                    <p style={{ fontSize: 11.5, margin: '2px 0 0', fontWeight: 700, color: '#b3261e' }}>
+                      Check the price: the store charges {formatCents(storeCents)} for this room and time before add-ons;
+                      this request is {formatCents(b.priceCents)}{(b.note ?? '').toLowerCase().includes('coupon') || (b.note ?? '').toLowerCase().includes('promo') ? ' (a coupon is noted)' : ''}.
+                    </p>
+                  )
+                })()}
                 {(agreements !== null || b.card !== undefined) && (
                   <p style={{ fontSize: 11, margin: '2px 0 0', fontWeight: 600 }}>
-                    {agreements !== null && (agreements.has(b.leadBookingId ?? b.id)
-                      ? <span style={{ color: GREEN }}>✓ agreement signed</span>
-                      : <span style={{ color: RED }}>✗ no signed agreement</span>)}
+                    {agreements !== null && (() => {
+                      const ag = agreements.get(b.leadBookingId ?? b.id)
+                      const from = tulsaInstant(b.date, b.startH)
+                      if (!ag) return <span style={{ color: RED }}>✗ no signed agreement</span>
+                      return agreementMatchesTime(ag.snapshot, from, new Date(from.getTime() + b.hours * 3600_000))
+                        ? <span style={{ color: GREEN }}>✓ agreement signed</span>
+                        : <span style={{ color: RED }}>✗ agreement out of date — needs signing again</span>
+                    })()}
                     {agreements !== null && b.card !== undefined && <span style={{ color: FAINT }}> · </span>}
                     {b.card !== undefined && (b.card
                       ? <span style={{ color: GREEN }}>✓ card on file</span>
@@ -1054,7 +1092,7 @@ export default function AdminBookingsPage() {
               </div>
               <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 11.5 }} disabled={busyWrite}
                 onClick={async () => { setBusyWrite(true); await approveBooking(b.id, me?.id ?? null); setBusyWrite(false) }}>
-                Confirm reservation
+                Approve request
               </button>
             </div>
           ))}

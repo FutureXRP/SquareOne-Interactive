@@ -3,6 +3,7 @@
 // conflict prevention. The Board, Bookings page, and member portal all read
 // from here. Money is integer cents.
 
+import { bookingWaiversDue } from '@/lib/waivers-staff'
 import { tulsaInstant, tulsaDayHour, tulsaToday } from '@/lib/tulsa-time'
 import { supabase, emit } from '@/lib/supabase'
 import { notify, notifyReport } from '@/lib/notify-client'
@@ -452,8 +453,38 @@ export async function addStaffBookingMulti(
   return { ok: true, code: primary.code }
 }
 
-// Staff sign-off on a reservation. This is what turns "in review" into a
-// confirmed booking for the customer.
+// Staff choosing to keep an unpaid hold without its deposit: it becomes
+// confirmed, which stops the 24-hour deposit clock (the deposit is still
+// owed). The one deliberate override to the deposit rule.
+export async function keepWithoutDeposit(id: string): Promise<boolean> {
+  const { error } = await supabase().from('bookings')
+    .update({ status: 'confirmed', hold_expires_at: null, hold_warned_at: null })
+    .eq('id', id).eq('status', 'hold')
+  if (error) { console.error('[bookings]', error.message); return false }
+  emit(BOOKINGS_EVENT)
+  return true
+}
+
+// Bring back a canceled booking. It returns as a hold — so the deposit
+// rule applies again unless it's already secured — with the old cancel
+// stamps cleared, and the customer hears that it's back on.
+export async function reinstateBooking(b: StaffBooking): Promise<boolean> {
+  const secured = b.depositCents && b.depositCents > 0 ? b.paidCents >= b.depositCents : b.paidCents > 0
+  const { error } = await supabase().from('bookings')
+    .update({
+      status: secured ? 'confirmed' : 'hold',
+      canceled_at: null, canceled_by: null, canceled_via: null,
+      hold_expires_at: null, hold_warned_at: null,
+    })
+    .eq('id', b.id).eq('status', 'canceled')
+  if (error) { console.error('[bookings]', error.message); return false }
+  emit(BOOKINGS_EVENT)
+  notify(secured ? 'booking.confirmed' : 'booking.hold', b.id)
+  return true
+}
+
+// Staff sign-off on a reservation request — the review, not the money:
+// an unpaid hold still owes its deposit on the 14-day rule after this.
 export async function approveBooking(id: string, staffId: string | null): Promise<boolean> {
   const { error } = await supabase().from('bookings')
     .update({ approved_at: new Date().toISOString(), approved_by: staffId })
@@ -596,6 +627,12 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
     return false
   }
   const sb = supabase()
+  // Waivers come before money — online that's enforced; at the desk staff
+  // are stopped and asked, so taking cash without one is a deliberate call.
+  if (typeof window !== 'undefined' && !booking.leadBookingId) {
+    const due = await bookingWaiversDue({ id: booking.id, roomId: booking.roomId, accountId: booking.accountId, createdAt: booking.createdAt }).catch(() => [])
+    if (due.length > 0 && !window.confirm(`${due.map((w) => w.name).join(', ')} isn't signed for this booking yet. Waivers are signed before payment — open their booking page to sign it first.\n\nTake the payment anyway?`)) return false
+  }
   const remaining = booking.priceCents - booking.paidCents
   const amount = Math.min(amountCents ?? remaining, remaining)
   if (amount <= 0) return false
@@ -630,7 +667,7 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   const paidAfter = booking.paidCents + amount
   const secured = !booking.depositCents || booking.depositCents <= 0 || paidAfter >= booking.depositCents
   if (booking.status === 'hold' && secured) {
-    await supabase().from('bookings').update({ status: 'confirmed', hold_expires_at: null })
+    await supabase().from('bookings').update({ status: 'confirmed', hold_expires_at: null, hold_warned_at: null })
       .eq('id', booking.id).eq('status', 'hold')
   }
   emit(BOOKINGS_EVENT)
@@ -684,12 +721,17 @@ export async function voidPayment(p: PaymentRow, staffId: string | null): Promis
   // secured any more — it goes back on the deposit clock as a hold.
   if (p.bookingId) {
     const { data: bk } = await sb.from('bookings')
-      .select('status, deposit_cents, payments(amount_cents, status)').eq('id', p.bookingId).maybeSingle()
-    const row = bk as { status: string; deposit_cents: number | null; payments: { amount_cents: number; status: string }[] } | null
-    if (row && row.status === 'confirmed') {
+      .select('status, deposit_cents, created_by, payments(amount_cents, status)').eq('id', p.bookingId).maybeSingle()
+    const row = bk as { status: string; deposit_cents: number | null; created_by: string | null; payments: { amount_cents: number; status: string }[] } | null
+    // Only a customer's own booking goes back on the clock — one staff
+    // booked as confirmed at the desk stays confirmed (that was their call).
+    if (row && row.status === 'confirmed' && !row.created_by) {
       const paidNow = row.payments.filter((x) => x.status === 'paid').reduce((n, x) => n + x.amount_cents, 0)
       const floor = row.deposit_cents && row.deposit_cents > 0 ? row.deposit_cents : 1
-      if (paidNow < floor) await sb.from('bookings').update({ status: 'hold' }).eq('id', p.bookingId).eq('status', 'confirmed')
+      if (paidNow < floor) {
+        await sb.from('bookings').update({ status: 'hold', hold_warned_at: null, hold_expires_at: null })
+          .eq('id', p.bookingId).eq('status', 'confirmed')
+      }
     }
   }
   // The customer already holds a receipt for this, so the correction

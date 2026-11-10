@@ -1130,6 +1130,7 @@ const staffActivity: ReportDef = {
     if (!pays) return EMPTY('Could not read payments.')
     const { data: bookRows } = await supabase()
       .from('bookings').select('created_at, price_cents, staff:created_by(name)')
+      .is('lead_booking_id', null)
       .gte('created_at', from).lt('created_at', to).limit(5000)
     const books = (bookRows ?? []) as unknown as { price_cents: number; staff: { name: string } | null }[]
     const m = new Map<string, { books: number; booked: number; taken: number; payments: number }>()

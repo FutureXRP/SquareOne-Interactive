@@ -16,6 +16,8 @@ export interface AgreementStatus {
   // 'uploaded' = a PDF signed outside the system, attached by staff (0059).
   source?: 'online' | 'uploaded'
   fileName?: string | null
+  // What it said when signed — to tell whether it still matches the booking.
+  snapshot?: Pick<AgreementSnapshot, 'eventDate' | 'timeFrom' | 'timeTo'>
 }
 
 export interface AgreementRecord extends AgreementStatus {
@@ -28,11 +30,11 @@ export interface AgreementRecord extends AgreementStatus {
 // booking id → signed status, for the Bookings tab's badges.
 export async function getAgreementStatuses(): Promise<Map<string, AgreementStatus> | null> {
   let res: { data: unknown; error: unknown } = await supabase().from('rental_agreements')
-    .select('booking_id, signed_at, signature, rep_name, source, file_name').limit(5000)
-  if (res.error) res = await supabase().from('rental_agreements').select('booking_id, signed_at, signature, rep_name').limit(5000)
+    .select('booking_id, signed_at, signature, rep_name, source, file_name, snapshot').limit(5000)
+  if (res.error) res = await supabase().from('rental_agreements').select('booking_id, signed_at, signature, rep_name, snapshot').limit(5000)
   if (res.error) return null
-  return new Map((res.data as { booking_id: string; signed_at: string; signature: string; rep_name: string | null; source?: 'online' | 'uploaded'; file_name?: string | null }[])
-    .map((r) => [r.booking_id, { signedAt: r.signed_at, signature: r.signature, repName: r.rep_name, source: r.source ?? 'online', fileName: r.file_name ?? null }]))
+  return new Map((res.data as { booking_id: string; signed_at: string; signature: string; rep_name: string | null; source?: 'online' | 'uploaded'; file_name?: string | null; snapshot?: AgreementSnapshot | null }[])
+    .map((r) => [r.booking_id, { signedAt: r.signed_at, signature: r.signature, repName: r.rep_name, source: r.source ?? 'online', fileName: r.file_name ?? null, snapshot: r.snapshot ?? undefined }]))
 }
 
 async function bearer(): Promise<string | null> {

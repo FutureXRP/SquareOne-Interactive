@@ -50,6 +50,7 @@ export async function getReport(rangeDays: number): Promise<ReportData> {
     sb.from('bookings')
       .select('status', { count: 'exact' })
       .gte('created_at', startIso)
+      .is('lead_booking_id', null) // a package's extra rooms aren't extra bookings
       .in('status', ['hold', 'confirmed', 'completed']),
     sb.from('check_ins').select('id', { count: 'exact', head: true }).gte('at', startIso),
     sb.from('member_subscriptions').select('id', { count: 'exact', head: true }).gte('created_at', startIso),

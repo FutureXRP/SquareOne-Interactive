@@ -77,8 +77,20 @@ export async function POST(req: Request) {
     const base = siteUrl(req)
     const label = which === 'custom' && amount < balance ? 'Partial payment' : amount < balance ? 'Deposit' : 'Balance'
 
+    // Same as the pay link: a checkout page closes at the hold's 24-hour
+    // deadline (Stripe allows 30 minutes to 24 hours).
+    let expiresAt: number | undefined
+    {
+      const { data: h } = await db.from('bookings').select('status, hold_expires_at, hold_warned_at').eq('id', b.id).maybeSingle()
+      const hold = h as { status: string; hold_expires_at: string | null; hold_warned_at: string | null } | null
+      if (hold?.status === 'hold' && hold.hold_warned_at && hold.hold_expires_at) {
+        const now = Math.floor(Date.now() / 1000)
+        expiresAt = Math.min(now + 24 * 3600 - 60, Math.max(now + 31 * 60, Math.floor(new Date(hold.hold_expires_at).getTime() / 1000)))
+      }
+    }
     const session = await stripe().checkout.sessions.create({
       mode: 'payment',
+      ...(expiresAt ? { expires_at: expiresAt } : {}),
       customer,
       line_items: [{
         quantity: 1,

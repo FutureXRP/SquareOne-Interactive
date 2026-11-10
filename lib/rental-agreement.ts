@@ -176,3 +176,18 @@ export interface AgreementSnapshot {
   // The rooms the booking actually held when it was signed (0055+).
   bookedRooms?: string[]
 }
+
+// Does a signed agreement still describe this booking's date and time?
+// Same wording the agreement froze when it was signed (Tulsa time), so an
+// agreement signed before a move reads as needing signing again — on the
+// renter's page, in emails, on the staff board, and in My bookings alike.
+export function agreementMatchesTime(
+  snap: Pick<AgreementSnapshot, 'eventDate' | 'timeFrom' | 'timeTo'> | null | undefined,
+  from: Date, to: Date,
+): boolean {
+  if (!snap || !snap.eventDate) return true // nothing to compare (e.g. very old rows)
+  const tz = 'America/Chicago'
+  const hour = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getUTCMinutes() ? '2-digit' : undefined, timeZone: tz })
+  const date = from.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: tz })
+  return snap.eventDate === date && snap.timeFrom === hour(from) && snap.timeTo === hour(to)
+}
