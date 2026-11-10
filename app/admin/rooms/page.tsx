@@ -224,11 +224,13 @@ export default function RoomsAdminPage() {
               {editing.setupMin !== undefined && (
                 <>
                   <div>
-                    <label className="sq-label" htmlFor="r-setup">Setup time before</label>
-                    <select id="r-setup" className="sq-select" value={editing.setupMin} onChange={(e) => patch(editing.id, { setupMin: Number(e.target.value) })}>
-                      <option value={0}>None</option>
-                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m >= 60 ? `${m / 60} hour${m > 60 ? 's' : ''}` : `${m} min`}</option>)}
+                    <label className="sq-label" htmlFor="r-setup">Setup time before (clients may arrive)</label>
+                    {/* Our policy: clients may arrive 1 hour before their booking, so
+                        a room's setup window is never less than an hour. */}
+                    <select id="r-setup" className="sq-select" value={Math.max(editing.setupMin, 60)} onChange={(e) => patch(editing.id, { setupMin: Number(e.target.value) })}>
+                      {[60, 90, 120].map((m) => <option key={m} value={m}>{`${m / 60} hour${m > 60 ? 's' : ''}`}</option>)}
                     </select>
+                    <p style={{ fontSize: 11, color: '#8a98ab', margin: '4px 0 0' }}>Clients may arrive 1 hour before their booking.</p>
                   </div>
                   <div>
                     <label className="sq-label" htmlFor="r-cleanup">Cleanup time after</label>
