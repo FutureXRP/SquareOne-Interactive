@@ -102,6 +102,9 @@ export interface BookingFacts {
   // Set only while the booking is still an unpaid hold that has been
   // given its 24 hours; past it, the hold is removed.
   holdDeadline?: string
+  // An unpaid hold more than 14 days out: the day its 24 hours to pay the
+  // deposit begin ("Saturday, December 5"). Nothing is due before then.
+  depositClockOn?: string
   // Waivers this booking's room still needs signed (0054). Signed on the
   // booking's own page, before payment — nobody signs at the door.
   waiversDue?: number
@@ -117,6 +120,10 @@ function bookingCta(b: BookingFacts, paidLabel = 'View my booking'): { label: st
   if (owed <= 0) return { label: paidLabel, href: b.payUrl }
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
   const due = depositDue > 0 && depositDue < owed ? depositDue : owed
+  // More than 14 days out nothing is due yet — the button invites, not demands.
+  if (b.depositClockOn && b.paidCents === 0) {
+    return { label: b.waiversDue ? 'Sign the waiver & view my booking' : 'View my booking (pay any time)', href: b.payUrl }
+  }
   return { label: b.waiversDue ? `Sign the waiver & pay ${money(due)}` : `Pay ${money(due)} now`, href: b.payUrl }
 }
 
@@ -135,9 +142,9 @@ function paymentTerms(b: BookingFacts): string {
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
   // An unpaid hold's own deadline (holdTerms) is what governs the deposit
   // until the first payment lands — not the 14-day rule.
-  const onHoldClock = !!b.holdDeadline && b.paidCents === 0
+  const onHoldClock = (!!b.holdDeadline || !!b.depositClockOn) && b.paidCents === 0
   const deposit = depositDue > 0 && depositDue < owed && !onHoldClock
-    ? `Your ${money(depositDue)} deposit is due at least 14 days before your event (right away if it's sooner) — if it isn't in by then, the date may be released. `
+    ? `At least your ${money(depositDue)} deposit is due by 14 days before your event — once it's within 14 days, you have 24 hours to pay it or the date is released. `
     : ''
   const choices = deposit ? 'the deposit, the full balance, or any amount in between' : 'the full balance or part of it now'
   return `<p style="margin:0 0 6px;">${deposit}The remaining balance is due no later than 10 minutes before your
@@ -162,15 +169,26 @@ function cardTerms(b: BookingFacts): string {
     cleaning, storage, a late exit, or an unpaid balance — and we'll contact you before any charge.</p>`
 }
 
-// The 24-hour rule for an unpaid hold: pay something by the deadline or
-// the booking comes off the calendar. Silent once anything is paid.
+// The deposit rule for an unpaid hold (lib/payment-policy.ts): within 14
+// days of the event, at least the deposit within 24 hours or the booking
+// is removed; further out, nothing is due until the event is 14 days away.
+// Paying in full is always fine. Silent once anything is paid.
 function holdTerms(b: BookingFacts): string {
-  if (!b.holdDeadline || b.paidCents > 0) return ''
-  const depositDue = b.depositCents && b.depositCents > 0 ? b.depositCents : 0
-  const ask = depositDue > 0 && depositDue < b.priceCents ? `pay at least the ${money(depositDue)} deposit` : 'make a payment'
-  return `<p style="margin:0 0 6px;padding:10px 14px;background:#fdecea;border-radius:10px;color:${INK};">
-    <strong>This booking is unpaid.</strong> Please ${ask} by <strong>${b.holdDeadline}</strong> —
-    unpaid holds are removed after 24 hours so the time can go to someone else.</p>`
+  if (b.paidCents > 0) return ''
+  const dep = b.depositCents && b.depositCents > 0 && b.depositCents < b.priceCents ? `the ${money(b.depositCents)} deposit` : 'the deposit'
+  if (b.holdDeadline) {
+    return `<p style="margin:0 0 6px;padding:10px 14px;background:#fdecea;border-radius:10px;color:${INK};">
+      <strong>Please pay at least ${dep} by ${b.holdDeadline}</strong> to secure your rooms. Parties within
+      14 days of their event have 24 hours to pay the deposit — otherwise the booking is removed so the time can
+      go to someone else. You're welcome to pay in full.</p>`
+  }
+  if (b.depositClockOn) {
+    return `<p style="margin:0 0 6px;padding:10px 14px;background:#f4f7fb;border-radius:10px;color:${INK};">
+      <strong>No payment is needed today.</strong> When your event is 14 days away — on ${b.depositClockOn} —
+      we'll email you, and you'll have 24 hours to pay at least ${dep} to secure your rooms, or the booking is
+      removed. You're welcome to pay part or all of it sooner.</p>`
+  }
+  return ''
 }
 
 // Waivers are part of booking: signed on the booking's page before paying.
@@ -336,7 +354,8 @@ export function bookingCanceled(b: BookingFacts): EmailBody {
     b.canceledVia === 'member'
       ? `<p style="margin:0 0 6px;">As you requested, this booking is canceled:</p>`
     : b.canceledVia === 'hold_expired'
-      ? `<p style="margin:0 0 6px;">The 24-hour hold on this booking ran out before payment arrived, so the room has been released:</p>`
+      ? `<p style="margin:0 0 6px;">Parties within 14 days of their event need at least the deposit paid within 24 hours,
+          and none arrived for this booking — so the rooms have been released:</p>`
     : b.canceledVia === 'staff'
       ? `<p style="margin:0 0 6px;">${b.canceledByName ? `${b.canceledByName} at SquareOne` : 'Our team'} canceled this booking:</p>`
       : `<p style="margin:0 0 6px;">We've canceled this booking:</p>`
@@ -471,11 +490,13 @@ export function bookingApprovalAlert(b: BookingFacts): EmailBody {
          ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
          ...(owed > 0 ? [['Still owed', money(owed)] as [string, string]] : []),
          ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
-         ...(b.holdDeadline && b.paidCents === 0 ? [['Payment', `<span style="color:#b3261e;">Unpaid — removed ${b.holdDeadline} unless paid</span>`] as [string, string]] : []),
+         ...(b.holdDeadline && b.paidCents === 0 ? [['Payment', `<span style="color:#b3261e;">Unpaid — removed ${b.holdDeadline} unless the deposit is paid</span>`] as [string, string]] : []),
+         ...(b.depositClockOn && b.paidCents === 0 ? [['Payment', `Nothing due yet — the 24 hours to pay the deposit start ${b.depositClockOn} (14 days out)`] as [string, string]] : []),
        ])}
        <p style="margin:0;">${b.holdDeadline && b.paidCents === 0
-         ? `Nothing has been paid yet. The customer has been told they have 24 hours to pay or the booking is removed —
-            it comes off the calendar automatically on ${b.holdDeadline} unless a payment lands or someone confirms it.`
+         ? `Nothing has been paid yet. The event is within 14 days, so the customer has been told they have 24 hours to
+            pay at least the deposit — it comes off the calendar automatically on ${b.holdDeadline} unless a payment
+            lands or someone confirms it.`
          : 'It holds the room until someone approves or cancels it — the customer is waiting on your answer.'}</p>`,
       { label: 'Review & approve', href: siteLink('/admin/bookings') },
     ),
@@ -487,10 +508,11 @@ export function bookingApprovalAlert(b: BookingFacts): EmailBody {
 // unpaid hold that hasn't already had the deadline in its hold email.
 export function holdPaymentWarning(b: BookingFacts): EmailBody {
   return {
-    subject: `Action needed: pay within 24 hours to keep ${b.room} on ${b.date}`,
+    subject: `Action needed: pay your deposit within 24 hours to keep ${b.room} on ${b.date}`,
     html: shell(
-      `Your booking is unpaid, ${b.name.split(' ')[0]}`,
-      `<p style="margin:0 0 6px;">We're holding this for you, but nothing has been paid on it yet:</p>
+      `Time to secure your booking, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">Your event is within 14 days, and nothing has been paid on it yet. Parties within
+         14 days need at least the deposit paid within 24 hours to keep their rooms:</p>
        ${detailRows([
          ['Confirmation', b.code],
          ['Room', b.room],
@@ -499,10 +521,11 @@ export function holdPaymentWarning(b: BookingFacts): EmailBody {
          ['Total', money(b.priceCents)],
          ...(b.holdDeadline ? [['Pay by', b.holdDeadline] as [string, string]] : []),
        ])}
-       ${holdTerms(b) || `<p style="margin:0 0 6px;"><strong style="color:${INK};">You have 24 hours to pay or this booking will be removed.</strong></p>`}
+       ${holdTerms(b) || `<p style="margin:0 0 6px;"><strong style="color:${INK};">You have 24 hours to pay at least the deposit, or this booking will be removed.</strong></p>`}
        ${waiverTerms(b)}
-       <p style="margin:0 0 6px;">Pay online with the button below, by Cash App, or in cash at the front desk. Once a
-         payment is in, the booking is yours and the deadline goes away.</p>
+       <p style="margin:0 0 6px;">Pay online with the button below — the deposit, the full balance, or anything in
+         between — or by Cash App, or in cash at the front desk. Once at least the deposit is in, your rooms are secured
+         and the deadline goes away. The rest is due no later than 10 minutes before your event starts.</p>
        <p style="margin:10px 0 0;">Changed your plans? Just reply and let us know, and we'll release the time for someone else.</p>`,
       bookingCta(b),
     ),
@@ -532,13 +555,13 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
     </tr>`).join('')
   const parts: string[] = []
   if (o.warned.length > 0) {
-    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Unpaid — the customer was just told they have 24 hours to pay:</strong></p>
+    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Within 14 days and unpaid — the customer was just told they have 24 hours to pay at least the deposit:</strong></p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
         ${rows(o.warned, (i) => i.note ?? (i.deadline ? `Removed ${i.deadline} unless paid` : 'Unpaid'))}
       </table>`)
   }
   if (o.released.length > 0) {
-    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Removed — the 24 hours ran out with nothing paid:</strong></p>
+    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Removed — the 24 hours ran out with no deposit paid:</strong></p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
         ${rows(o.released, (i) => i.note ?? 'Canceled and the customer emailed')}
       </table>`)
@@ -551,8 +574,9 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
     html: shell(
       'Unpaid bookings',
       `${parts.join('')}
-       <p style="margin:0;">Any payment — online, Cash App, cash, or check at the desk — confirms a booking and stops
-         its clock. To give someone more time, confirm the booking on the Bookings page.</p>`,
+       <p style="margin:0;">The rule: parties within 14 days of their event pay at least the deposit within 24 hours.
+         A payment — online, Cash App, cash, or check at the desk — confirms the booking and stops its clock. To give
+         someone more time, confirm the booking on the Bookings page.</p>`,
       { label: 'Open bookings', href: siteLink('/admin/bookings') },
     ),
   }

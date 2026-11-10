@@ -11,6 +11,7 @@ import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
 import { checkCoupon, couponDiscountCents, couponLabel, couponMessage, recordRedemption, type Coupon } from '@/lib/coupons-store'
 import { isSupabaseConfigured, supabase } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
+import { depositRuleSentence, DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 
 interface DayOption {
@@ -318,11 +319,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
             <strong>Request {confirmed.code}</strong> — the time is held for you while our team reviews it, and
             you&rsquo;ll get an email once it&rsquo;s approved.{' '}
-            <strong>Please pay within 24 hours to keep it — unpaid holds are removed after 24 hours.</strong>
-            {depositCents
-              ? ` Paying the ${formatCents(depositCents)} deposit is enough to keep it; the balance is due no later than 10 minutes before it starts`
-              : ' Any payment keeps it; the rest is due no later than 10 minutes before your event starts'}
-            {' '}— online, by Cash App, or in cash at the desk.
+            <strong>{depositRuleSentence({ start: new Date(Number(day.iso.slice(0, 4)), Number(day.iso.slice(5, 7)) - 1, Number(day.iso.slice(8, 10)), Math.floor(confirmed.startH), Math.round((confirmed.startH % 1) * 60)), depositCents })}</strong>
+            {' '}The rest is due no later than 10 minutes before your event starts — pay online, by Cash App, or in cash at the desk.
           </p>
         </div>
         {confirmed.payToken && (
@@ -587,8 +585,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           )}
           <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0', lineHeight: 1.5 }}>
             Availability is live — a slot can&apos;t be double-booked. Any waiver for the room is signed right
-            here, before you book — nobody signs at the door. Requesting holds the time for 24 hours: pay within
-            that time to keep it, and sign the rental agreement and add a card on file before the day.
+            here, before you book — nobody signs at the door. {DEPOSIT_RULE_GENERAL} Sign the rental agreement
+            and add a card on file before the day.
           </p>
         </div>
         )}

@@ -983,7 +983,7 @@ export default function AdminBookingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>
               {nbPay === 'hold'
-                ? 'Books the slot as a striped hold until payment lands. The customer is told they have 24 hours to pay — unpaid, it’s removed automatically.'
+                ? 'Books the slot as a striped hold until payment lands. Within 14 days of the event the customer gets 24 hours to pay at least the deposit; booked further out, the 24 hours start at 14 days out. Unpaid, it’s removed automatically.'
                 : nbPay === 'stripe'
                   ? `Books the slot and opens the secure card page for ${formatCents(priceCents)} — it confirms itself when Stripe does.`
                   : `Confirms the slot with ${formatCents(priceCents)} still owed in ${PAY_LABEL[nbPay]}. Nothing reads as paid until the money is in hand — record it then under Take payment.`}

@@ -23,7 +23,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.canceled', label: 'Booking canceled', blurb: 'Canceled by the customer, staff, or an expired hold.' },
       { kind: 'booking.deleted', label: 'Booking removed', blurb: 'A booking row was deleted outright.' },
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
-      { kind: 'booking.hold_warning', label: 'Unpaid hold: 24 hours to pay', blurb: 'To the customer on an unpaid hold — pay within 24 hours or the booking is removed.' },
+      { kind: 'booking.hold_warning', label: 'Deposit due: 24 hours to pay', blurb: 'To the customer when an unpaid party is within 14 days (at booking, or when it gets there) — pay at least the deposit within 24 hours or the booking is removed.' },
       { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
       { kind: 'booking.change_requested', label: 'Change request received', blurb: 'To the customer when they ask to change the time, rooms, or extras — nothing changes until it’s approved.' },
       { kind: 'booking.change_approved', label: 'Change approved', blurb: 'To the customer once their change request is approved — shows the booking as it is now.' },

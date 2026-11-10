@@ -6,6 +6,7 @@ import { formatCents, formatHour } from '@/lib/format'
 import { roomLabel, type RoomConfig } from '@/lib/facilities-store'
 import { cancelMyBooking, rescheduleMyBooking, type MemberBooking } from '@/lib/session'
 import { startBookingCheckout } from '@/lib/billing-client'
+import { DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
 
 // A member's own bookings, each one openable into the full picture: where
 // it stands, what's been paid, what's still owed — and the three things
@@ -129,8 +130,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {stage === 'review' && (
         <p style={{ fontSize: 12.5, color: SUB, margin: '12px 0 0', lineHeight: 1.55 }}>
           We have your request and someone on our team is looking at it. You&rsquo;ll get an email the
-          moment it&rsquo;s approved. Please pay within 24 hours of booking to keep the time — unpaid holds are
-          removed after 24 hours — and if we can&rsquo;t approve it, we refund you in full.
+          moment it&rsquo;s approved. {DEPOSIT_RULE_GENERAL} If we can&rsquo;t approve it, we refund you in full.
         </p>
       )}
 
