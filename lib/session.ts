@@ -175,6 +175,9 @@ export interface MemberBooking {
   // card is on file — undefined before 0037/0053.
   payToken?: string
   cardOnFile?: boolean
+  // Their rental agreement on this booking — signed online or uploaded by
+  // staff (0059). undefined before 0053.
+  agreementSigned?: boolean
   // A change they asked for that's waiting on our team (0057).
   pendingChange?: { newDuring: string | null; newRoomIds: string[] | null; newAddonIds: string[] | null } | null
 }
@@ -221,6 +224,9 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   }
   if (!rows) throw new Error('bookings query failed')
   const pending = await myPendingChanges().catch(() => new Map())
+  // Which of their bookings carry a signed agreement (member read own).
+  const agRes = await supabase().from('rental_agreements').select('booking_id')
+  const signedIds = agRes.error ? null : new Set(((agRes.data ?? []) as { booking_id: string }[]).map((r) => r.booking_id))
   return rows.flatMap((r) => {
     // A package's extra rooms ride on its lead booking (0055) — the
     // member sees one booking, not one per room.
@@ -246,6 +252,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       payToken: r.pay_token ?? undefined,
       cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
       pendingChange: pending.get(r.id) ?? null,
+      agreementSigned: signedIds ? signedIds.has(r.id) : undefined,
     }]
   })
 }

@@ -1,6 +1,7 @@
 import { serviceDb } from '@/lib/server/billing'
 import type { BookingFacts } from '@/lib/server/emails'
 import { waiversDueForBooking } from '@/lib/server/booking-waivers'
+import { bookingDoc } from '@/lib/server/booking-card'
 import { withinDepositWindow, clockStartsAt } from '@/lib/payment-policy'
 
 function site(): string {
@@ -96,10 +97,18 @@ export async function bookingFactsAny(bookingId: string):
   if (!b) return null
   const to = await recipientFor(b.account_id, b.contact_email ?? null)
   const range = parseRange(b.during)
+  // Signed — online or uploaded (0059) — AND still describing this event:
+  // one signed before the date, time, or rooms changed needs signing again.
   let agreementSigned: boolean | undefined
   {
     const { data: ag, error: agErr } = await serviceDb().from('rental_agreements').select('id').eq('booking_id', b.id).maybeSingle()
-    if (!agErr) agreementSigned = !!ag
+    if (!agErr) {
+      agreementSigned = !!ag
+      if (ag) {
+        const d = await bookingDoc(b.id).catch(() => null)
+        if (d?.agreementStale) agreementSigned = false
+      }
+    }
   }
   // The unbilled buffer around the event (0039) — what staff running it
   // need for arrive-by and stay-until times.

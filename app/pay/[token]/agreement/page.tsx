@@ -49,16 +49,31 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
       <div className="sq-card" style={{ ...card, padding: '24px 26px' }}>
         {doc.agreement && !(doc.agreementStale && doc.status !== 'canceled') ? (
           <>
-            <div style={{ background: '#e5f2ea', border: '1px solid #bcdfc9', borderRadius: 10, padding: '11px 14px', marginBottom: 18 }}>
-              <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1d6b3f', margin: 0 }}>Signed — this is your copy.</p>
-              <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>Print it or save it as a PDF from your browser&rsquo;s share menu if you&rsquo;d like one.</p>
+            <div style={{ background: '#e5f2ea', border: '1px solid #bcdfc9', borderRadius: 10, padding: '11px 14px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1d6b3f', margin: 0 }}>
+                  Signed — {doc.agreement.source === 'uploaded' ? 'your signed agreement is on file with this booking.' : 'this is your copy.'}
+                </p>
+                <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>
+                  Signed by {doc.agreement.signature} on {new Date(doc.agreement.signedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}.
+                </p>
+              </div>
+              <a href={`/api/pay/${token}/agreement/pdf?download=1`} className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12.5, textDecoration: 'none' }}>
+                Download PDF
+              </a>
             </div>
-            <AgreementDocument
-              snapshot={doc.agreement.snapshot} answers={doc.agreement.answers}
-              signature={doc.agreement.signature} signedAt={doc.agreement.signedAt}
-              repName={doc.agreement.repName} repSignedAt={doc.agreement.repSignedAt}
-              rooms={doc.rooms} addons={doc.addons}
-            />
+            {doc.agreement.source === 'uploaded' ? (
+              // Signed outside the system — the PDF itself is the record.
+              <iframe title="Signed rental agreement" src={`/api/pay/${token}/agreement/pdf`}
+                style={{ width: '100%', height: 640, border: '1px solid #dbe4f0', borderRadius: 10 }} />
+            ) : (
+              <AgreementDocument
+                snapshot={doc.agreement.snapshot} answers={doc.agreement.answers}
+                signature={doc.agreement.signature} signedAt={doc.agreement.signedAt}
+                repName={doc.agreement.repName} repSignedAt={doc.agreement.repSignedAt}
+                rooms={doc.rooms} addons={doc.addons}
+              />
+            )}
           </>
         ) : doc.status === 'canceled' ? (
           <p style={{ fontSize: 13, color: SUB, margin: 0 }}>This booking has been canceled, so there&rsquo;s no agreement to sign.</p>

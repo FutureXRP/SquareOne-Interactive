@@ -768,6 +768,26 @@ export function changeRequestDecided(b: BookingFacts, c: ChangeRequestFacts, app
     }
 }
 
+// The renter's signed copy of their Event Rental Agreement, attached as a
+// PDF the moment they sign.
+export function agreementSignedCopy(b: BookingFacts): EmailBody {
+  return {
+    subject: `Your signed rental agreement — ${b.room} on ${b.date}`,
+    html: shell(
+      `Thanks for signing, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">Your Event Rental Agreement is signed and attached to your booking. A PDF copy is
+         attached to this email for your records.</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+       ])}
+       <p style="margin:0;">You can download it again any time from your booking's page.</p>`,
+      { label: 'View my booking', href: bookingLink(b) },
+    ),
+  }
+}
+
 export function bookingRescheduled(b: BookingFacts): EmailBody {
   return {
     subject: `Moved — ${b.room} is now ${b.date}`,

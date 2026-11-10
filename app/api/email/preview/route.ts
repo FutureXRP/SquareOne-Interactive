@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb } from '@/lib/server/billing'
 import { applyEmailOverrides } from '@/lib/server/email-overrides'
 import { bookingFeeCharged, holdPaymentWarning, unpaidHoldsAlert, customerChangedAlert,
-  changeRequestReceived, changeRequestAlert, changeRequestDecided,
+  changeRequestReceived, changeRequestAlert, changeRequestDecided, agreementSignedCopy,
   bookingHeld, bookingApproved, bookingApprovalAlert, bookingConfirmed, bookingPayment, bookingRescheduled,
   bookingUpdated, bookingCanceled, bookingRemoved, bookingStaffAssigned,
   paymentReceipt, paymentVoided, refundIssued,
@@ -78,6 +78,7 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.staff_assigned': return bookingStaffAssigned(b, { staffName: 'Alexis Henson', payoutCents: 5000 })
     case 'booking.approval_alert': return bookingApprovalAlert(b)
     case 'booking.hold_warning': return holdPaymentWarning({ ...b, paidCents: 0, holdDeadline: 'Wednesday, September 2 at 3 PM' })
+    case 'booking.agreement_signed': return agreementSignedCopy(b)
     case 'booking.change_requested': return changeRequestReceived(b, SAMPLE_CHANGE)
     case 'booking.change_request_alert': return changeRequestAlert(b, SAMPLE_CHANGE)
     case 'booking.change_approved': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The Dining Hall adds $50 — we updated your total.' }, true)

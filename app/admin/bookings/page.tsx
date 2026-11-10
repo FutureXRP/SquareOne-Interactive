@@ -569,7 +569,9 @@ export default function AdminBookingsPage() {
                 {/* The signed rental agreement and card on file */}
                 <BookingAgreementCard
                   b={b}
-                  agreement={agreements === null ? undefined : (agreements.get(b.id) ?? null)}
+                  // A companion room's agreement is its lead booking's.
+                  agreement={agreements === null ? undefined : (agreements.get(b.leadBookingId ?? b.id) ?? null)}
+                  leadCode={b.leadBookingId ? bookings.find((x) => x.id === b.leadBookingId)?.code : undefined}
                   canCharge={!!me && ['owner', 'admin', 'manager'].includes(me.role)}
                 />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12, maxWidth: 620 }}>
@@ -1038,7 +1040,7 @@ export default function AdminBookingsPage() {
                 </p>
                 {(agreements !== null || b.card !== undefined) && (
                   <p style={{ fontSize: 11, margin: '2px 0 0', fontWeight: 600 }}>
-                    {agreements !== null && (agreements.has(b.id)
+                    {agreements !== null && (agreements.has(b.leadBookingId ?? b.id)
                       ? <span style={{ color: GREEN }}>✓ agreement signed</span>
                       : <span style={{ color: RED }}>✗ no signed agreement</span>)}
                     {agreements !== null && b.card !== undefined && <span style={{ color: FAINT }}> · </span>}

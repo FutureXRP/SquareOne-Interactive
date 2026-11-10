@@ -187,8 +187,17 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {/* The rental agreement and card on file live on the booking's page. */}
       {b.payToken && stage !== 'done' && b.status !== 'canceled' && (
         <p style={{ fontSize: 12, color: SUB, margin: '10px 0 0', lineHeight: 1.5 }}>
-          <a href={`/pay/${b.payToken}`} style={{ color: BLUE, fontWeight: 700 }}>Rental agreement &amp; card on file →</a>
-          {b.cardOnFile === false && <span style={{ color: RED, fontWeight: 600 }}> · card still needed</span>}
+          {b.agreementSigned === true
+            ? <>
+                <span style={{ color: GREEN, fontWeight: 700 }}>✓ Rental agreement signed</span>
+                {' · '}<a href={`/api/pay/${b.payToken}/agreement/pdf?download=1`} style={{ color: BLUE, fontWeight: 600 }}>Download PDF</a>
+                {' · '}<a href={`/pay/${b.payToken}`} style={{ color: BLUE, fontWeight: 600 }}>Booking page →</a>
+              </>
+            : <>
+                <a href={`/pay/${b.payToken}/agreement`} style={{ color: BLUE, fontWeight: 700 }}>Sign the rental agreement →</a>
+                {b.agreementSigned === false && <span style={{ color: RED, fontWeight: 600 }}> · still needed</span>}
+              </>}
+          {b.cardOnFile === false && <span style={{ color: RED, fontWeight: 600 }}> · card on file still needed (<a href={`/pay/${b.payToken}`} style={{ color: BLUE }}>add it</a>)</span>}
         </p>
       )}
 

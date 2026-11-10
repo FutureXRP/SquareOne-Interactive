@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
-import { serviceDb } from '@/lib/server/billing'
+import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { bookingDoc } from '@/lib/server/booking-card'
 import { PHOTO_OPTIONS, type AgreementAnswers } from '@/lib/rental-agreement'
 import { fileAgreementRequest, sendChangeRequestsReceived } from '@/lib/server/change-requests'
+import { agreementFile } from '@/lib/server/agreement-file'
+import { bookingFacts } from '@/lib/server/booking-facts'
+import { agreementSignedCopy } from '@/lib/server/emails'
 
 // Signs the Event Rental Agreement for one booking. Same authorization as
 // the pay page: holding the booking's link is the permission, so guests
@@ -72,7 +75,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const asks = roomsDiffer || addonsAdded.length > 0 || addonsDropped.length > 0
   const prev = doc.agreement?.answers
   const sameAsBefore = !!prev && same(prev.spaces ?? [], answers.spaces) && same(prev.addons ?? [], answers.addons)
-  const { error } = await serviceDb().from('rental_agreements').upsert({
+  const row = {
     org_id: doc.orgId,
     booking_id: doc.id,
     answers,
@@ -82,7 +85,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     rep_staff_id: null,
     rep_name: null,
     rep_signed_at: null,
+  }
+  // Signing online replaces any uploaded copy (0059 columns); before 0059
+  // those columns don't exist, so the plain row goes in instead.
+  let { error } = await serviceDb().from('rental_agreements').upsert({
+    ...row, source: 'online', file_path: null, file_name: null, uploaded_by: null,
   }, { onConflict: 'booking_id' })
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+    ({ error } = await serviceDb().from('rental_agreements').upsert(row, { onConflict: 'booking_id' }))
+  }
   if (error) {
     console.error('[pay/agreement]', error.message)
     return NextResponse.json({
@@ -111,6 +122,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         : {}),
     })
     if (filed) await sendChangeRequestsReceived(doc.id).catch((e) => console.error('[pay/agreement] request emails', e))
+  }
+  // Their signed copy, as a PDF, by email — best effort, never blocks.
+  try {
+    const [file, resolved] = await Promise.all([agreementFile(doc.id), bookingFacts(doc.id)])
+    if (file && resolved) {
+      await sendAndLog('booking.agreement_signed', resolved.to.email, agreementSignedCopy(resolved.facts), {
+        accountId: resolved.b.account_id, bookingId: doc.id,
+        attachments: [{ filename: file.filename, content: Buffer.from(file.bytes).toString('base64') }],
+      })
+    }
+  } catch (e) {
+    console.error('[pay/agreement] copy email', e)
   }
   return NextResponse.json({ ok: true, changeRequested: asks })
 }

@@ -207,10 +207,18 @@ export default async function PayPage({ params, searchParams }: {
               {(() => {
                 const done = !!doc.agreement && !doc.agreementStale
                 return (
-                  <Link href={`/pay/${token}/agreement`} className={done ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}
-                    style={{ padding: done ? '6px 13px' : '9px 16px', fontSize: done ? 12 : 13, textDecoration: 'none' }}>
-                    {done ? 'View your signed copy' : doc.agreement ? 'Sign the updated agreement' : 'Read & sign the agreement'}
-                  </Link>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Link href={`/pay/${token}/agreement`} className={done ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}
+                      style={{ padding: done ? '6px 13px' : '9px 16px', fontSize: done ? 12 : 13, textDecoration: 'none' }}>
+                      {done ? 'View your signed copy' : doc.agreement ? 'Sign the updated agreement' : 'Read & sign the agreement'}
+                    </Link>
+                    {done && (
+                      <a href={`/api/pay/${token}/agreement/pdf?download=1`} className="sq-btn sq-btn-ghost"
+                        style={{ padding: '6px 13px', fontSize: 12, textDecoration: 'none' }}>
+                        Download PDF
+                      </a>
+                    )}
+                  </div>
                 )
               })()}
             </div>

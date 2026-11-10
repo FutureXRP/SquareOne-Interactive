@@ -25,6 +25,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
       { kind: 'booking.hold_warning', label: 'Deposit due: 24 hours to pay', blurb: 'To the customer when an unpaid party is within 14 days (at booking, or when it gets there) — pay at least the deposit within 24 hours or the booking is removed.' },
       { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
+      { kind: 'booking.agreement_signed', label: 'Signed agreement copy', blurb: 'To the renter right after they sign the rental agreement online, with the signed PDF attached.' },
       { kind: 'booking.change_requested', label: 'Change request received', blurb: 'To the customer when they ask to change the time, rooms, or extras — nothing changes until it’s approved.' },
       { kind: 'booking.change_approved', label: 'Change approved', blurb: 'To the customer once their change request is approved — shows the booking as it is now.' },
       { kind: 'booking.change_declined', label: 'Change declined', blurb: 'To the customer when a change request is declined — the booking stays as it was.' },
