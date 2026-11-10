@@ -16,6 +16,7 @@ import {
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { ChargeCard } from '@/components/admin/ChargeCard'
 import { BookingAgreementCard } from '@/components/admin/BookingAgreementCard'
+import { ChangeRequestsQueue } from '@/components/admin/ChangeRequestsQueue'
 import { getAgreementStatuses, AGREEMENTS_EVENT, type AgreementStatus } from '@/lib/agreements-store'
 
 // Signed dollars → cents: "-25" and "25" both work, for adjustments that
@@ -1008,6 +1009,9 @@ export default function AdminBookingsPage() {
       )}
 
       {/* Reservations waiting on approval — pinned where nobody can miss them */}
+      {/* Customer change requests — nothing moves until one of us says yes */}
+      <ChangeRequestsQueue bookings={bookings} canDecide={!!me && ['owner', 'admin', 'manager'].includes(me.role)} />
+
       {inReview.length > 0 && (
         <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16, border: '1px solid #e8d9a8' }}>
           <div style={{ padding: '12px 20px', background: '#fdf3dc', borderBottom: `1px solid ${LINE}` }}>

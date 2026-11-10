@@ -143,12 +143,12 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
           ))}
           {asksForChange && (
             <p style={{ fontSize: 11.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 8, padding: '6px 9px', margin: '4px 0 6px', lineHeight: 1.45 }}>
-              This differs from your booking — when you sign, we&rsquo;ll tell the desk and they&rsquo;ll call you.
+              This differs from your booking — signing sends it as a change request for our team to review.
             </p>
           )}
           <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
-            The rooms you booked are checked. Changing these asks the desk for a different setup — your booking
-            stays as it is until they call you to confirm.
+            The rooms you booked are checked. Changing these sends a change request — your booking stays as it
+            is until our team approves it, and you&rsquo;ll get an email either way.
           </p>
         </div>
         {addonList.length > 0 && (
@@ -161,7 +161,7 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
               </label>
             ))}
             <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
-              Add-ons you booked are checked. Changing these tells the desk what you&rsquo;d like — they&rsquo;ll confirm availability and price.
+              Add-ons you booked are checked. Changing these sends a change request — our team confirms availability and price before anything changes.
             </p>
           </div>
         )}

@@ -5,6 +5,7 @@ import { eventReminderStaff, eventGuestReminder } from '@/lib/server/emails'
 import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib/server/event-facts'
 import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
 import { alertCustomerChanges } from '@/lib/server/customer-changes'
+import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
 // Sends "this is tomorrow" reminders for tours and scheduled events, to
 // the staff member running it and to the visitor coming in. Runs on a
@@ -106,7 +107,10 @@ export async function GET(req: Request) {
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
     // Customer changes staff haven't been told about yet (0056).
     const changeAlerts = await alertCustomerChanges().catch((e) => { console.error('[reminders] changes', e); return null })
-    return NextResponse.json({ ok: true, ...reminders, standing, holds, changeAlerts })
+    // Change-request emails that didn't go out at the time (0057).
+    const requestEmails = await sendChangeRequestsReceived().catch(() => null)
+    const decisionEmails = await sendChangeDecisions().catch(() => null)
+    return NextResponse.json({ ok: true, ...reminders, standing, holds, changeAlerts, requestEmails, decisionEmails })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })

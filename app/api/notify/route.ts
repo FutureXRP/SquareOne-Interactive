@@ -11,6 +11,7 @@ import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
 import { startHoldClock, alertAdminsOfUnpaidHold, adminRecipients } from '@/lib/server/unpaid-holds'
 import { alertCustomerChanges } from '@/lib/server/customer-changes'
+import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -42,6 +43,18 @@ export async function POST(req: Request) {
   if (!kind || !id) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 
   try {
+    // A customer's change request (0057), named by booking id, and the
+    // answer to one, named by request id. Everything said is read from
+    // the database; the ids only say where to look.
+    if (kind === 'booking.change_requested') {
+      const sent = await sendChangeRequestsReceived(id)
+      return NextResponse.json({ ok: true, sent })
+    }
+    if (kind === 'booking.change_decided') {
+      const sent = await sendChangeDecisions(id)
+      return NextResponse.json({ ok: true, sent })
+    }
+
     if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled'
       || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted'
       || kind === 'booking.approved') {

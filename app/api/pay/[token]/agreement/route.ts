@@ -3,7 +3,7 @@ import { serviceDb } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { bookingDoc } from '@/lib/server/booking-card'
 import { PHOTO_OPTIONS, type AgreementAnswers } from '@/lib/rental-agreement'
-import { recordSpacesRequest, alertCustomerChanges } from '@/lib/server/customer-changes'
+import { fileAgreementRequest, sendChangeRequestsReceived } from '@/lib/server/change-requests'
 
 // Signs the Event Rental Agreement for one booking. Same authorization as
 // the pay page: holding the booking's link is the permission, so guests
@@ -95,13 +95,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   if (phone && !doc.snapshot.phone) {
     await serviceDb().from('bookings').update({ contact_phone: phone }).eq('id', doc.id)
   }
+  // A different set of rooms or extras is a change request (0057): it
+  // waits for an admin, and the renter is told it's under review.
   if (asks && !sameAsBefore) {
-    const logged = await recordSpacesRequest(doc.id, {
-      ...(roomsDiffer ? { booked: doc.bookedRooms, requested: answers.spaces } : {}),
-      ...(addonsAdded.length ? { addonsAdded } : {}),
-      ...(addonsDropped.length ? { addonsDropped } : {}),
+    const db = serviceDb()
+    const [fac, add] = await Promise.all([db.from('facilities').select('id, name'), db.from('addons').select('id, name')])
+    const roomId = new Map(((fac.data ?? []) as { id: string; name: string }[]).map((r) => [r.name, r.id]))
+    const addonId = new Map(((add.data ?? []) as { id: string; name: string }[]).map((r) => [r.name, r.id]))
+    const filed = await fileAgreementRequest(doc.id, {
+      ...(roomsDiffer && answers.spaces.length > 0
+        ? { roomIds: answers.spaces.map((n) => roomId.get(n)).filter((x): x is string => !!x) }
+        : {}),
+      ...(addonsAdded.length || addonsDropped.length
+        ? { addonIds: answers.addons.map((n) => addonId.get(n)).filter((x): x is string => !!x) }
+        : {}),
     })
-    if (logged) await alertCustomerChanges(doc.id).catch((e) => console.error('[pay/agreement] alert', e))
+    if (filed) await sendChangeRequestsReceived(doc.id).catch((e) => console.error('[pay/agreement] request emails', e))
   }
   return NextResponse.json({ ok: true, changeRequested: asks })
 }
