@@ -84,6 +84,8 @@ export interface BookingFacts {
   // doesn't exist yet.
   agreementSigned?: boolean
   cardOnFile?: boolean
+  // A customer request no one has approved yet (0033); undefined before.
+  inReview?: boolean
   // Direct link that pays this one booking, no sign-in needed. Undefined
   // until migration 0037 has run.
   payUrl?: string
@@ -104,14 +106,53 @@ export interface BookingFacts {
 // pay-link migration hasn't run, and for anyone who owes nothing.
 function bookingCta(b: BookingFacts, paidLabel = 'View my booking'): { label: string; href: string } {
   const owed = Math.max(b.priceCents - b.paidCents, 0)
-  if (owed <= 0 || !b.payUrl) return { label: paidLabel, href: siteLink('/account') }
+  if (!b.payUrl) return { label: paidLabel, href: siteLink('/account') }
+  if (owed <= 0) return { label: paidLabel, href: b.payUrl }
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
   const due = depositDue > 0 && depositDue < owed ? depositDue : owed
   return { label: `Pay ${money(due)} now`, href: b.payUrl }
 }
 
+// Where the booking lives online — its own page works with or without an
+// account (desk guests have none), so every "view" link points there.
+function bookingLink(b: BookingFacts): string {
+  return b.payUrl ?? siteLink('/account')
+}
+
+// What's owed, when, and how — the Event Rental Agreement's terms: the
+// deposit at least 14 days out, the balance no later than 10 minutes
+// before the start, by card online (any amount), Cash App, or cash.
+function paymentTerms(b: BookingFacts): string {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  if (owed <= 0) return `<p style="margin:0 0 6px;">You're paid in full — nothing more is owed.</p>`
+  const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
+  const deposit = depositDue > 0 && depositDue < owed
+    ? `Your ${money(depositDue)} deposit is due at least 14 days before your event (right away if it's sooner) — if it isn't in by then, the date may be released. `
+    : ''
+  const choices = deposit ? 'the deposit, the full balance, or any amount in between' : 'the full balance or part of it now'
+  return `<p style="margin:0 0 6px;">${deposit}The remaining balance is due no later than 10 minutes before your
+    event starts. Pay online with the button below — ${choices} — or by Cash App, or in cash at the front desk.</p>`
+}
+
+// When the renter may arrive and must be out — this booking's own setup
+// and cleanup window, the same times printed on their agreement.
+function arrivalTerms(b: BookingFacts): string {
+  if (b.arriveBy && b.stayUntil) {
+    return `<p style="margin:0 0 6px;">You can arrive as early as <strong style="color:${INK};">${b.arriveBy}</strong> to set up,
+      and need to be cleaned up and out by <strong style="color:${INK};">${b.stayUntil}</strong>.</p>`
+  }
+  return `<p style="margin:0 0 6px;">Your setup and cleanup times are on your Event Rental Agreement — please
+    arrive and leave within them, since another party may be booked right after you.</p>`
+}
+
+// The card on file, when there is one — what it is and isn't for.
+function cardTerms(b: BookingFacts): string {
+  if (b.cardOnFile !== true) return ''
+  return `<p style="margin:0 0 6px;">We have a card on file for this booking. It's only charged for damages,
+    cleaning, storage, a late exit, or an unpaid balance — and we'll contact you before any charge.</p>`
+}
+
 export function bookingHeld(b: BookingFacts): EmailBody {
-  const due = b.depositCents && b.depositCents > 0 ? b.depositCents : b.priceCents
   return {
     subject: `We're holding ${b.room} for you — ${b.date}`,
     html: shell(
@@ -126,9 +167,12 @@ export function bookingHeld(b: BookingFacts): EmailBody {
          ['Total', money(b.priceCents)],
          ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
        ])}
-       <p style="margin:0 0 6px;"><strong style="color:${INK};">This is a hold, not a confirmed booking yet.</strong>
-       It locks in once we have ${money(due)}${b.depositCents && b.depositCents > 0 ? ' as a deposit' : ''}.
-       Holds expire after 24 hours so the room doesn't sit empty.</p>
+       <p style="margin:0 0 6px;"><strong style="color:${INK};">${b.inReview
+         ? 'This is a request — our team reviews every one, and you\'ll get an email the moment it\'s approved.'
+         : 'The room is held for you.'}</strong> Nobody else can book this time while it's on hold.</p>
+       ${paymentTerms(b)}
+       ${arrivalTerms(b)}
+       ${cardTerms(b)}
        <p style="margin:10px 0 0;">Need to change something? Reply here or call the front desk — we're happy to move things around.</p>
        ${agreementNudge(b)}
        ${signupNudge(b)}`,
@@ -147,7 +191,7 @@ function agreementNudge(b: BookingFacts): string {
   if (!b.payUrl) return ''
   const todo = [
     ...(b.agreementSigned === false ? ['sign your Event Rental Agreement'] : []),
-    ...(b.cardOnFile === false ? ['add a card on file for damages (nothing is charged)'] : []),
+    ...(b.cardOnFile === false ? ['add a card on file for damages (nothing is charged — and paying online saves your card automatically)'] : []),
   ]
   if (todo.length === 0) return ''
   return `<p style="margin:10px 0 0;padding:10px 14px;background:#fdf3dc;border-radius:10px;">
@@ -180,8 +224,9 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
          ['Paid', money(b.paidCents)],
          ...(b.priceCents > b.paidCents ? [['Balance due', money(b.priceCents - b.paidCents)] as [string, string]] : []),
        ])}
-       <p style="margin:0;">Come a few minutes early so we can get you settled. If anyone in your party hasn't
-       signed a waiver yet, they can do it at the door.</p>
+       ${paymentTerms(b)}
+       ${arrivalTerms(b)}
+       ${cardTerms(b)}
        ${agreementNudge(b)}
        ${signupNudge(b)}`,
       bookingCta(b),
@@ -194,7 +239,6 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
 // at their request and said yes.
 export function bookingApproved(b: BookingFacts): EmailBody {
   const owed = Math.max(b.priceCents - b.paidCents, 0)
-  const due = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : owed
   return {
     subject: `Approved — ${b.room} on ${b.date}`,
     html: shell(
@@ -210,13 +254,11 @@ export function bookingApproved(b: BookingFacts): EmailBody {
          ['Paid so far', money(b.paidCents)],
          ...(owed > 0 ? [['Balance due', money(owed)] as [string, string]] : []),
        ])}
-       ${owed > 0
-         ? `<p style="margin:0 0 6px;">You can pay ${due > 0 && due < owed ? `the ${money(due)} deposit` : 'the balance'}
-            with the button below — no account, no phone call, no waiting until you get here.</p>`
-         : `<p style="margin:0 0 6px;">You're paid in full, so there's nothing left to do but show up.</p>`}
-       <p style="margin:10px 0 0;">Come a few minutes early so we can get you settled. Anyone in your party
-       without a signed waiver can take care of it at the door.</p>
-       ${agreementNudge(b)}`,
+       ${paymentTerms(b)}
+       ${arrivalTerms(b)}
+       ${cardTerms(b)}
+       ${agreementNudge(b)}
+       ${signupNudge(b)}`,
       bookingCta(b),
     ),
   }
@@ -294,12 +336,12 @@ export function bookingPayment(b: BookingFacts, pay: { amountCents: number; meth
   return {
     subject: settled
       ? `Paid in full — ${b.room} on ${b.date}`
-      : `Deposit received — ${b.room} on ${b.date}`,
+      : `Payment received — ${b.room} on ${b.date}`,
     html: shell(
-      settled ? `You're all set, ${b.name.split(' ')[0]}` : `Deposit received — you're locked in`,
+      settled ? `You're all set, ${b.name.split(' ')[0]}` : `Payment received — you're locked in`,
       `<p style="margin:0 0 6px;">${settled
         ? 'Your booking is paid in full and the room is yours.'
-        : `Thanks — your deposit is in and the room is held for you. The rest is due before your event.`}</p>
+        : `Thanks — your payment is in and the room is held for you.`}</p>
        ${detailRows([
          ['Receipt', pay.code],
          ['Paid now', `${money(pay.amountCents)} by ${pay.method}`],
@@ -311,10 +353,11 @@ export function bookingPayment(b: BookingFacts, pay: { amountCents: number; meth
          ['Paid so far', money(b.paidCents)],
          ...(settled ? [] : [['Still due', money(owed)] as [string, string]]),
        ])}
-       <p style="margin:0;">${settled
-         ? 'Come a few minutes early so we can get you settled. Anyone in your party without a signed waiver can do it at the door.'
-         : 'You can pay the balance any time before your event — online or at the front desk.'}</p>`,
-      { label: 'View my booking', href: siteLink('/account') },
+       ${settled ? '' : paymentTerms(b)}
+       ${arrivalTerms(b)}
+       ${cardTerms(b)}
+       ${agreementNudge(b)}`,
+      bookingCta(b),
     ),
   }
 }
@@ -395,7 +438,7 @@ export function bookingApprovalAlert(b: BookingFacts): EmailBody {
          ...(owed > 0 ? [['Still owed', money(owed)] as [string, string]] : []),
          ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
        ])}
-       <p style="margin:0;">Unpaid holds release themselves after 24 hours — confirm it before then if it's good.</p>`,
+       <p style="margin:0;">It holds the room until someone approves or cancels it — the customer is waiting on your answer.</p>`,
       { label: 'Review & approve', href: siteLink('/admin/bookings') },
     ),
   }
@@ -417,7 +460,7 @@ export function bookingRescheduled(b: BookingFacts): EmailBody {
        ])}
        <p style="margin:0;">Anything you've already paid moves with it. If this isn't what you expected,
        reply to this email or call the front desk and we'll sort it out.</p>`,
-      { label: 'View my booking', href: siteLink('/account') },
+      { label: 'View my booking', href: bookingLink(b) },
     ),
   }
 }
@@ -438,7 +481,7 @@ export function bookingUpdated(b: BookingFacts): EmailBody {
          ...(owed > 0 ? [['Still due', money(owed)] as [string, string]] : []),
        ])}
        <p style="margin:0;">If any of that looks wrong, reply and we'll fix it.</p>`,
-      { label: 'View my booking', href: siteLink('/account') },
+      { label: 'View my booking', href: bookingLink(b) },
     ),
   }
 }

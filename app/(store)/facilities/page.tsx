@@ -14,7 +14,7 @@ export default function FacilitiesPage() {
 
       <FacilityGrid />
 
-      <p style={{ fontSize: 11.5, color: FAINT, margin: '26px 0 0' }}>Live pricing and availability — a hold keeps your slot for 24 hours while you pay the deposit.</p>
+      <p style={{ fontSize: 11.5, color: FAINT, margin: '26px 0 0' }}>Live pricing and availability — requesting holds your time while our team reviews it.</p>
     </div>
   )
 }

@@ -112,7 +112,9 @@ export function PayPanel({ token, target, cashtag = '', bookingCode = '', cashQr
         <p style={{ fontSize: 12.5, color: RED, margin: '12px 0 0', fontWeight: 600, lineHeight: 1.5 }}>{error}</p>
       )}
       <p style={{ fontSize: 11.5, color: FAINT, margin: '12px 0 0', lineHeight: 1.55 }}>
-        Payment is handled by Stripe — we never see or store your card number.
+        Payment is handled by Stripe — your card number never touches our system. The card you pay with is
+        kept on file for this booking (only charged for damages, cleaning, or an unpaid balance — and we contact
+        you first), as your rental agreement explains.
       </p>
 
       {tag && (

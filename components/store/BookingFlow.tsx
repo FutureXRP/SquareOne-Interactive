@@ -316,11 +316,12 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </p>
         <div style={{ background: '#faf0dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
-            <strong>Hold {confirmed.code}</strong> — the room is yours for 24 hours.
+            <strong>Request {confirmed.code}</strong> — the time is held for you while our team reviews it, and
+            you&rsquo;ll get an email once it&rsquo;s approved.
             {depositCents
-              ? ` Pay the ${formatCents(depositCents)} deposit by card or Cash App — the link is in your confirmation email and under My bookings — and it locks in.`
-              : ' Pay by card or Cash App — the link is in your confirmation email and under My bookings — and it locks in.'}
-            {' '}Unpaid holds release automatically.
+              ? ` Your ${formatCents(depositCents)} deposit is due at least 14 days before the event, and the balance no later than 10 minutes before it starts`
+              : ' Payment is due no later than 10 minutes before your event starts'}
+            {' '}— online (any amount), by Cash App, or in cash at the desk.
           </p>
         </div>
         {confirmed.payToken && (
@@ -584,8 +585,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
             </>
           )}
           <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0', lineHeight: 1.5 }}>
-            Availability is live — a slot can&apos;t be double-booked. Requesting places a 24-hour hold;
-            you confirm by paying the deposit.
+            Availability is live — a slot can&apos;t be double-booked. Requesting holds the time while our
+            team reviews it; then you sign the rental agreement, add a card on file, and pay.
           </p>
         </div>
         )}

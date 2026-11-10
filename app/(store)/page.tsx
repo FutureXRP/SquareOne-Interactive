@@ -49,7 +49,10 @@ export default function StoreHome() {
           ...(navTabOn(content, 'shop')
             ? [{ href: '/shop', title: t('tile3.title', 'Shop merch'), sub: t('tile3.sub', 'Tees, hoodies & more'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M5.5 1.5h5l3 3-2 2-1-1v9h-7v-9l-1 1-2-2 3-3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg> }]
             : []),
-          { href: '/facilities/party', title: t('tile4.title', 'Book a party'), sub: t('tile4.sub', 'Arcade party packages with a host'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4.5 6.5L8 2l3.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 6.5h11l-1.2 7a1.5 1.5 0 01-1.5 1.2H5.2a1.5 1.5 0 01-1.5-1.2l-1.2-7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><circle cx="8" cy="10.5" r="1.1" fill="currentColor"/></svg> },
+          // The packages tile is the way in to promotional pricing, so it
+          // lands on Event Packages. A title still saved as the old "Book a
+          // party" default is treated as the default, not a custom choice.
+          { href: '/packages', title: t('tile4.title', 'Event Packages') === 'Book a party' ? 'Event Packages' : t('tile4.title', 'Event Packages'), sub: t('tile4.sub', 'Party & promotional packages — see current pricing'), icon: <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4.5 6.5L8 2l3.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 6.5h11l-1.2 7a1.5 1.5 0 01-1.5 1.2H5.2a1.5 1.5 0 01-1.5-1.2l-1.2-7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><circle cx="8" cy="10.5" r="1.1" fill="currentColor"/></svg> },
         ].map((tile) => (
           <Link key={tile.href} href={tile.href} style={{ textDecoration: 'none' }}>
             <div className="sq-card" style={{ ...card, padding: '18px 20px', height: '100%' }}>
