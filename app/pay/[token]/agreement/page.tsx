@@ -47,7 +47,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
   return (
     <Shell token={token}>
       <div className="sq-card" style={{ ...card, padding: '24px 26px' }}>
-        {doc.agreement ? (
+        {doc.agreement && !(doc.agreementStale && doc.status !== 'canceled') ? (
           <>
             <div style={{ background: '#e5f2ea', border: '1px solid #bcdfc9', borderRadius: 10, padding: '11px 14px', marginBottom: 18 }}>
               <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1d6b3f', margin: 0 }}>Signed — this is your copy.</p>
@@ -65,7 +65,8 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
         ) : (
           <AgreementForm
             token={token} snapshot={doc.snapshot} rooms={doc.rooms} addons={doc.addons}
-            bookedRoom={doc.bookedRoom} bookedAddons={doc.bookedAddons}
+            bookedRoom={doc.bookedRoom} bookedRooms={doc.bookedRooms} bookedAddons={doc.bookedAddons}
+            resign={!!doc.agreement && doc.agreementStale}
           />
         )}
       </div>

@@ -29,19 +29,23 @@ function Fixed({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, bookedAddons }: {
+export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, bookedRooms = [], bookedAddons, resign = false }: {
   token: string
   snapshot: AgreementSnapshot
   rooms: string[]
   addons: string[]
   bookedRoom: string | null
+  bookedRooms?: string[]
+  // Signing again because the booking changed after the first signature.
+  resign?: boolean
   bookedAddons: string[]
 }) {
   const router = useRouter()
   const [address, setAddress] = useState('')
   const [phone, setPhone] = useState(snapshot.phone)
   const [guestCount, setGuestCount] = useState('')
-  const [spaces, setSpaces] = useState<string[]>(bookedRoom ? [bookedRoom] : [])
+  const booked = bookedRooms.length > 0 ? bookedRooms : (bookedRoom ? [bookedRoom] : [])
+  const [spaces, setSpaces] = useState<string[]>(booked)
   const [picked, setPicked] = useState<string[]>(bookedAddons)
   const [initials, setInitials] = useState({ guidelines: '', expectations: '', fees: '' })
   const [photo, setPhoto] = useState<PhotoPermission | ''>('')
@@ -53,7 +57,9 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
-  const roomList = [...new Set([...(bookedRoom ? [bookedRoom] : []), ...rooms])]
+  const roomList = [...new Set([...booked, ...rooms])]
+  const asksForChange = spaces.length !== booked.length || spaces.some((r) => !booked.includes(r))
+    || picked.length !== bookedAddons.length || picked.some((a) => !bookedAddons.includes(a))
   const addonList = [...new Set([...bookedAddons, ...addons])]
 
   const submit = async () => {
@@ -66,8 +72,11 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ address, phone, guestCount: Number(guestCount), spaces, addons: picked, initials, photoPermission: photo, signature, agree }),
       })
-      const json = (await res.json().catch(() => ({}))) as { message?: string }
-      if (res.ok) { router.push(`/pay/${token}?signed=1`); return }
+      const json = (await res.json().catch(() => ({}))) as { message?: string; changeRequested?: boolean }
+      if (res.ok) {
+        router.push(`/pay/${token}?signed=1${json.changeRequested ? '&asked=1' : ''}`)
+        return
+      }
       setError(json.message ?? 'Could not save the agreement — please try again.')
     } catch {
       setError('Could not reach the server — check your connection and try again.')
@@ -90,6 +99,14 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
         <p style={{ fontSize: 18, fontWeight: 800, color: INK, margin: 0 }}>SquareOne Event Rental Agreement</p>
         <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0' }}>{AGREEMENT_ADDRESS}</p>
       </div>
+      {resign && (
+        <div style={{ background: '#fdf3dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '11px 14px', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: '#5b4708', margin: '0 0 2px' }}>Your booking changed since you signed</p>
+          <p style={{ fontSize: 12.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+            The date, time, or rooms below are the booking as it stands now. Please sign again so the agreement matches your event.
+          </p>
+        </div>
+      )}
 
       <p style={{ fontSize: 13.5, fontWeight: 800, color: INK, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 6px' }}>Renter information</p>
       <Fixed label="Renter name" value={snapshot.renterName} />
@@ -124,6 +141,15 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
               {r}
             </label>
           ))}
+          {asksForChange && (
+            <p style={{ fontSize: 11.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 8, padding: '6px 9px', margin: '4px 0 6px', lineHeight: 1.45 }}>
+              This differs from your booking — when you sign, we&rsquo;ll tell the desk and they&rsquo;ll call you.
+            </p>
+          )}
+          <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
+            The rooms you booked are checked. Changing these asks the desk for a different setup — your booking
+            stays as it is until they call you to confirm.
+          </p>
         </div>
         {addonList.length > 0 && (
           <div>
@@ -135,7 +161,7 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
               </label>
             ))}
             <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
-              Add-ons you booked are checked. Checking another here tells the desk you&rsquo;d like it — they&rsquo;ll confirm availability and price.
+              Add-ons you booked are checked. Changing these tells the desk what you&rsquo;d like — they&rsquo;ll confirm availability and price.
             </p>
           </div>
         )}

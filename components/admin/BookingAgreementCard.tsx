@@ -9,6 +9,8 @@ import { bookingPayUrl, BOOKINGS_EVENT, type StaffBooking } from '@/lib/staff-bo
 import { emit } from '@/lib/supabase'
 import type { AgreementStatus } from '@/lib/agreements-store'
 import { bookingWaiversDue } from '@/lib/waivers-staff'
+import { getBookingChanges, rangeLabel, type BookingChange } from '@/lib/booking-changes-store'
+import { roomLabel } from '@/lib/facilities-store'
 import type { RequiredWaiver } from '@/lib/waiver-forms'
 
 // A booking's paperwork, in its details panel: the signed Event Rental
@@ -43,8 +45,34 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
     return () => { live = false }
   }, [b.id, b.roomId, b.accountId, b.createdAt, b.leadBookingId, b.status])
 
+  // What's changed on this booking, and by whom (0056).
+  const [changes, setChanges] = useState<BookingChange[]>([])
+  useEffect(() => {
+    if (b.leadBookingId) { setChanges([]); return }
+    let live = true
+    getBookingChanges(b.id).then((c) => { if (live) setChanges(c) }).catch(() => {})
+    return () => { live = false }
+  }, [b.id, b.leadBookingId, b.date, b.startH, b.roomId, b.status])
+
   // Before 0053 there's nothing to show — unless a waiver is owed.
-  if (agreement === undefined && b.card === undefined && !(waivers && waivers.length > 0)) return null
+  if (agreement === undefined && b.card === undefined && !(waivers && waivers.length > 0) && changes.length === 0) return null
+
+  // Signed before the latest move or room change: it describes the old event.
+  const lastMove = changes.find((c) => c.kind === 'moved' || c.kind === 'room')
+  const agreementOutdated = !!agreement && !!lastMove && new Date(lastMove.at) > new Date(agreement.signedAt)
+  const who = (c: BookingChange) => c.actor === 'customer' ? 'Customer' : c.actor === 'staff' ? 'Staff' : 'System'
+  const describe = (c: BookingChange): string => {
+    if (c.kind === 'moved') return `${who(c)} moved it: ${rangeLabel(c.oldDuring)} → ${rangeLabel(c.newDuring)}`
+    if (c.kind === 'room') return `${who(c)} changed the room: ${c.oldRoomId ? roomLabel(c.oldRoomId).name : '—'} → ${c.newRoomId ? roomLabel(c.newRoomId).name : '—'}`
+    if (c.kind === 'canceled') return `${who(c)} canceled it`
+    const d = c.detail ?? {}
+    return [
+      'Customer asked on the agreement for',
+      d.requested ? `spaces: ${d.requested.join(', ') || 'none'} (booked: ${(d.booked ?? []).join(', ')})` : '',
+      d.addonsAdded?.length ? `extras added: ${d.addonsAdded.join(', ')}` : '',
+      d.addonsDropped?.length ? `extras removed: ${d.addonsDropped.join(', ')}` : '',
+    ].filter(Boolean).join(' ')
+  }
   const payUrl = bookingPayUrl(b)
   const cents = dollarsToCents(amount)
   const cardLabel = b.card ? `${b.card.brand.replace(/^./, (c) => c.toUpperCase())} ••${b.card.last4}` : ''
@@ -91,6 +119,7 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
               <span style={{ color: GREEN, fontWeight: 700 }}>signed</span> by {agreement.signature} on{' '}
               {new Date(agreement.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               {agreement.repName ? ` · countersigned by ${agreement.repName}` : ' · needs countersignature'}
+              {agreementOutdated && <> · <span style={{ color: RED, fontWeight: 700 }}>out of date — the booking changed after signing; their booking page asks them to sign again</span></>}
               {' · '}<Link href={`/admin/bookings/agreement/${b.id}`} style={{ color: BLUE, fontWeight: 600 }}>View / print</Link>
             </>
           : <>
@@ -107,6 +136,20 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
               {payUrl && <> · <a href={payUrl} target="_blank" rel="noopener noreferrer" style={{ color: BLUE, fontWeight: 600 }}>Open their booking page</a> to add one (paying online also saves it)</>}
             </>}
       </p>
+
+      {changes.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <strong style={{ color: INK }}>Changes:</strong>
+          <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
+            {changes.slice(0, 5).map((c) => (
+              <li key={c.id} style={{ color: c.actor === 'customer' ? INK : SUB }}>
+                <span style={{ color: FAINT }}>{new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>{' · '}
+                {describe(c)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {b.card && canCharge && (
         <div style={{ marginTop: 6 }}>
