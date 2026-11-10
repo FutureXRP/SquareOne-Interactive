@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { stripe, stripeConfigured, getCaller, ensureCustomer, siteUrl, serviceDb } from '@/lib/server/billing'
+import { waiversDueForBooking, WAIVER_FIRST_MESSAGE } from '@/lib/server/booking-waivers'
 
 // A member paying for their own room/party booking from their account —
 // a deposit to lock it in, or the balance before the day of. No staff, no
@@ -49,6 +50,10 @@ export async function POST(req: Request) {
     const paid = (b.payments ?? []).filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
     const balance = Math.max(0, b.price_cents - paid)
     if (balance <= 0) return NextResponse.json({ error: 'already_paid' }, { status: 409 })
+    // Waivers first, payment second — the same rule as the pay link.
+    if ((await waiversDueForBooking(b.id)).length > 0) {
+      return NextResponse.json({ error: 'waiver_required', message: WAIVER_FIRST_MESSAGE }, { status: 409 })
+    }
 
     // A deposit only means something while it's still smaller than what's
     // left; past that point "deposit" and "balance" are the same button.

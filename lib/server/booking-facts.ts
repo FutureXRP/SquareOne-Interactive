@@ -1,5 +1,6 @@
 import { serviceDb } from '@/lib/server/billing'
 import type { BookingFacts } from '@/lib/server/emails'
+import { waiversDueForBooking } from '@/lib/server/booking-waivers'
 
 function site(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
@@ -25,10 +26,13 @@ export interface BookingRecord {
   setup_min?: number
   cleanup_min?: number
   card_last4?: string | null
+  hold_expires_at?: string | null
+  hold_warned_at?: string | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, hold_expires_at, hold_warned_at, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
@@ -66,6 +70,13 @@ function parseRange(during: string): { from: Date; to: Date } | null {
   return { from: new Date(m[1]), to: new Date(m[2]) }
 }
 
+// "Wednesday, November 11 at 3 PM" — how a hold's deadline reads.
+export function deadlinePhrase(iso: string): string {
+  const d = new Date(iso)
+  const day = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' })
+  return `${day} at ${hour(d)}`
+}
+
 function hour(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined, timeZone: 'America/Chicago' })
 }
@@ -94,6 +105,8 @@ export async function bookingFactsAny(bookingId: string):
   const setupMin = b.setup_min ?? 0
   const cleanupMin = b.cleanup_min ?? 0
   const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
+  // Waivers still owed (0054) — only worth a lookup while it's live.
+  const waiversDue = b.status === 'hold' || b.status === 'confirmed' ? (await waiversDueForBooking(b.id)).length : 0
   const addons = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : undefined
   return {
     b,
@@ -131,6 +144,11 @@ export async function bookingFactsAny(bookingId: string):
       stayUntil: range && cleanupMin > 0 ? hour(new Date(range.to.getTime() + cleanupMin * 60_000)) : undefined,
       canceledVia: (b.canceled_via as BookingFacts['canceledVia']) ?? undefined,
       canceledByName: b.canceled_by_staff?.name ?? undefined,
+      // The unpaid hold's 24-hour deadline, once it has been given one.
+      holdDeadline: b.status === 'hold' && b.hold_warned_at && b.hold_expires_at && paid === 0
+        ? deadlinePhrase(b.hold_expires_at)
+        : undefined,
+      waiversDue: waiversDue > 0 ? waiversDue : undefined,
     },
   }
 }

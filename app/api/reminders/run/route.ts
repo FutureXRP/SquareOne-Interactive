@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { eventReminderStaff, eventGuestReminder } from '@/lib/server/emails'
 import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib/server/event-facts'
+import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
 
 // Sends "this is tomorrow" reminders for tours and scheduled events, to
 // the staff member running it and to the visitor coming in. Runs on a
@@ -99,7 +100,10 @@ export async function GET(req: Request) {
   try {
     const reminders = await run()
     const standing = await rollStanding()
-    return NextResponse.json({ ok: true, ...reminders, standing })
+    // Unpaid holds: the 24-hour notice, then removal (0054). Its own
+    // failure never takes the reminders down with it.
+    const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
+    return NextResponse.json({ ok: true, ...reminders, standing, holds })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })

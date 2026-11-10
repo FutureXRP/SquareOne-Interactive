@@ -11,6 +11,8 @@ import { formatHour } from '@/lib/format'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import type { EventPackage } from '@/lib/packages-store'
+import { WaiverPanel } from '@/components/store/WaiverPanel'
+import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 
 function isoToday(offsetDays = 0): string {
   const d = new Date()
@@ -28,6 +30,8 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ code: string } | null>(null)
+  // The room's waivers, signed as part of the request — never at the door.
+  const [pendingWaivers, setPendingWaivers] = useState<RequiredWaiver[]>([])
 
   // Requests ride the member-hold path, which needs a signed-in account —
   // show the sign-in door instead of a form that can only fail.
@@ -65,6 +69,24 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     if (!roomId || !date || startH == null || !phoneOk || busy) return
     setBusy(true)
     setError(null)
+    // Same rule as booking a room: the waivers come first.
+    const due = await unsignedRequiredWaivers({ roomId }).catch(() => [] as RequiredWaiver[])
+    if (due.length > 0) {
+      setPendingWaivers(due)
+      setBusy(false)
+      return
+    }
+    await place()
+  }
+
+  const onWaiverSigned = () => {
+    const rest = pendingWaivers.slice(1)
+    setPendingWaivers(rest)
+    if (rest.length === 0) { setBusy(true); setError(null); place() }
+  }
+
+  const place = async () => {
+    if (!roomId || !date || startH == null) { setBusy(false); return }
     const note = requests.trim() ? `Package request · Requests: ${requests.trim()}` : 'Package request'
     const res = await requestMemberHold(roomId, `${pkg.name} package`, date, startH, pkg.hours, pkg.priceCents, undefined, note, undefined, undefined, phone.trim(), { packageId: pkg.id })
     setBusy(false)
@@ -79,7 +101,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
       <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 10, padding: '10px 13px' }}>
         <p style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Request received! Confirmation {done.code}</p>
         <p style={{ fontSize: 12, color: SUB, margin: 0, lineHeight: 1.5 }}>
-          {day?.label}{startH != null ? `, ${formatHour(startH)}` : ''}. A confirmation is on its way to your email, and the front desk will call to lock in your date and take the deposit.
+          {day?.label}{startH != null ? `, ${formatHour(startH)}` : ''}. Your confirmation and payment link are on their way to your email. Please pay within 24 hours to keep the date — unpaid holds are removed after 24 hours.
         </p>
       </div>
     )
@@ -107,6 +129,21 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
       <button className={`sq-btn ${primary ? 'sq-btn-primary' : 'sq-btn-ghost'}`} style={{ width: '100%' }} onClick={() => setOpen(true)}>
         Request this package
       </button>
+    )
+  }
+
+  if (pendingWaivers.length > 0) {
+    return (
+      <div style={{ display: 'grid', gap: 10 }}>
+        <p style={{ fontSize: 12.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+          One more step — this package needs a signed{' '}
+          <strong style={{ color: INK }}>{pendingWaivers[0].name.toLowerCase()}</strong>
+          {pendingWaivers.length > 1 ? ` (${pendingWaivers.length} to sign)` : ''}. Waivers are part of booking —
+          nobody signs at the door. Sign and your request goes right through.
+        </p>
+        <WaiverPanel key={pendingWaivers[0].id} def={pendingWaivers[0]} compact onSigned={onWaiverSigned} />
+        <button className="sq-btn sq-btn-ghost" style={{ width: '100%' }} onClick={() => setPendingWaivers([])}>Back to the request</button>
+      </div>
     )
   }
 
@@ -147,7 +184,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
         {busy ? 'Sending…' : 'Send request'}
       </button>
       <p style={{ fontSize: 11, color: FAINT, margin: 0, lineHeight: 1.5 }}>
-        This holds the date while the front desk reviews it — they&rsquo;ll confirm with you, then you sign the rental agreement and add a card on file. <span style={{ color: INK }}>Nothing is charged now.</span>
+        Any waiver for the room is signed as part of this request — nobody signs at the door. Sending holds the date for 24 hours; <span style={{ color: INK }}>pay from the link in your confirmation email to keep it</span>, or the hold is removed. Then sign the rental agreement and add a card on file before the day.
       </p>
     </div>
   )

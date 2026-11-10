@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { serviceDb } from '@/lib/server/billing'
 import { applyEmailOverrides } from '@/lib/server/email-overrides'
-import { bookingFeeCharged,
+import { bookingFeeCharged, holdPaymentWarning, unpaidHoldsAlert,
   bookingHeld, bookingApproved, bookingApprovalAlert, bookingConfirmed, bookingPayment, bookingRescheduled,
   bookingUpdated, bookingCanceled, bookingRemoved, bookingStaffAssigned,
   paymentReceipt, paymentVoided, refundIssued,
@@ -71,6 +71,11 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.deleted': return bookingRemoved(b)
     case 'booking.staff_assigned': return bookingStaffAssigned(b, { staffName: 'Alexis Henson', payoutCents: 5000 })
     case 'booking.approval_alert': return bookingApprovalAlert(b)
+    case 'booking.hold_warning': return holdPaymentWarning({ ...b, paidCents: 0, holdDeadline: 'Wednesday, September 2 at 3 PM' })
+    case 'booking.unpaid_alert': return unpaidHoldsAlert({
+      warned: [{ code: 'BK-1234', name: 'Jordan Alvarez', room: b.room, when: 'Sat, Sep 12, 2 PM', totalCents: 30000, deadline: 'Wednesday, September 2 at 3 PM', note: 'Removed Wednesday, September 2 at 3 PM unless paid — jordan@example.com was told' }],
+      released: [{ code: 'BK-1199', name: 'Sam Rivera', room: 'Party Room', when: 'Sun, Sep 6, 1 PM', totalCents: 25000, note: 'Canceled — sam@example.com was emailed' }],
+    })
     case 'payment.receipt': return paymentReceipt({ name: 'Jordan Alvarez', amountCents: 10000, method: 'Card', what: 'Birthday party · BK-1234', code: 'PM-1234', balanceCents: 20000 })
     case 'payment.voided': return paymentVoided(b, { amountCents: 10000, method: 'Cash App', code: 'PM-1234' })
     case 'booking.fee_charged': return bookingFeeCharged(b, { amountCents: 5000, reason: 'Cleaning fee', card: 'Visa ending 4242' })

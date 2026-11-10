@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { serviceDb, sendAndLog, alertRecipients } from '@/lib/server/billing'
+import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
   bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
   bookingRemoved, bookingPayment, bookingApproved, bookingApprovalAlert, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
@@ -9,6 +9,7 @@ import {
 } from '@/lib/server/emails'
 import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
+import { startHoldClock, alertAdminsOfUnpaidHold, adminRecipients } from '@/lib/server/unpaid-holds'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -43,8 +44,15 @@ export async function POST(req: Request) {
     if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled'
       || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted'
       || kind === 'booking.approved') {
+      // A new unpaid hold gets its 24 hours from right now, so the hold
+      // email itself can say exactly when it goes (0054).
+      const clock = kind === 'booking.hold' ? await startHoldClock(id).catch(() => null) : null
       const resolved = await bookingFacts(id)
-      if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
+      if (!resolved) {
+        // No customer address — the admins still need to know it's unpaid.
+        if (clock) await alertAdminsOfUnpaidHold(id)
+        return NextResponse.json({ ok: true, skipped: 'no_email' })
+      }
       const body =
         kind === 'booking.hold' ? bookingHeld(resolved.facts)
         : kind === 'booking.approved' ? bookingApproved(resolved.facts)
@@ -57,16 +65,14 @@ export async function POST(req: Request) {
       // A customer hold that nobody has approved also wakes the house —
       // to whatever address Settings names (0045). Staff-made bookings
       // carry approved_at from birth and stay silent here.
+      // The approval alert says it's unpaid and when it comes off the
+      // calendar; a hold staff placed gets the plain unpaid notice.
       if (kind === 'booking.hold' && !resolved.b.approved_at) {
-        try {
-          const { data: cfgRow } = await serviceDb().from('site_config').select('booking_alert_email').limit(1).maybeSingle()
-          const raw = (cfgRow as { booking_alert_email?: string } | null)?.booking_alert_email ?? ''
-          for (const alertTo of alertRecipients(raw, resolved.to.email)) {
-            await sendAndLog('booking.approval_alert', alertTo, bookingApprovalAlert(resolved.facts), { bookingId: resolved.b.id })
-          }
-        } catch {
-          // pre-0045 — no alert address to consult
+        for (const alertTo of await adminRecipients(resolved.to.email)) {
+          await sendAndLog('booking.approval_alert', alertTo, bookingApprovalAlert(resolved.facts), { bookingId: resolved.b.id })
         }
+      } else if (kind === 'booking.hold' && clock) {
+        await alertAdminsOfUnpaidHold(id, resolved.to.email)
       }
       return NextResponse.json({ ok: true })
     }

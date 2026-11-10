@@ -379,10 +379,12 @@ export default function AdminBookingsPage() {
               ) : isInReview(b) ? (
                 // Booked by a customer and waiting on one of us to say yes.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
-                  In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ''}
+                  In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : b.holdDeadline ? ` · unpaid, removed ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
                 </span>
               ) : b.status === 'hold' && b.paidCents === 0 ? (
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>Hold — unpaid</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
+                  Hold — unpaid{b.holdDeadline ? ` · removed ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                </span>
               ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
                 // A deposit locks the slot in, but it isn't paid in full.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
@@ -974,7 +976,7 @@ export default function AdminBookingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>
               {nbPay === 'hold'
-                ? 'Books the slot as a striped hold on the Board until payment lands (24-hour expiry).'
+                ? 'Books the slot as a striped hold until payment lands. The customer is told they have 24 hours to pay — unpaid, it’s removed automatically.'
                 : nbPay === 'stripe'
                   ? `Books the slot and opens the secure card page for ${formatCents(priceCents)} — it confirms itself when Stripe does.`
                   : `Confirms the slot with ${formatCents(priceCents)} still owed in ${PAY_LABEL[nbPay]}. Nothing reads as paid until the money is in hand — record it then under Take payment.`}

@@ -98,6 +98,13 @@ export interface BookingFacts {
   cleanupMin?: number
   arriveBy?: string // "1 PM"
   stayUntil?: string // "5:30 PM"
+  // An unpaid hold's deadline (0054) — "Wednesday, November 11 at 3 PM".
+  // Set only while the booking is still an unpaid hold that has been
+  // given its 24 hours; past it, the hold is removed.
+  holdDeadline?: string
+  // Waivers this booking's room still needs signed (0054). Signed on the
+  // booking's own page, before payment — nobody signs at the door.
+  waiversDue?: number
 }
 
 // The button on any email about a booking with money still owed. Sends
@@ -110,7 +117,7 @@ function bookingCta(b: BookingFacts, paidLabel = 'View my booking'): { label: st
   if (owed <= 0) return { label: paidLabel, href: b.payUrl }
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
   const due = depositDue > 0 && depositDue < owed ? depositDue : owed
-  return { label: `Pay ${money(due)} now`, href: b.payUrl }
+  return { label: b.waiversDue ? `Sign the waiver & pay ${money(due)}` : `Pay ${money(due)} now`, href: b.payUrl }
 }
 
 // Where the booking lives online — its own page works with or without an
@@ -126,7 +133,10 @@ function paymentTerms(b: BookingFacts): string {
   const owed = Math.max(b.priceCents - b.paidCents, 0)
   if (owed <= 0) return `<p style="margin:0 0 6px;">You're paid in full — nothing more is owed.</p>`
   const depositDue = b.depositCents && b.depositCents > 0 ? Math.max(b.depositCents - b.paidCents, 0) : 0
-  const deposit = depositDue > 0 && depositDue < owed
+  // An unpaid hold's own deadline (holdTerms) is what governs the deposit
+  // until the first payment lands — not the 14-day rule.
+  const onHoldClock = !!b.holdDeadline && b.paidCents === 0
+  const deposit = depositDue > 0 && depositDue < owed && !onHoldClock
     ? `Your ${money(depositDue)} deposit is due at least 14 days before your event (right away if it's sooner) — if it isn't in by then, the date may be released. `
     : ''
   const choices = deposit ? 'the deposit, the full balance, or any amount in between' : 'the full balance or part of it now'
@@ -152,6 +162,25 @@ function cardTerms(b: BookingFacts): string {
     cleaning, storage, a late exit, or an unpaid balance — and we'll contact you before any charge.</p>`
 }
 
+// The 24-hour rule for an unpaid hold: pay something by the deadline or
+// the booking comes off the calendar. Silent once anything is paid.
+function holdTerms(b: BookingFacts): string {
+  if (!b.holdDeadline || b.paidCents > 0) return ''
+  const depositDue = b.depositCents && b.depositCents > 0 ? b.depositCents : 0
+  const ask = depositDue > 0 && depositDue < b.priceCents ? `pay at least the ${money(depositDue)} deposit` : 'make a payment'
+  return `<p style="margin:0 0 6px;padding:10px 14px;background:#fdecea;border-radius:10px;color:${INK};">
+    <strong>This booking is unpaid.</strong> Please ${ask} by <strong>${b.holdDeadline}</strong> —
+    unpaid holds are removed after 24 hours so the time can go to someone else.</p>`
+}
+
+// Waivers are part of booking: signed on the booking's page before paying.
+function waiverTerms(b: BookingFacts): string {
+  if (!b.waiversDue || !b.payUrl) return ''
+  return `<p style="margin:0 0 6px;">This room has ${b.waiversDue === 1 ? 'a waiver' : `${b.waiversDue} waivers`} to sign first —
+    it's the first step on <a href="${b.payUrl}" style="color:#2f6db8;font-weight:600;">your booking's page</a>, right
+    before payment. Guests don't sign anything at the door.</p>`
+}
+
 export function bookingHeld(b: BookingFacts): EmailBody {
   return {
     subject: `We're holding ${b.room} for you — ${b.date}`,
@@ -170,6 +199,8 @@ export function bookingHeld(b: BookingFacts): EmailBody {
        <p style="margin:0 0 6px;"><strong style="color:${INK};">${b.inReview
          ? 'This is a request — our team reviews every one, and you\'ll get an email the moment it\'s approved.'
          : 'The room is held for you.'}</strong> Nobody else can book this time while it's on hold.</p>
+       ${holdTerms(b)}
+       ${waiverTerms(b)}
        ${paymentTerms(b)}
        ${arrivalTerms(b)}
        ${cardTerms(b)}
@@ -224,6 +255,7 @@ export function bookingConfirmed(b: BookingFacts): EmailBody {
          ['Paid', money(b.paidCents)],
          ...(b.priceCents > b.paidCents ? [['Balance due', money(b.priceCents - b.paidCents)] as [string, string]] : []),
        ])}
+       ${waiverTerms(b)}
        ${paymentTerms(b)}
        ${arrivalTerms(b)}
        ${cardTerms(b)}
@@ -254,6 +286,8 @@ export function bookingApproved(b: BookingFacts): EmailBody {
          ['Paid so far', money(b.paidCents)],
          ...(owed > 0 ? [['Balance due', money(owed)] as [string, string]] : []),
        ])}
+       ${holdTerms(b)}
+       ${waiverTerms(b)}
        ${paymentTerms(b)}
        ${arrivalTerms(b)}
        ${cardTerms(b)}
@@ -437,9 +471,89 @@ export function bookingApprovalAlert(b: BookingFacts): EmailBody {
          ...(b.paidCents > 0 ? [['Paid so far', money(b.paidCents)] as [string, string]] : []),
          ...(owed > 0 ? [['Still owed', money(owed)] as [string, string]] : []),
          ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+         ...(b.holdDeadline && b.paidCents === 0 ? [['Payment', `<span style="color:#b3261e;">Unpaid — removed ${b.holdDeadline} unless paid</span>`] as [string, string]] : []),
        ])}
-       <p style="margin:0;">It holds the room until someone approves or cancels it — the customer is waiting on your answer.</p>`,
+       <p style="margin:0;">${b.holdDeadline && b.paidCents === 0
+         ? `Nothing has been paid yet. The customer has been told they have 24 hours to pay or the booking is removed —
+            it comes off the calendar automatically on ${b.holdDeadline} unless a payment lands or someone confirms it.`
+         : 'It holds the room until someone approves or cancels it — the customer is waiting on your answer.'}</p>`,
       { label: 'Review & approve', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
+// The customer's 24-hour notice on an unpaid hold: pay by the deadline or
+// the booking is removed. Sent once per hold, by the hourly job, to any
+// unpaid hold that hasn't already had the deadline in its hold email.
+export function holdPaymentWarning(b: BookingFacts): EmailBody {
+  return {
+    subject: `Action needed: pay within 24 hours to keep ${b.room} on ${b.date}`,
+    html: shell(
+      `Your booking is unpaid, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">We're holding this for you, but nothing has been paid on it yet:</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['What', b.what],
+         ['When', `${b.date}, ${b.time}`],
+         ['Total', money(b.priceCents)],
+         ...(b.holdDeadline ? [['Pay by', b.holdDeadline] as [string, string]] : []),
+       ])}
+       ${holdTerms(b) || `<p style="margin:0 0 6px;"><strong style="color:${INK};">You have 24 hours to pay or this booking will be removed.</strong></p>`}
+       ${waiverTerms(b)}
+       <p style="margin:0 0 6px;">Pay online with the button below, by Cash App, or in cash at the front desk. Once a
+         payment is in, the booking is yours and the deadline goes away.</p>
+       <p style="margin:10px 0 0;">Changed your plans? Just reply and let us know, and we'll release the time for someone else.</p>`,
+      bookingCta(b),
+    ),
+  }
+}
+
+export interface HoldDigestItem {
+  code: string
+  name: string
+  room: string
+  when: string
+  totalCents: number
+  deadline?: string
+  note?: string
+}
+
+// The house's list from the hourly hold check: holds that just got their
+// 24-hour notice, and holds that ran out and were removed.
+export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDigestItem[] }): EmailBody {
+  const rows = (items: HoldDigestItem[], tail: (i: HoldDigestItem) => string) => items.map((i) => `
+    <tr>
+      <td style="padding:8px 0;border-top:1px solid ${LINE};font-size:13px;color:${INK};">
+        <strong>${i.code}</strong> · ${i.name}<br>
+        <span style="color:${SUB};">${i.room} — ${i.when} · ${money(i.totalCents)}</span><br>
+        <span style="color:${SUB};">${tail(i)}</span>
+      </td>
+    </tr>`).join('')
+  const parts: string[] = []
+  if (o.warned.length > 0) {
+    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Unpaid — the customer was just told they have 24 hours to pay:</strong></p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
+        ${rows(o.warned, (i) => i.note ?? (i.deadline ? `Removed ${i.deadline} unless paid` : 'Unpaid'))}
+      </table>`)
+  }
+  if (o.released.length > 0) {
+    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Removed — the 24 hours ran out with nothing paid:</strong></p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
+        ${rows(o.released, (i) => i.note ?? 'Canceled and the customer emailed')}
+      </table>`)
+  }
+  const n = o.warned.length
+  const m = o.released.length
+  const subject = [n > 0 ? `${n} unpaid hold${n === 1 ? '' : 's'}` : '', m > 0 ? `${m} removed` : ''].filter(Boolean).join(', ')
+  return {
+    subject: `Unpaid bookings — ${subject}`,
+    html: shell(
+      'Unpaid bookings',
+      `${parts.join('')}
+       <p style="margin:0;">Any payment — online, Cash App, cash, or check at the desk — confirms a booking and stops
+         its clock. To give someone more time, confirm the booking on the Bookings page.</p>`,
+      { label: 'Open bookings', href: siteLink('/admin/bookings') },
     ),
   }
 }

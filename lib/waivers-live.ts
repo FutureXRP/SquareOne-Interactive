@@ -8,90 +8,22 @@
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
-export type WaiverFrequency = 'once' | 'annual' | 'every_time'
+import {
+  FORM_COL_SETS, toWaiver, hasSubstance,
+  type FormRow, type RequiredWaiver, type WaiverFrequency,
+} from '@/lib/waiver-forms'
+
+export { FREQUENCY_NOTE, toWaiver, hasSubstance } from '@/lib/waiver-forms'
+export type { WaiverFrequency, WaiverChoice, RequiredWaiver } from '@/lib/waiver-forms'
+
 // 'fitness' = fitness signup, any plan; { planId } filters plan-targeted
 // waivers; { roomId } is a rental booking for that room.
 export type WaiverTarget = 'fitness' | { planId: string } | { roomId: string }
 
-export interface WaiverChoice {
-  label: string
-  options: string[]
-  required: boolean
-  // true = pick exactly one (an either/or, like a photo release);
-  // false = check any that apply.
-  single: boolean
-}
-
-export interface RequiredWaiver {
-  id: string
-  name: string
-  context: string
-  terms: string[]
-  choices: WaiverChoice[]
-  // Standalone "Agreement checkbox" fields — each rendered as its own
-  // checkbox; required ones must be ticked to sign.
-  agreements: { label: string; required: boolean }[]
-  frequency: WaiverFrequency
-}
-
-export const FREQUENCY_NOTE: Record<WaiverFrequency, string> = {
-  once: 'signed once',
-  annual: 're-signed every 12 months',
-  every_time: 'signed with every booking',
-}
-
-interface FormField {
-  type: string
-  label?: string
-  content?: string
-  required?: boolean
-  options?: string[]
-}
-
-interface FormRow {
-  id: string
-  name: string
-  fields: FormField[]
-  assign_to?: string
-  assign_room_ids: string[] | null
-  assign_plan_ids?: string[] | null
-  frequency: WaiverFrequency
-}
-
 const isFitness = (t: WaiverTarget) => t === 'fitness' || 'planId' in t
 
-// A form row becomes exactly what the store shows — paragraphs in the
-// order staff arranged them, multi-select questions with their options.
-export function toWaiver(r: FormRow, where?: string): RequiredWaiver {
-  const fields = Array.isArray(r.fields) ? r.fields : []
-  const frequency = r.frequency ?? 'once'
-  return {
-    id: r.id,
-    name: r.name,
-    context: [where, FREQUENCY_NOTE[frequency]].filter(Boolean).join(' · '),
-    terms: fields
-      .filter((f) => f.type === 'paragraph' && f.content && f.content.trim())
-      .map((f) => (f.content as string).trim()),
-    choices: fields
-      .filter((f) => (f.type === 'multi' || f.type === 'single') && Array.isArray(f.options) && f.options.length > 0)
-      .map((f) => ({ label: f.label ?? '', options: f.options as string[], required: !!f.required, single: f.type === 'single' })),
-    agreements: fields
-      .filter((f) => f.type === 'checkbox' && (f.label ?? '').trim())
-      .map((f) => ({ label: (f.label as string).trim(), required: !!f.required })),
-    frequency,
-  }
-}
-
-// assign_plan_ids arrives with 0017 and frequency/assign_to with 0004 —
-// each select falls back to the last shape that worked.
-const COL_SETS = [
-  'id, name, fields, assign_to, assign_room_ids, assign_plan_ids, frequency',
-  'id, name, fields, assign_to, assign_room_ids, frequency',
-  'id, name, fields',
-]
-
 async function activeForms(assignTo?: 'fitness' | 'rentals'): Promise<FormRow[] | null> {
-  for (const cols of COL_SETS) {
+  for (const cols of FORM_COL_SETS) {
     let q = supabase().from('forms').select(cols).eq('status', 'active')
     // assign_to only exists from 0004 on; the bare select can't filter on it.
     if (assignTo && cols.includes('assign_to')) q = q.eq('assign_to', assignTo)
@@ -146,13 +78,6 @@ async function needsSignature(w: RequiredWaiver): Promise<boolean> {
   if (w.frequency === 'once') return false
   const signedMs = new Date((data[0] as { signed_at: string }).signed_at).getTime()
   return Date.now() - signedMs > 365 * 24 * 60 * 60 * 1000
-}
-
-// A form is substantive when it puts anything in front of the signer to
-// read or decide — paragraphs, choices, or agreement checkboxes. A photo
-// release that is nothing but an either/or question counts.
-export function hasSubstance(w: RequiredWaiver): boolean {
-  return w.terms.length > 0 || w.choices.length > 0 || w.agreements.length > 0
 }
 
 // The waivers this flow still has to collect right now. A form with

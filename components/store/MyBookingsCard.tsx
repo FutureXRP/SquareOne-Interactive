@@ -75,7 +75,11 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
     if (which === 'custom' && !customOk) return
     setBusy(true); setMsg(null)
     const started = await startBookingCheckout(b.id, which, which === 'custom' ? customCents : undefined)
-    if (!started) { setMsg('Card payments aren’t switched on yet — give us a call and we’ll take it at the desk.'); setBusy(false) }
+    // Waivers come before payment: the booking's own page has the waiver
+    // ready to sign, with the payment buttons right after it.
+    if (started === 'waiver' && b.payToken) { window.location.assign(`/pay/${b.payToken}`); return }
+    if (started === 'waiver') { setMsg('This booking still needs its waiver signed before payment — open it from your confirmation email, or call the front desk.'); setBusy(false) }
+    else if (started === 'unavailable') { setMsg('Card payments aren’t switched on yet — give us a call and we’ll take it at the desk.'); setBusy(false) }
     // On success the browser is already on its way to Stripe.
   }
 
@@ -105,7 +109,8 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {stage === 'review' && (
         <p style={{ fontSize: 12.5, color: SUB, margin: '12px 0 0', lineHeight: 1.55 }}>
           We have your request and someone on our team is looking at it. You&rsquo;ll get an email the
-          moment it&rsquo;s approved. You can pay now if you like — paying holds the room while it waits.
+          moment it&rsquo;s approved. Please pay within 24 hours of booking to keep the time — unpaid holds are
+          removed after 24 hours — and if we can&rsquo;t approve it, we refund you in full.
         </p>
       )}
 
