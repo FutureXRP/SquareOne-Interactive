@@ -175,6 +175,26 @@ export interface MemberBooking {
   // card is on file — undefined before 0037/0053.
   payToken?: string
   cardOnFile?: boolean
+  // A change they asked for that's waiting on our team (0057).
+  pendingChange?: { newDuring: string | null; newRoomIds: string[] | null; newAddonIds: string[] | null } | null
+}
+
+// Their change requests still waiting, keyed by booking. Empty before 0057.
+async function myPendingChanges(): Promise<Map<string, NonNullable<MemberBooking['pendingChange']>>> {
+  const out = new Map<string, NonNullable<MemberBooking['pendingChange']>>()
+  const { data, error } = await supabase().from('booking_change_requests')
+    .select('booking_id, new_during, new_room_ids, new_addon_ids, created_at')
+    .eq('status', 'pending').order('created_at')
+  if (error) return out
+  for (const r of (data ?? []) as { booking_id: string; new_during: string | null; new_room_ids: string[] | null; new_addon_ids: string[] | null }[]) {
+    const prev = out.get(r.booking_id)
+    out.set(r.booking_id, {
+      newDuring: r.new_during ?? prev?.newDuring ?? null,
+      newRoomIds: r.new_room_ids ?? prev?.newRoomIds ?? null,
+      newAddonIds: r.new_addon_ids ?? prev?.newAddonIds ?? null,
+    })
+  }
+  return out
 }
 
 export async function getMyBookings(): Promise<MemberBooking[]> {
@@ -200,6 +220,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
     if (!res.error) { rows = res.data as unknown as Row[]; break }
   }
   if (!rows) throw new Error('bookings query failed')
+  const pending = await myPendingChanges().catch(() => new Map())
   return rows.flatMap((r) => {
     // A package's extra rooms ride on its lead booking (0055) — the
     // member sees one booking, not one per room.
@@ -224,6 +245,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       note: r.note ?? null,
       payToken: r.pay_token ?? undefined,
       cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
+      pendingChange: pending.get(r.id) ?? null,
     }]
   })
 }
@@ -316,7 +338,8 @@ export async function rescheduleMyBooking(id: string, date: string, startH: numb
     return { ok: false, error: error.message }
   }
   emit(SESSION_EVENT)
-  notify('booking.rescheduled', id)
+  // Nothing moved yet (0057) — this files a request for our team.
+  notify('booking.change_requested', id)
   return { ok: true }
 }
 

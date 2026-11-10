@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serviceDb } from '@/lib/server/billing'
 import { applyEmailOverrides } from '@/lib/server/email-overrides'
 import { bookingFeeCharged, holdPaymentWarning, unpaidHoldsAlert, customerChangedAlert,
+  changeRequestReceived, changeRequestAlert, changeRequestDecided,
   bookingHeld, bookingApproved, bookingApprovalAlert, bookingConfirmed, bookingPayment, bookingRescheduled,
   bookingUpdated, bookingCanceled, bookingRemoved, bookingStaffAssigned,
   paymentReceipt, paymentVoided, refundIssued,
@@ -58,6 +59,11 @@ const SAMPLE_EVENT: EventFacts = {
   staffName: 'Alexis Henson',
 }
 
+const SAMPLE_CHANGE = {
+  oldWhen: 'Sat, Sep 12, 2 PM – 5 PM', newWhen: 'Sun, Sep 13, 4 PM – 7 PM',
+  oldRooms: ['Gaming Zone', 'Gym'], newRooms: ['Gaming Zone', 'Dining Hall'],
+}
+
 function sampleFor(kind: string): EmailBody | null {
   const b = SAMPLE_BOOKING
   switch (kind) {
@@ -72,6 +78,10 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.staff_assigned': return bookingStaffAssigned(b, { staffName: 'Alexis Henson', payoutCents: 5000 })
     case 'booking.approval_alert': return bookingApprovalAlert(b)
     case 'booking.hold_warning': return holdPaymentWarning({ ...b, paidCents: 0, holdDeadline: 'Wednesday, September 2 at 3 PM' })
+    case 'booking.change_requested': return changeRequestReceived(b, SAMPLE_CHANGE)
+    case 'booking.change_request_alert': return changeRequestAlert(b, SAMPLE_CHANGE)
+    case 'booking.change_approved': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The Dining Hall adds $50 — we updated your total.' }, true)
+    case 'booking.change_declined': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The gym has a tournament that afternoon — we can do the same time on Saturday.' }, false)
     case 'booking.customer_changed': return customerChangedAlert(b, [
       { kind: 'moved', at: 'Mon, Sep 7, 3:12 PM', oldWhen: 'Sat, Sep 12, 2 PM – 5 PM', newWhen: 'Sun, Sep 13, 4 PM – 7 PM' },
       { kind: 'spaces_requested', at: 'Mon, Sep 7, 3:20 PM', booked: ['Gaming Zone', 'Gym'], requested: ['Gaming Zone', 'Dining Hall'], addonsAdded: ['Photo booth'] },

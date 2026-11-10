@@ -77,6 +77,13 @@ export default async function PayPage({ params, searchParams }: {
   // Waivers this booking's room requires and nobody has signed yet. They
   // come before payment — the buttons stay hidden until they're done.
   const waivers = found && found.row.status !== 'canceled' ? await waiversDueForBooking(found.row.id) : []
+  // A change they asked for that's still with our team (0057).
+  let changePending = false
+  if (found && found.row.status !== 'canceled') {
+    const { data, error } = await serviceDb().from('booking_change_requests').select('id')
+      .eq('booking_id', found.row.id).eq('status', 'pending').limit(1)
+    changePending = !error && (data ?? []).length > 0
+  }
 
   if (!found) {
     return (
@@ -133,6 +140,13 @@ export default async function PayPage({ params, searchParams }: {
           </p>
         )}
 
+        {changePending && !(signed === '1' && asked === '1') && (
+          <p style={{ fontSize: 12.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 9, padding: '10px 12px', margin: '14px 0 0', lineHeight: 1.55 }}>
+            Your request for change has been submitted and will be reviewed by our team. Until it&rsquo;s approved,
+            your booking stays as shown here — we&rsquo;ll email you either way.
+          </p>
+        )}
+
         <div style={{ borderTop: `1px solid ${LINE}`, margin: '16px 0 4px' }} />
         <Row label="What" value={t.title} />
         <Row label="Confirmation" value={t.code} />
@@ -174,8 +188,8 @@ export default async function PayPage({ params, searchParams }: {
           )}
           {signed === '1' && asked === '1' && (
             <p style={{ fontSize: 12.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 9, padding: '9px 12px', margin: '0 0 10px', lineHeight: 1.5 }}>
-              You asked for different spaces or extras than what&rsquo;s booked. We&rsquo;ve let the front desk know —
-              they&rsquo;ll call you to confirm. Until then, your booking stays as shown above.
+              Your request for change has been submitted and will be reviewed by our team. Until it&rsquo;s
+              approved your booking stays as shown above — you&rsquo;ll get an email either way.
             </p>
           )}
 

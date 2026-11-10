@@ -52,6 +52,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
+  const [sent, setSent] = useState(false)
   const [date, setDate] = useState(b.date)
   const [startH, setStartH] = useState(b.startH)
   const [hours, setHours] = useState(b.hours)
@@ -98,14 +99,33 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
     setBusy(true); setMsg(null)
     const res = await rescheduleMyBooking(b.id, date, startH, hours)
     setBusy(false)
-    if (res.ok) { setMoving(false); onDone(); return }
+    if (res.ok) { setMoving(false); setSent(true); onDone(); return }
     setMsg(res.conflict
-      ? 'Someone already has that room at that time. Try another slot.'
+      ? 'That time isn’t open in your room. Try another slot.'
       : res.error ?? 'We couldn’t move that booking.')
   }
 
+  const pc = b.pendingChange
+  const pcWhen = pc?.newDuring ? (() => {
+    const m = /^[[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(pc.newDuring as string)
+    if (!m) return null
+    const f = new Date(m[1]); const t = new Date(m[2])
+    return `${f.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, ${formatHour(f.getHours() + f.getMinutes() / 60)}–${formatHour(t.getHours() + t.getMinutes() / 60)}`
+  })() : null
+
   return (
     <div style={{ padding: '0 20px 16px', background: '#fbfcfe', borderTop: `1px solid ${LINE}` }}>
+      {(pc || sent) && (
+        <div style={{ background: '#fdf3dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '10px 13px', margin: '12px 0 0' }}>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#5b4708', margin: '0 0 2px' }}>
+            Your request for change has been submitted and will be reviewed by our team.
+          </p>
+          <p style={{ fontSize: 12, color: SUB, margin: 0, lineHeight: 1.5 }}>
+            {pcWhen ? <>You asked for <strong style={{ color: INK }}>{pcWhen}</strong>{pc?.newRoomIds ? ' and different rooms' : ''}. </> : pc?.newRoomIds || pc?.newAddonIds ? 'You asked for different rooms or extras. ' : ''}
+            Until it&rsquo;s approved your booking stays as shown below. We&rsquo;ll email you either way.
+          </p>
+        </div>
+      )}
       {stage === 'review' && (
         <p style={{ fontSize: 12.5, color: SUB, margin: '12px 0 0', lineHeight: 1.55 }}>
           We have your request and someone on our team is looking at it. You&rsquo;ll get an email the
@@ -175,7 +195,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {stage !== 'done' && b.status !== 'canceled' && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
           <button className="sq-btn sq-btn-ghost" style={{ padding: '8px 16px' }} disabled={busy} onClick={() => setMoving((v) => !v)}>
-            {moving ? 'Never mind' : 'Reschedule'}
+            {moving ? 'Never mind' : pc ? 'Ask for a different time' : 'Request a new time'}
           </button>
           <button className="sq-btn sq-btn-danger" style={{ padding: '8px 16px' }} disabled={busy} onClick={cancel}>
             Cancel booking
@@ -186,8 +206,8 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {moving && (
         <div style={{ marginTop: 12, padding: 14, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 10 }}>
           <p style={{ fontSize: 12, color: SUB, margin: '0 0 10px', lineHeight: 1.5 }}>
-            Pick a new time at least {notice} hours out. Moving a booking sends it back for a quick
-            review — your payment stays on it.
+            Pick a new time at least {notice} hours out. This sends a change request — your booking stays
+            as it is until our team approves it, and your payment stays on it either way.
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label style={{ display: 'block' }}>
@@ -219,7 +239,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
               </select>
             </label>
             <button className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }} disabled={busy} onClick={move}>
-              Move it
+              Send request
             </button>
           </div>
         </div>

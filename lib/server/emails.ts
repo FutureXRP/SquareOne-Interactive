@@ -627,6 +627,123 @@ export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[],
   }
 }
 
+// A change a customer asked for (0057) — what it is now and what they
+// asked for, ready to show either side.
+export interface ChangeRequestFacts {
+  oldWhen?: string
+  newWhen?: string
+  oldRooms?: string[]
+  newRooms?: string[]
+  oldExtras?: string[]
+  newExtras?: string[]
+  decisionNote?: string
+}
+
+function changeRows(c: ChangeRequestFacts): [string, string][] {
+  const strike = (v: string) => `<span style="text-decoration:line-through;color:#8a98ab;font-weight:500;">${v}</span>`
+  const rows: [string, string][] = []
+  if (c.newWhen) rows.push(['Date & time', `${c.oldWhen ? strike(c.oldWhen) + '<br>' : ''}→ ${c.newWhen}`])
+  if (c.newRooms) rows.push(['Rooms', `${c.oldRooms ? strike(c.oldRooms.join(', ') || '—') + '<br>' : ''}→ ${c.newRooms.join(', ') || '—'}`])
+  if (c.newExtras) rows.push(['Extras', `${c.oldExtras ? strike(c.oldExtras.join(', ') || 'none') + '<br>' : ''}→ ${c.newExtras.join(', ') || 'none'}`])
+  return rows
+}
+
+// To the customer, the moment they ask: nothing has changed yet.
+export function changeRequestReceived(b: BookingFacts, c: ChangeRequestFacts): EmailBody {
+  return {
+    subject: `Change request received — ${b.room} on ${b.date}`,
+    html: shell(
+      `We got your change request, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;"><strong style="color:${INK};">Your request for change has been submitted and will be reviewed by our team.</strong>
+         You'll get another email as soon as it's approved or declined.</p>
+       <p style="margin:12px 0 0;font-weight:700;color:${INK};">What you asked for</p>
+       ${detailRows(changeRows(c))}
+       <p style="margin:0 0 6px;">Until then your booking stays exactly as it is:</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ['Total', money(b.priceCents)],
+       ])}
+       <p style="margin:0;">If a change affects your price, we'll tell you before anything is charged.</p>`,
+      { label: 'View my booking', href: bookingLink(b) },
+    ),
+  }
+}
+
+// To the house: a request waiting on an owner, admin, or manager.
+export function changeRequestAlert(b: BookingFacts, c: ChangeRequestFacts, o: { conflicts?: string[] } = {}): EmailBody {
+  return {
+    subject: `Change request — ${b.code}, ${b.name}`,
+    html: shell(
+      'A customer asked to change their booking',
+      `<p style="margin:0 0 6px;">${b.name} asked for a change. <strong style="color:${INK};">Nothing has changed yet</strong> —
+         it waits for an owner, admin, or manager to approve or decline it on the Bookings page.</p>
+       ${detailRows(changeRows(c))}
+       ${o.conflicts && o.conflicts.length > 0
+         ? `<p style="margin:0 0 6px;padding:10px 14px;background:#fdecea;border-radius:10px;color:${INK};">
+              <strong>Not available as asked:</strong> ${o.conflicts.join(', ')} ${o.conflicts.length === 1 ? 'is' : 'are'} already booked then.
+              Approving will be refused unless that frees up — decline it with a note, or call them.</p>`
+         : ''}
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['What', b.what],
+         ['Room now', b.room],
+         ['When now', `${b.date}, ${b.time}`],
+         ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
+         ['Total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+       ])}
+       <p style="margin:0;">Approving doesn't change the price — if the new time or rooms cost more or less, update the price after.</p>`,
+      { label: 'Review the request', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
+// To the customer: the answer.
+export function changeRequestDecided(b: BookingFacts, c: ChangeRequestFacts, approved: boolean): EmailBody {
+  const note = c.decisionNote
+    ? `<p style="margin:0 0 6px;padding:10px 14px;background:#f4f7fb;border-radius:10px;"><strong style="color:${INK};">A note from our team:</strong> ${c.decisionNote.replace(/</g, '&lt;')}</p>`
+    : ''
+  return approved
+    ? {
+      subject: `Change approved — ${b.room} on ${b.date}`,
+      html: shell(
+        `Your change is approved, ${b.name.split(' ')[0]}`,
+        `<p style="margin:0 0 6px;">Our team approved the change you asked for. Here's your booking now:</p>
+         ${detailRows([
+           ['Confirmation', b.code],
+           ['Room', b.room],
+           ['When', `${b.date}, ${b.time}`],
+           ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+           ['Total', money(b.priceCents)],
+           ['Paid so far', money(b.paidCents)],
+         ])}
+         ${note}
+         ${agreementNudge(b)}
+         <p style="margin:10px 0 0;">Anything you've already paid stays with the booking.</p>`,
+        bookingCta(b, 'View my booking'),
+      ),
+    }
+    : {
+      subject: `Change request declined — ${b.room} on ${b.date}`,
+      html: shell(
+        `We couldn't make that change, ${b.name.split(' ')[0]}`,
+        `<p style="margin:0 0 6px;">Our team reviewed your request and wasn't able to make this change:</p>
+         ${detailRows(changeRows(c))}
+         ${note}
+         <p style="margin:0 0 6px;">Your booking stays as it was:</p>
+         ${detailRows([
+           ['Confirmation', b.code],
+           ['Room', b.room],
+           ['When', `${b.date}, ${b.time}`],
+         ])}
+         <p style="margin:0;">Want to try something else? Reply here or call the front desk and we'll help find what works.</p>`,
+        { label: 'View my booking', href: bookingLink(b) },
+      ),
+    }
+}
+
 export function bookingRescheduled(b: BookingFacts): EmailBody {
   return {
     subject: `Moved — ${b.room} is now ${b.date}`,
