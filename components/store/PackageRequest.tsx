@@ -13,6 +13,7 @@ import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/
 import type { EventPackage } from '@/lib/packages-store'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
+import { facilityBusy } from '@/lib/staff-bookings-store'
 
 function isoToday(offsetDays = 0): string {
   const d = new Date()
@@ -50,6 +51,19 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   }, [open])
 
   const roomId = pkg.roomIds[0]
+
+  // What's already on the calendar in ANY of the package's rooms that day —
+  // a party that needs the gym can't start while the gym is taken, even
+  // if the gaming room is free.
+  const [taken, setTaken] = useState<{ fromH: number; toH: number }[] | null>(null)
+  useEffect(() => {
+    if (!date || pkg.roomIds.length === 0) { setTaken(null); return }
+    let live = true
+    setTaken(null)
+    Promise.all(pkg.roomIds.map((id) => facilityBusy(id, date).catch(() => [])))
+      .then((lists) => { if (live) setTaken(lists.flat()) })
+    return () => { live = false }
+  }, [date, pkg.roomIds])
   const phoneOk = phone.replace(/\D/g, '').length >= 7
 
   // Start times that fit the package inside that day's opening hours.
@@ -61,16 +75,24 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     const hours = cfg ? siteDayHours(cfg, js.getDay()) : { closed: false, openH: 9, closeH: 21 }
     const closed = Boolean(closure) || hours.closed
     const starts: number[] = []
-    if (!closed) for (let h = Math.ceil(hours.openH); h + pkg.hours <= hours.closeH; h++) starts.push(h)
+    if (!closed) {
+      for (let h = Math.ceil(hours.openH); h + pkg.hours <= hours.closeH; h++) {
+        const clash = (taken ?? []).some((w) => h < w.toH && h + pkg.hours > w.fromH)
+        if (!clash) starts.push(h)
+      }
+    }
     return { closed, starts, label: js.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) }
-  }, [date, cfg, pkg.hours])
+  }, [date, cfg, pkg.hours, taken])
 
   const submit = async () => {
     if (!roomId || !date || startH == null || !phoneOk || busy) return
     setBusy(true)
     setError(null)
     // Same rule as booking a room: the waivers come first.
-    const due = await unsignedRequiredWaivers({ roomId }).catch(() => [] as RequiredWaiver[])
+    // Every room in the package — a gym waiver applies to a party that
+    // uses the gym, whichever room leads the booking.
+    const lists = await Promise.all(pkg.roomIds.map((id) => unsignedRequiredWaivers({ roomId: id }).catch(() => [] as RequiredWaiver[])))
+    const due = lists.flat().filter((w, i, all) => all.findIndex((x) => x.id === w.id) === i)
     if (due.length > 0) {
       setPendingWaivers(due)
       setBusy(false)
@@ -157,10 +179,12 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
       {day && (
         <div>
           <label className="sq-label" htmlFor={`pr-time-${pkg.id}`}>Start time</label>
-          {day.closed ? (
+          {taken === null && !day.closed ? (
+            <p style={{ fontSize: 12.5, color: SUB, margin: 0 }}>Checking what&apos;s open in every room…</p>
+          ) : day.closed ? (
             <p style={{ fontSize: 12.5, color: RED, margin: 0 }}>We&apos;re closed that day. Pick another date.</p>
           ) : day.starts.length === 0 ? (
-            <p style={{ fontSize: 12.5, color: RED, margin: 0 }}>A {pkg.hours}-hour package doesn&apos;t fit that day&apos;s hours. Pick another date.</p>
+            <p style={{ fontSize: 12.5, color: RED, margin: 0 }}>No {pkg.hours}-hour window is open in every room of this package that day. Pick another date.</p>
           ) : (
             <select id={`pr-time-${pkg.id}`} className="sq-select" value={startH ?? ''} onChange={(e) => setStartH(e.target.value === '' ? null : Number(e.target.value))}>
               <option value="">Choose a time</option>

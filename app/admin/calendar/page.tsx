@@ -98,6 +98,10 @@ export default function CalendarPage() {
 
   const createEvent = async () => {
     if (!selected || busy) return
+    // Only a named room is blocked. A tournament or event with no room
+    // leaves every room open to the store at that time.
+    if (!evRoom && evKind !== 'tour'
+      && !window.confirm('No room is picked, so this blocks nothing — customers can still book every room at this time. Save it without a room?')) return
     setBusy(true)
     const res = await addEvent({
       kind: evKind,
@@ -117,6 +121,10 @@ export default function CalendarPage() {
     setBusy(false)
     if (res === 'conflict') {
       window.alert('That room is already booked for that time — the calendar blocked the double-booking. Pick another room or time.')
+      return
+    }
+    if (!res) {
+      window.alert('That event couldn’t be saved, and no room was held. Please try again.')
       return
     }
     if (res) {
@@ -316,6 +324,9 @@ export default function CalendarPage() {
                         <option value="">— no room / roaming —</option>
                         {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
+                      {!evRoom && evKind !== 'tour' && (
+                        <p style={{ fontSize: 11, color: '#b07818', margin: '4px 0 0' }}>No room = nothing is blocked. Pick the room this uses so it can&rsquo;t be booked.</p>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>

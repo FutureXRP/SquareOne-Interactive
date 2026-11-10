@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
 import { formatCents } from '@/lib/format'
 import { FEE_PRESETS } from '@/lib/rental-agreement'
@@ -8,6 +8,8 @@ import { staffChargeFee } from '@/lib/billing-client'
 import { bookingPayUrl, BOOKINGS_EVENT, type StaffBooking } from '@/lib/staff-bookings-store'
 import { emit } from '@/lib/supabase'
 import type { AgreementStatus } from '@/lib/agreements-store'
+import { bookingWaiversDue } from '@/lib/waivers-staff'
+import type { RequiredWaiver } from '@/lib/waiver-forms'
 
 // A booking's paperwork, in its details panel: the signed Event Rental
 // Agreement and the card on file — and, for owners/admins/managers, the
@@ -29,9 +31,20 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
   const [notified, setNotified] = useState(false)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  // Waivers the room requires that nobody has signed for this booking.
+  // null while loading; companions ride on their lead and owe nothing.
+  const [waivers, setWaivers] = useState<RequiredWaiver[] | null>(null)
+  useEffect(() => {
+    if (b.leadBookingId || b.status === 'canceled' || b.priceCents === 0) { setWaivers([]); return }
+    let live = true
+    bookingWaiversDue({ id: b.id, roomId: b.roomId, accountId: b.accountId, createdAt: b.createdAt })
+      .then((w) => { if (live) setWaivers(w) })
+      .catch(() => { if (live) setWaivers([]) })
+    return () => { live = false }
+  }, [b.id, b.roomId, b.accountId, b.createdAt, b.leadBookingId, b.status])
 
-  // Before 0053 there's nothing to show.
-  if (agreement === undefined && b.card === undefined) return null
+  // Before 0053 there's nothing to show — unless a waiver is owed.
+  if (agreement === undefined && b.card === undefined && !(waivers && waivers.length > 0)) return null
   const payUrl = bookingPayUrl(b)
   const cents = dollarsToCents(amount)
   const cardLabel = b.card ? `${b.card.brand.replace(/^./, (c) => c.toUpperCase())} ••${b.card.last4}` : ''
@@ -54,6 +67,23 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
 
   return (
     <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5, color: SUB, lineHeight: 1.7, maxWidth: 620 }}>
+      {waivers && waivers.length > 0 && (
+        // Waivers come before money — online that's enforced; at the desk
+        // it's this warning, right where payment is taken.
+        <div style={{ background: '#fdecea', border: '1px solid #f3c4bf', borderRadius: 8, padding: '8px 11px', margin: '2px 0 8px', color: INK, lineHeight: 1.5 }}>
+          <strong style={{ color: RED }}>Waiver not signed:</strong>{' '}
+          {waivers.map((w) => w.name).join(', ')}.{' '}
+          {b.paidCents < b.priceCents
+            ? 'Have them sign before you take any payment — '
+            : 'This needs signing before the event — guests don’t sign at the door — '}
+          {payUrl
+            ? <><a href={payUrl} target="_blank" rel="noopener noreferrer" style={{ color: BLUE, fontWeight: 600 }}>open their booking page</a> (it&rsquo;s the first step there; hand them a tablet, or it&rsquo;s linked in their emails).</>
+            : 'it’s the first step on their booking page.'}
+        </div>
+      )}
+      {waivers && waivers.length === 0 && !b.leadBookingId && b.status !== 'canceled' && b.priceCents > 0 && (
+        <p style={{ margin: 0 }}><strong style={{ color: INK }}>Waivers:</strong> <span style={{ color: GREEN, fontWeight: 700 }}>none owed</span></p>
+      )}
       <p style={{ margin: 0 }}>
         <strong style={{ color: INK }}>Rental agreement:</strong>{' '}
         {agreement
