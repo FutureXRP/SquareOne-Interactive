@@ -5,6 +5,8 @@ import { bookingForToken } from '@/lib/server/pay-links'
 import { serviceDb } from '@/lib/server/billing'
 import { cashAppQrSvg } from '@/lib/server/cashapp-qr'
 import { PayPanel } from './PayPanel'
+import { PayWaivers } from './PayWaivers'
+import { waiversDueForBooking } from '@/lib/server/booking-waivers'
 import { bookingDoc, saveCardFromSetupSession } from '@/lib/server/booking-card'
 import { CardOnFileButton } from '@/components/agreement/CardOnFileButton'
 
@@ -72,6 +74,9 @@ export default async function PayPage({ params, searchParams }: {
   // The rental agreement and card on file — what every booking needs
   // before the day. Null before migration 0053 runs.
   const doc = found ? await bookingDoc(found.row.id).catch(() => null) : null
+  // Waivers this booking's room requires and nobody has signed yet. They
+  // come before payment — the buttons stay hidden until they're done.
+  const waivers = found && found.row.status !== 'canceled' ? await waiversDueForBooking(found.row.id) : []
 
   if (!found) {
     return (
@@ -122,8 +127,9 @@ export default async function PayPage({ params, searchParams }: {
 
         {t.inReview && !canceled && (
           <p style={{ fontSize: 12.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 9, padding: '10px 12px', margin: '14px 0 0', lineHeight: 1.55 }}>
-            This reservation is still being reviewed by our team. You&rsquo;re welcome to pay now —
-            it holds the room while we confirm, and we&rsquo;ll refund you in full if we can&rsquo;t.
+            This reservation is still being reviewed by our team. Please pay within 24 hours of booking
+            to keep the time — unpaid holds are removed after 24 hours — and we&rsquo;ll refund you in full if
+            we can&rsquo;t approve it.
           </p>
         )}
 
@@ -141,10 +147,15 @@ export default async function PayPage({ params, searchParams }: {
             call us and we&rsquo;ll get it straightened out.
           </p>
         ) : settled ? (
-          <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>
-            You&rsquo;re all paid up — nothing further to pay. Please arrive and leave within the setup and
-            cleanup times on your rental agreement.
-          </p>
+          <>
+            <p style={{ fontSize: 13, color: SUB, margin: waivers.length > 0 ? '0 0 16px' : 0, lineHeight: 1.6 }}>
+              You&rsquo;re all paid up — nothing further to pay. Please arrive and leave within the setup and
+              cleanup times on your rental agreement.
+            </p>
+            {waivers.length > 0 && <PayWaivers token={token} waivers={waivers} paid />}
+          </>
+        ) : waivers.length > 0 ? (
+          <PayWaivers token={token} waivers={waivers} paid={false} />
         ) : (
           <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} cashQr={cashQr} />
         )}

@@ -2,24 +2,28 @@
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN } from '@/lib/theme'
 import { signWaiver } from '@/lib/session'
-import type { RequiredWaiver } from '@/lib/waivers-live'
+import type { RequiredWaiver } from '@/lib/waiver-forms'
 
 // Inline waiver signing step, embedded in the flows that require it
 // (fitness membership signup, facility rental booking). Everything on
 // screen — the title, the paragraphs, the questions — comes from the form
 // staff built on the Forms & Waivers tab. Writes a real form_submissions
 // row against the signer's account.
-export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }: {
+export function WaiverPanel({ def, onSigned, compact = false, defaultName = '', signWith, storedNote }: {
   def: RequiredWaiver
   onSigned: () => void
   compact?: boolean
   defaultName?: string
+  // Where the signature goes. Default: the signed-in member's account.
+  // The pay link passes its own, which files it against the booking.
+  signWith?: (signer: string, answers: Record<string, string[]>) => Promise<{ ok: boolean; message?: string }>
+  storedNote?: string
 }) {
   const [signer, setSigner] = useState(defaultName)
   const [agreed, setAgreed] = useState(false)
   const [signature, setSignature] = useState('')
   const [saving, setSaving] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<string | false>(false)
   const [choices, setChoices] = useState<Record<string, string[]>>({})
   const [agreements, setAgreements] = useState<Record<string, boolean>>({})
 
@@ -57,10 +61,12 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
     for (const a of def.agreements) {
       if (agreements[a.label]) answers[a.label] = ['agreed']
     }
-    const ok = await signWaiver(def.id, signer.trim(), signer.trim(), answers, { name: def.name, terms: def.terms })
+    const res = signWith
+      ? await signWith(signer.trim(), answers)
+      : { ok: await signWaiver(def.id, signer.trim(), signer.trim(), answers, { name: def.name, terms: def.terms }) }
     setSaving(false)
-    if (ok) onSigned()
-    else setFailed(true)
+    if (res.ok) onSigned()
+    else setFailed(res.message || 'Couldn’t save your signature — check your connection and try again.')
   }
 
   return (
@@ -137,8 +143,8 @@ export function WaiverPanel({ def, onSigned, compact = false, defaultName = '' }
       <button className="sq-btn sq-btn-primary" disabled={!canSign || saving} onClick={sign} style={{ width: '100%' }}>
         {saving ? 'Signing…' : `Sign ${def.name.toLowerCase()}`}
       </button>
-      {failed && <p style={{ fontSize: 11.5, color: '#cf4436', margin: '8px 0 0', textAlign: 'center', fontWeight: 600 }}>Couldn&apos;t save your signature — check your connection and try again.</p>}
-      <p style={{ fontSize: 10.5, color: FAINT, margin: '8px 0 0', textAlign: 'center' }}>Your signature is stored securely on your account.</p>
+      {failed && <p style={{ fontSize: 11.5, color: '#cf4436', margin: '8px 0 0', textAlign: 'center', fontWeight: 600 }}>{failed}</p>}
+      <p style={{ fontSize: 10.5, color: FAINT, margin: '8px 0 0', textAlign: 'center' }}>{storedNote ?? 'Your signature is stored securely on your account.'}</p>
     </div>
   )
 }

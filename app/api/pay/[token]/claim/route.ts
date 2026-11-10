@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { serviceDb } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
+import { waiversDueForBooking, WAIVER_FIRST_MESSAGE } from '@/lib/server/booking-waivers'
 
 // "I've sent it" on the pay page's Cash App option. Files a claim for the
 // desk to confirm against the real Cash App app — it does not mark
@@ -17,6 +18,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const { row, target } = found
   if (row.status === 'canceled') return NextResponse.json({ error: 'canceled' }, { status: 409 })
   if (target.balanceCents <= 0) return NextResponse.json({ error: 'already_paid' }, { status: 409 })
+  if ((await waiversDueForBooking(row.id)).length > 0) {
+    return NextResponse.json({ error: 'waiver_required', message: WAIVER_FIRST_MESSAGE }, { status: 409 })
+  }
 
   const amount = which === 'deposit' && target.depositDueCents > 0
     ? Math.min(target.depositDueCents, target.balanceCents)

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { stripe, stripeConfigured, siteUrl } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { bookingDoc, ensureBookingCustomer } from '@/lib/server/booking-card'
+import { waiversDueForBooking, WAIVER_FIRST_MESSAGE } from '@/lib/server/booking-waivers'
 
 // Starts Stripe Checkout from a booking's pay link. No sign-in: holding
 // the link is the authorisation, the same way a payment link on an invoice
@@ -23,6 +24,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   }
   if (target.balanceCents <= 0) {
     return NextResponse.json({ error: 'already_paid', message: 'This booking is already paid in full.' }, { status: 409 })
+  }
+  // Waivers are signed before any money moves — never at the door.
+  if ((await waiversDueForBooking(row.id)).length > 0) {
+    return NextResponse.json({ error: 'waiver_required', message: WAIVER_FIRST_MESSAGE }, { status: 409 })
   }
 
   // Partial payments: any amount from the deposit (or $10 when no deposit

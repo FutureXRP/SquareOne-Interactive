@@ -80,16 +80,17 @@ export async function cancelBilled(resume = false): Promise<boolean> {
 }
 
 // A member paying for their own booking — deposit or balance — without
-// anyone at the desk. Returns false when Stripe isn't live on this
-// deployment so the caller can tell them to call instead.
-export async function startBookingCheckout(bookingId: string, which: 'deposit' | 'balance' | 'custom', amountCents?: number): Promise<boolean> {
-  if (!(await billingConfigured())) return false
+// anyone at the desk. 'unavailable' when Stripe isn't live on this
+// deployment so the caller can tell them to call instead; 'waiver' when
+// the booking's waiver still has to be signed first.
+export async function startBookingCheckout(bookingId: string, which: 'deposit' | 'balance' | 'custom', amountCents?: number): Promise<'redirected' | 'waiver' | 'unavailable'> {
+  if (!(await billingConfigured())) return 'unavailable'
   const res = await authedPost('/api/billing/booking-checkout', { bookingId, which, ...(amountCents ? { amountCents } : {}) })
   if (res.ok && res.url) {
     window.location.assign(res.url)
-    return true
+    return 'redirected'
   }
-  return false
+  return res.error === 'waiver_required' ? 'waiver' : 'unavailable'
 }
 
 // Staff-only: land a coupon on a member's existing Stripe subscription —

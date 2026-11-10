@@ -56,6 +56,7 @@ export interface StaffBooking {
   canceledByName?: string | null
   // The booking's own pay link (0037) — how a card is actually charged.
   payToken?: string | null
+  holdDeadline?: string | null
   // The account behind a member booking (null = guest/desk booking).
   accountId: string | null
   // Guest contact email typed at the desk (0029). Member bookings carry
@@ -122,6 +123,8 @@ interface Row {
   card_brand?: string | null
   card_last4?: string | null
   addon_ids?: string[] | null
+  hold_expires_at?: string | null
+  hold_warned_at?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -130,6 +133,7 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  `hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -178,6 +182,8 @@ function fromRow(r: Row): StaffBooking | null {
     canceledVia: 'canceled_via' in r ? ((r.canceled_via as StaffBooking['canceledVia']) ?? null) : undefined,
     canceledByName: 'canceled_by_staff' in r ? (r.canceled_by_staff?.name ?? null) : undefined,
     payToken: 'pay_token' in r ? (r.pay_token ?? null) : undefined,
+    // An unpaid hold's 24-hour deadline, once the customer has been told (0054).
+    holdDeadline: r.status === 'hold' && r.hold_warned_at && r.hold_expires_at ? r.hold_expires_at : null,
     accountId: r.account_id ?? null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
     contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,

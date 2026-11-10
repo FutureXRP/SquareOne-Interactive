@@ -23,7 +23,9 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.canceled', label: 'Booking canceled', blurb: 'Canceled by the customer, staff, or an expired hold.' },
       { kind: 'booking.deleted', label: 'Booking removed', blurb: 'A booking row was deleted outright.' },
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
-      { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books.' },
+      { kind: 'booking.hold_warning', label: 'Unpaid hold: 24 hours to pay', blurb: 'To the customer on an unpaid hold — pay within 24 hours or the booking is removed.' },
+      { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
+      { kind: 'booking.unpaid_alert', label: 'Staff: unpaid holds', blurb: 'To the Settings alert address (or owners and admins): holds that are unpaid with their deadline, and holds removed after 24 hours.' },
     ],
   },
   {
