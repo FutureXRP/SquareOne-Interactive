@@ -133,9 +133,9 @@ function bookingLink(b: BookingFacts): string {
   return b.payUrl ?? siteLink('/account')
 }
 
-// What's owed, when, and how — the Event Rental Agreement's terms: the
-// deposit at least 14 days out, the balance no later than 10 minutes
-// before the start, by card online (any amount), Cash App, or cash.
+// What's owed, when, and how (lib/payment-policy.ts): at least the deposit
+// within 24 hours once the event is within 14 days, the balance no later
+// than 10 minutes before the start — online, by Cash App, or in cash.
 function paymentTerms(b: BookingFacts): string {
   const owed = Math.max(b.priceCents - b.paidCents, 0)
   if (owed <= 0) return `<p style="margin:0 0 6px;">You're paid in full — nothing more is owed.</p>`
@@ -144,7 +144,7 @@ function paymentTerms(b: BookingFacts): string {
   // until the first payment lands — not the 14-day rule.
   const onHoldClock = (!!b.holdDeadline || !!b.depositClockOn) && b.paidCents === 0
   const deposit = depositDue > 0 && depositDue < owed && !onHoldClock
-    ? `At least your ${money(depositDue)} deposit is due by 14 days before your event — once it's within 14 days, you have 24 hours to pay it or the date is released. `
+    ? `Your ${money(depositDue)} deposit is still due — parties within 14 days of their event have 24 hours to pay at least the deposit, or the date is released. `
     : ''
   const choices = deposit ? 'the deposit, the full balance, or any amount in between' : 'the full balance or part of it now'
   return `<p style="margin:0 0 6px;">${deposit}The remaining balance is due no later than 10 minutes before your
@@ -391,10 +391,14 @@ export function bookingPayment(b: BookingFacts, pay: { amountCents: number; meth
       ? `Paid in full — ${b.room} on ${b.date}`
       : `Payment received — ${b.room} on ${b.date}`,
     html: shell(
-      settled ? `You're all set, ${b.name.split(' ')[0]}` : `Payment received — you're locked in`,
+      settled ? `You're all set, ${b.name.split(' ')[0]}` : `Payment received — thank you`,
       `<p style="margin:0 0 6px;">${settled
-        ? 'Your booking is paid in full and the room is yours.'
-        : `Thanks — your payment is in and the room is held for you.`}</p>
+        ? 'Your booking is paid in full.'
+        : !b.depositCents || b.paidCents >= b.depositCents
+          ? 'Thanks — your payment is in and your rooms are secured.'
+          : `Thanks — your payment is in. Your rooms are secured once at least the ${money(b.depositCents)} deposit is paid.`}${b.inReview
+        ? ' It\'s still a request our team is reviewing — you\'ll get an email when it\'s approved, and a full refund if we can\'t.'
+        : settled ? ' The room is yours.' : ''}</p>
        ${detailRows([
          ['Receipt', pay.code],
          ['Paid now', `${money(pay.amountCents)} by ${pay.method}`],
@@ -544,7 +548,7 @@ export interface HoldDigestItem {
 
 // The house's list from the hourly hold check: holds that just got their
 // 24-hour notice, and holds that ran out and were removed.
-export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDigestItem[] }): EmailBody {
+export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDigestItem[]; kept?: HoldDigestItem[] }): EmailBody {
   const rows = (items: HoldDigestItem[], tail: (i: HoldDigestItem) => string) => items.map((i) => `
     <tr>
       <td style="padding:8px 0;border-top:1px solid ${LINE};font-size:13px;color:${INK};">
@@ -566,9 +570,16 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
         ${rows(o.released, (i) => i.note ?? 'Canceled and the customer emailed')}
       </table>`)
   }
+  if (o.kept && o.kept.length > 0) {
+    parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Past their deadline but kept — a Cash App payment is waiting for you to confirm:</strong></p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
+        ${rows(o.kept, (i) => i.note ?? 'Confirm the Cash App payment')}
+      </table>`)
+  }
   const n = o.warned.length
   const m = o.released.length
-  const subject = [n > 0 ? `${n} unpaid hold${n === 1 ? '' : 's'}` : '', m > 0 ? `${m} removed` : ''].filter(Boolean).join(', ')
+  const k = o.kept?.length ?? 0
+  const subject = [n > 0 ? `${n} unpaid hold${n === 1 ? '' : 's'}` : '', m > 0 ? `${m} removed` : '', k > 0 ? `${k} waiting on Cash App` : ''].filter(Boolean).join(', ')
   return {
     subject: `Unpaid bookings — ${subject}`,
     html: shell(
@@ -766,6 +777,135 @@ export function changeRequestDecided(b: BookingFacts, c: ChangeRequestFacts, app
         { label: 'View my booking', href: bookingLink(b) },
       ),
     }
+}
+
+// The renter's signed copy of their Event Rental Agreement, attached as a
+// PDF the moment they sign.
+export function agreementSignedCopy(b: BookingFacts): EmailBody {
+  return {
+    subject: `Your signed rental agreement — ${b.room} on ${b.date}`,
+    html: shell(
+      `Thanks for signing, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">Your Event Rental Agreement is signed and attached to your booking. A PDF copy is
+         attached to this email for your records.</p>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+       ])}
+       <p style="margin:0;">You can download it again any time from your booking's page.</p>`,
+      { label: 'View my booking', href: bookingLink(b) },
+    ),
+  }
+}
+
+// The house's heads-up: money arrived on a booking that's already been
+// canceled (a hold removed while they were paying, a cancel crossing a
+// payment). The payment is recorded; someone owes them a refund or a
+// rebooking.
+export function paymentOnCanceledAlert(o: { code: string; name: string; amountCents: number; method: string }): EmailBody {
+  return {
+    subject: `Payment on a canceled booking — ${o.code}`,
+    html: shell(
+      'A payment landed on a canceled booking',
+      `<p style="margin:0 0 6px;">${o.name} paid <strong style="color:${INK};">${money(o.amountCents)}</strong> (${o.method}) on
+         <strong style="color:${INK};">${o.code}</strong>, which is canceled. The payment is recorded, and the booking stayed
+         canceled — its room may already be booked by someone else.</p>
+       <p style="margin:0;">Call them: rebook them if the time is still free, or refund the payment from the booking.</p>`,
+      { label: 'Open bookings', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
+// Before the day: a week out and the day before. What's coming, and
+// anything still missing — balance, agreement, waiver, card on file.
+export function bookingReminder(b: BookingFacts, when: 'week' | 'day'): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  const todo: string[] = []
+  if (b.waiversDue) todo.push(`Sign the waiver${b.waiversDue > 1 ? 's' : ''} for your room — guests don't sign at the door.`)
+  if (b.agreementSigned === false) todo.push('Sign your Event Rental Agreement.')
+  if (b.cardOnFile === false) todo.push('Add a card on file for damages or an unpaid balance (nothing is charged when you add it).')
+  if (owed > 0) todo.push(`Pay your remaining ${money(owed)} — due no later than 10 minutes before your event starts.`)
+  return {
+    subject: when === 'day' ? `Tomorrow: ${b.what} at SquareOne — ${b.time}` : `One week to go — ${b.what} on ${b.date}`,
+    html: shell(
+      when === 'day' ? `See you tomorrow, ${b.name.split(' ')[0]}!` : `Your event is a week away, ${b.name.split(' ')[0]}`,
+      `${detailRows([
+         ['Confirmation', b.code],
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+         ['Total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+       ])}
+       ${todo.length > 0
+         ? `<p style="margin:0 0 4px;font-weight:700;color:${INK};">Before you arrive, please:</p>
+            <ul style="margin:0 0 10px;padding-left:18px;">${todo.map((t) => `<li style="margin:0 0 4px;">${t}</li>`).join('')}</ul>
+            <p style="margin:0 0 6px;">It's all on <a href="${bookingLink(b)}" style="color:#2f6db8;font-weight:600;">your booking's page</a>.</p>`
+         : `<p style="margin:0 0 6px;"><strong style="color:${INK};">You're all set</strong> — paid, signed, and ready.</p>`}
+       ${arrivalTerms(b)}
+       <p style="margin:10px 0 0;">Questions or running late? Reply here or call the front desk.</p>`,
+      todo.length > 0 ? bookingCta(b, 'View my booking') : { label: 'View my booking', href: bookingLink(b) },
+    ),
+  }
+}
+
+// The day before, to the staff member running it.
+export function bookingStaffReminder(b: BookingFacts, staffName: string): EmailBody {
+  const owed = Math.max(b.priceCents - b.paidCents, 0)
+  return {
+    subject: `Tomorrow you're running ${b.what} — ${b.time}`,
+    html: shell(
+      `You're on tomorrow, ${staffName.split(' ')[0]}`,
+      `${detailRows([
+         ['What', b.what],
+         ['Who', b.name],
+         ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
+         ['Room', b.room],
+         ['When', `${b.date}, ${b.time}`],
+         ...(b.arriveBy ? [['Renter arrives', b.arriveBy] as [string, string]] : []),
+         ...(b.stayUntil ? [['Out by', b.stayUntil] as [string, string]] : []),
+         ...(b.addons ? [['Extras', b.addons] as [string, string]] : []),
+         ['Balance due', owed > 0 ? money(owed) : 'Paid in full'],
+         ['Agreement', b.agreementSigned === false ? 'Not signed yet' : b.agreementSigned ? 'Signed' : '—'],
+       ])}
+       ${b.note ? `<p style="margin:0 0 6px;"><strong style="color:${INK};">Notes:</strong> ${b.note.replace(/</g, '&lt;')}</p>` : ''}
+       <p style="margin:0;">If you can't make it, tell a manager today.</p>`,
+      { label: 'Open the schedule', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
+// The desk's heads-up: a customer says they sent a Cash App payment.
+export function cashAppClaimAlert(b: BookingFacts, amountCents: number): EmailBody {
+  return {
+    subject: `Cash App payment to confirm — ${b.code}, ${money(amountCents)}`,
+    html: shell(
+      'A Cash App payment needs confirming',
+      `<p style="margin:0 0 6px;">${b.name} says they sent <strong style="color:${INK};">${money(amountCents)}</strong> by Cash App
+         for <strong style="color:${INK};">${b.code}</strong> (${b.room}, ${b.date}). Check the Cash App account for it — with
+         ${b.code} in the note — then confirm or reject it under Payments.</p>
+       <p style="margin:0;">Until it's confirmed the booking isn't paid. An unconfirmed claim keeps an unpaid booking from being
+         removed for three days at most.</p>`,
+      { label: 'Open payments', href: siteLink('/admin/payments') },
+    ),
+  }
+}
+
+// The house's heads-up: an agreement staff had already countersigned was
+// signed again from the booking's page, which clears the countersignature.
+export function agreementResignedAlert(b: BookingFacts, o: { signer: string; previousRep: string }): EmailBody {
+  return {
+    subject: `Agreement re-signed — ${b.code} needs countersigning again`,
+    html: shell(
+      'A countersigned agreement was signed again',
+      `<p style="margin:0 0 6px;">The rental agreement for <strong style="color:${INK};">${b.code}</strong> (${b.name}, ${b.date})
+         was signed again by <strong style="color:${INK};">${o.signer}</strong>. ${o.previousRep}'s countersignature was cleared,
+         so it needs countersigning again.</p>
+       <p style="margin:0;">If you didn't expect this, call the renter — anyone with the booking's link can sign it.</p>`,
+      { label: 'Open bookings', href: siteLink('/admin/bookings') },
+    ),
+  }
 }
 
 export function bookingRescheduled(b: BookingFacts): EmailBody {

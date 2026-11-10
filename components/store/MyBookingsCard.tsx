@@ -1,4 +1,5 @@
 'use client'
+import { tulsaDayHour, TULSA_TZ } from '@/lib/tulsa-time'
 import Link from 'next/link'
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED, GOLD } from '@/lib/theme'
@@ -111,7 +112,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
     const m = /^[[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(pc.newDuring as string)
     if (!m) return null
     const f = new Date(m[1]); const t = new Date(m[2])
-    return `${f.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, ${formatHour(f.getHours() + f.getMinutes() / 60)}–${formatHour(t.getHours() + t.getMinutes() / 60)}`
+    return `${f.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: TULSA_TZ })}, ${formatHour(tulsaDayHour(f).hour)}–${formatHour(tulsaDayHour(t).hour)}`
   })() : null
 
   return (
@@ -187,8 +188,17 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
       {/* The rental agreement and card on file live on the booking's page. */}
       {b.payToken && stage !== 'done' && b.status !== 'canceled' && (
         <p style={{ fontSize: 12, color: SUB, margin: '10px 0 0', lineHeight: 1.5 }}>
-          <a href={`/pay/${b.payToken}`} style={{ color: BLUE, fontWeight: 700 }}>Rental agreement &amp; card on file →</a>
-          {b.cardOnFile === false && <span style={{ color: RED, fontWeight: 600 }}> · card still needed</span>}
+          {b.agreementSigned === true
+            ? <>
+                <span style={{ color: GREEN, fontWeight: 700 }}>✓ Rental agreement signed</span>
+                {' · '}<a href={`/api/pay/${b.payToken}/agreement/pdf?download=1`} style={{ color: BLUE, fontWeight: 600 }}>Download PDF</a>
+                {' · '}<a href={`/pay/${b.payToken}`} style={{ color: BLUE, fontWeight: 600 }}>Booking page →</a>
+              </>
+            : <>
+                <a href={`/pay/${b.payToken}/agreement`} style={{ color: BLUE, fontWeight: 700 }}>Sign the rental agreement →</a>
+                {b.agreementSigned === false && <span style={{ color: RED, fontWeight: 600 }}> · still needed</span>}
+              </>}
+          {b.cardOnFile === false && <span style={{ color: RED, fontWeight: 600 }}> · card on file still needed (<a href={`/pay/${b.payToken}`} style={{ color: BLUE }}>add it</a>)</span>}
         </p>
       )}
 

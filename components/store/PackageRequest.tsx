@@ -4,6 +4,7 @@
 // first room with the package attached — the same path a room rental
 // takes, so the customer gets the hold email, the desk gets the approval
 // alert (Settings → booking alert email), and it shows up under Bookings.
+import { tulsaInstant } from '@/lib/tulsa-time'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { BLUE, INK, SUB, FAINT, GREEN, RED } from '@/lib/theme'
@@ -56,13 +57,24 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   // The lead room's deposit, when it requires one — what "at least the
   // deposit" means for this package.
   const [depositCents, setDepositCents] = useState<number | null>(null)
+  // Each package room's own setup/cleanup time, which the database adds
+  // around the party — the start-time list has to allow for it too.
+  const [pads, setPads] = useState<{ before: number; after: number }>({ before: 0, after: 0 })
+  // The lead room's notice window (hours ahead a booking must be made).
+  const [noticeH, setNoticeH] = useState(48)
   useEffect(() => {
     if (!open || !roomId) return
     getActiveRooms().then((rs) => {
       const r = rs.find((x) => x.id === roomId)
       setDepositCents(r?.depositRequired && (r.depositCents ?? 0) > 0 ? Math.min(r.depositCents as number, pkg.priceCents) : null)
+      setNoticeH(Math.max(0, ...rs.filter((x) => pkg.roomIds.includes(x.id)).map((x) => x.minNoticeHours ?? 48)))
+      const inPkg = rs.filter((x) => pkg.roomIds.includes(x.id))
+      setPads({
+        before: Math.max(0, ...inPkg.map((x) => x.setupMin ?? 0)) / 60,
+        after: Math.max(0, ...inPkg.map((x) => x.cleanupMin ?? 0)) / 60,
+      })
     }).catch(() => {})
-  }, [open, roomId, pkg.priceCents])
+  }, [open, roomId, pkg.priceCents, pkg.roomIds])
 
   // What's already on the calendar in ANY of the package's rooms that day —
   // a party that needs the gym can't start while the gym is taken, even
@@ -89,12 +101,13 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     const starts: number[] = []
     if (!closed) {
       for (let h = Math.ceil(hours.openH); h + pkg.hours <= hours.closeH; h++) {
-        const clash = (taken ?? []).some((w) => h < w.toH && h + pkg.hours > w.fromH)
-        if (!clash) starts.push(h)
+        const clash = (taken ?? []).some((w) => h - pads.before < w.toH && h + pkg.hours + pads.after > w.fromH)
+        const tooSoon = tulsaInstant(date, h).getTime() < Date.now() + noticeH * 3600_000
+        if (!clash && !tooSoon) starts.push(h)
       }
     }
     return { closed, starts, label: js.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) }
-  }, [date, cfg, pkg.hours, taken])
+  }, [date, cfg, pkg.hours, taken, pads, noticeH])
 
   const submit = async () => {
     if (!roomId || !date || startH == null || !phoneOk || busy) return
@@ -131,7 +144,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   }
 
   const doneRule = date && startH != null
-    ? depositRuleSentence({ start: new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), Math.floor(startH)), depositCents })
+    ? depositRuleSentence({ start: tulsaInstant(date, startH), depositCents })
     : DEPOSIT_RULE_GENERAL
 
   if (done) {
@@ -189,7 +202,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     <div style={{ display: 'grid', gap: 10 }}>
       <div>
         <label className="sq-label" htmlFor={`pr-date-${pkg.id}`}>Date</label>
-        <input id={`pr-date-${pkg.id}`} className="sq-input" type="date" min={isoToday()} max={isoToday(365)} value={date}
+        <input id={`pr-date-${pkg.id}`} className="sq-input" type="date" min={isoToday(Math.floor(noticeH / 24))} max={isoToday(365)} value={date}
           onChange={(e) => { setDate(e.target.value); setStartH(null) }} />
       </div>
       {day && (

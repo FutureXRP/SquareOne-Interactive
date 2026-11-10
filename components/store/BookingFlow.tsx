@@ -1,4 +1,5 @@
 'use client'
+import { tulsaInstant, tulsaDayHour } from '@/lib/tulsa-time'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
@@ -192,20 +193,23 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     if (!day || closedToday) return []
     const now = new Date()
     const isToday = day.iso === days[0]?.iso
-    const nowH = now.getHours() + now.getMinutes() / 60
-    const [yy, mm, dd] = day.iso.split('-').map(Number)
+    const nowH = tulsaDayHour(now).hour
     const earliest = new Date(now.getTime() + noticeH * 3600_000)
     const open = Math.ceil(dayHours.openH)
     const out: { startH: number; available: boolean }[] = []
     for (let h = open; h + hours <= dayHours.closeH; h++) {
-      const overlaps = busy.some((b) => h < b.toH && h + hours > b.fromH)
+      // This booking's own setup/cleanup time counts too — the database
+      // pads both sides, so the picker must as well.
+      const padBefore = (f?.setupMin ?? 0) / 60
+      const padAfter = (f?.cleanupMin ?? 0) / 60
+      const overlaps = busy.some((b) => h - padBefore < b.toH && h + hours + padAfter > b.fromH)
       const past = isToday && h <= nowH
-      const slotTime = new Date(yy, mm - 1, dd, Math.floor(h), Math.round((h % 1) * 60))
+      const slotTime = tulsaInstant(day.iso, h)
       const tooSoon = slotTime < earliest
       out.push({ startH: h, available: !overlaps && !past && !tooSoon })
     }
     return out
-  }, [day, dayIdx, closedToday, dayHours.openH, dayHours.closeH, hours, busy, noticeH])
+  }, [day, dayIdx, closedToday, dayHours.openH, dayHours.closeH, hours, busy, noticeH, f?.setupMin, f?.cleanupMin])
   const allTooSoon = slots.length > 0 && slots.every((s) => !s.available) && noticeH > 0
 
   if (!f) return <div style={{ minHeight: 200 }} />
@@ -319,7 +323,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
             <strong>Request {confirmed.code}</strong> — the time is held for you while our team reviews it, and
             you&rsquo;ll get an email once it&rsquo;s approved.{' '}
-            <strong>{depositRuleSentence({ start: new Date(Number(day.iso.slice(0, 4)), Number(day.iso.slice(5, 7)) - 1, Number(day.iso.slice(8, 10)), Math.floor(confirmed.startH), Math.round((confirmed.startH % 1) * 60)), depositCents })}</strong>
+            <strong>{depositRuleSentence({ start: tulsaInstant(day.iso, confirmed.startH), depositCents })}</strong>
             {' '}The rest is due no later than 10 minutes before your event starts — pay online, by Cash App, or in cash at the desk.
           </p>
         </div>

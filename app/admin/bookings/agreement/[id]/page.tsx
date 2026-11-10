@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { use, useEffect, useState } from 'react'
 import { card, INK, SUB, BLUE, GREEN } from '@/lib/theme'
 import { AgreementDocument } from '@/components/agreement/AgreementDocument'
-import { getAgreement, countersignAgreement, type AgreementRecord } from '@/lib/agreements-store'
+import { getAgreement, countersignAgreement, openAgreementPdf, type AgreementRecord } from '@/lib/agreements-store'
 import { getRooms } from '@/lib/facilities-store'
 import { getActiveAddons } from '@/lib/addons-store'
 import { getMyStaff, type StaffMember } from '@/lib/staff-store'
@@ -41,7 +41,10 @@ export default function AgreementViewPage({ params }: { params: Promise<{ id: st
         <Link href={`/admin/bookings?open=${id}`} style={{ fontSize: 12.5, fontWeight: 600, color: BLUE, textDecoration: 'none' }}>← Back to the booking</Link>
         <span style={{ flex: 1 }} />
         {rec && (
-          <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => window.print()}>Print / save PDF</button>
+          <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => { openAgreementPdf(id).catch(() => {}) }}>Open PDF</button>
+        )}
+        {rec && rec.source !== 'uploaded' && (
+          <button className="sq-btn sq-btn-ghost" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => window.print()}>Print</button>
         )}
         {rec && !rec.repName && me && (
           <button className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 12 }} disabled={busy} onClick={countersign}>
@@ -58,7 +61,15 @@ export default function AgreementViewPage({ params }: { params: Promise<{ id: st
             (it&rsquo;s in every booking email), or open that link on a tablet at the desk.
           </p>
         )}
-        {rec && (
+        {rec && rec.source === 'uploaded' && (
+          <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>
+            This agreement was signed outside the system and uploaded as a PDF{rec.fileName ? ` (${rec.fileName})` : ''} —
+            signed by <strong style={{ color: INK }}>{rec.signature}</strong> on{' '}
+            {new Date(rec.signedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}.
+            Use <strong style={{ color: INK }}>Open PDF</strong> above to view or print it.
+          </p>
+        )}
+        {rec && rec.source !== 'uploaded' && (
           <AgreementDocument
             snapshot={rec.snapshot} answers={rec.answers} signature={rec.signature} signedAt={rec.signedAt}
             repName={rec.repName} repSignedAt={rec.repSignedAt} rooms={rooms} addons={addons}

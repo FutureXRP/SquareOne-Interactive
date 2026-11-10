@@ -7,7 +7,7 @@ import { FEE_PRESETS } from '@/lib/rental-agreement'
 import { staffChargeFee } from '@/lib/billing-client'
 import { bookingPayUrl, BOOKINGS_EVENT, type StaffBooking } from '@/lib/staff-bookings-store'
 import { emit } from '@/lib/supabase'
-import type { AgreementStatus } from '@/lib/agreements-store'
+import { openAgreementPdf, uploadSignedAgreement, type AgreementStatus } from '@/lib/agreements-store'
 import { bookingWaiversDue } from '@/lib/waivers-staff'
 import { getBookingChanges, rangeLabel, type BookingChange } from '@/lib/booking-changes-store'
 import { roomLabel } from '@/lib/facilities-store'
@@ -22,10 +22,12 @@ function dollarsToCents(v: string): number {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0
 }
 
-export function BookingAgreementCard({ b, agreement, canCharge }: {
+export function BookingAgreementCard({ b, agreement, canCharge, leadCode }: {
   b: StaffBooking
   agreement: AgreementStatus | null | undefined // undefined = 0053 not run
   canCharge: boolean
+  // A companion room (0055): its paperwork lives on this lead booking.
+  leadCode?: string
 }) {
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState('')
@@ -33,6 +35,13 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
   const [notified, setNotified] = useState(false)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  // Attaching an agreement signed outside the system (0059).
+  const [upOpen, setUpOpen] = useState(false)
+  const [upSigner, setUpSigner] = useState('')
+  const [upDate, setUpDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [upFile, setUpFile] = useState<File | null>(null)
+  const [upBusy, setUpBusy] = useState(false)
+  const [upMsg, setUpMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // Waivers the room requires that nobody has signed for this booking.
   // null while loading; companions ride on their lead and owe nothing.
   const [waivers, setWaivers] = useState<RequiredWaiver[] | null>(null)
@@ -53,6 +62,18 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
     getBookingChanges(b.id).then((c) => { if (live) setChanges(c) }).catch(() => {})
     return () => { live = false }
   }, [b.id, b.leadBookingId, b.date, b.startH, b.roomId, b.status])
+
+  // An extra room on someone else's booking: one line pointing at it.
+  if (b.leadBookingId) {
+    return (
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5, color: SUB, lineHeight: 1.6, maxWidth: 620 }}>
+        <strong style={{ color: INK }}>Extra room for {leadCode ?? 'another booking'}.</strong>{' '}
+        Its rental agreement, card on file, waivers, and payments are all on {leadCode ?? 'that booking'}
+        {agreement ? <> — agreement <span style={{ color: GREEN, fontWeight: 700 }}>signed</span> by {agreement.signature}.</> : agreement === null ? <> — agreement <span style={{ color: RED, fontWeight: 700 }}>not signed yet</span>.</> : '.'}
+        {' '}It moves and cancels with that booking.
+      </div>
+    )
+  }
 
   // Before 0053 there's nothing to show — unless a waiver is owed.
   if (agreement === undefined && b.card === undefined && !(waivers && waivers.length > 0) && changes.length === 0) return null
@@ -119,14 +140,55 @@ export function BookingAgreementCard({ b, agreement, canCharge }: {
               <span style={{ color: GREEN, fontWeight: 700 }}>signed</span> by {agreement.signature} on{' '}
               {new Date(agreement.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               {agreement.repName ? ` · countersigned by ${agreement.repName}` : ' · needs countersignature'}
+              {agreement.source === 'uploaded' && <> · <span style={{ color: INK, fontWeight: 600 }}>signed outside the system (PDF uploaded)</span></>}
               {agreementOutdated && <> · <span style={{ color: RED, fontWeight: 700 }}>out of date — the booking changed after signing; their booking page asks them to sign again</span></>}
-              {' · '}<Link href={`/admin/bookings/agreement/${b.id}`} style={{ color: BLUE, fontWeight: 600 }}>View / print</Link>
+              {' · '}<button onClick={async () => { const r = await openAgreementPdf(b.id); if (!r.ok) setUpMsg({ ok: false, text: r.message ?? 'Could not open it.' }) }}
+                style={{ font: 'inherit', color: BLUE, fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>Open PDF</button>
+              {agreement.source !== 'uploaded' && <>{' · '}<Link href={`/admin/bookings/agreement/${b.id}`} style={{ color: BLUE, fontWeight: 600 }}>View / countersign</Link></>}
             </>
           : <>
               <span style={{ color: RED, fontWeight: 700 }}>not signed yet</span>
               {payUrl && <> · <a href={`${payUrl}/agreement`} target="_blank" rel="noopener noreferrer" style={{ color: BLUE, fontWeight: 600 }}>Open the signing page</a> (hand them a tablet, or it&rsquo;s linked in their booking emails)</>}
             </>}
       </p>
+      {agreement !== undefined && (
+        <div style={{ margin: '0 0 4px' }}>
+          <button onClick={() => { setUpOpen((v) => !v); setUpMsg(null); if (!upSigner) setUpSigner(b.client) }}
+            style={{ font: 'inherit', fontSize: 12, color: BLUE, fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+            {upOpen ? 'Close' : agreement ? 'Replace with a PDF signed elsewhere…' : 'Signed it outside the system? Upload the signed PDF…'}
+          </button>
+          {upOpen && (
+            <div style={{ marginTop: 6, padding: '10px 12px', background: '#fafbfd', borderRadius: 8 }}>
+              <p style={{ fontSize: 11.5, color: SUB, margin: '0 0 8px', lineHeight: 1.5 }}>
+                For an agreement e-signed in another app or signed on paper and scanned. Once attached, the booking counts as
+                signed everywhere — the renter&rsquo;s booking page, this board, and the emails.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+                <input className="sq-input" style={{ flex: 1, minWidth: 160, padding: '6px 10px', fontSize: 12.5 }} autoComplete="off"
+                  placeholder="Who signed it" value={upSigner} onChange={(e) => setUpSigner(e.target.value)} />
+                <input className="sq-input" type="date" style={{ width: 150, padding: '6px 10px', fontSize: 12.5 }}
+                  value={upDate} onChange={(e) => setUpDate(e.target.value)} />
+              </div>
+              <input type="file" accept="application/pdf,.pdf" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12, marginBottom: 8 }} />
+              <div>
+                <button className="sq-btn sq-btn-primary" style={{ padding: '6px 14px', fontSize: 12 }}
+                  disabled={upBusy || !upFile || upSigner.trim().length < 2}
+                  onClick={async () => {
+                    if (!upFile) return
+                    setUpBusy(true); setUpMsg(null)
+                    const r = await uploadSignedAgreement(b.id, upSigner.trim(), upDate, upFile)
+                    setUpBusy(false)
+                    setUpMsg(r.ok ? { ok: true, text: 'Attached — this booking now shows the agreement as signed.' } : { ok: false, text: r.message ?? 'Upload failed.' })
+                    if (r.ok) { setUpOpen(false); setUpFile(null) }
+                  }}>
+                  {upBusy ? 'Uploading…' : 'Attach signed agreement'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {upMsg && <p style={{ fontSize: 12, fontWeight: 600, color: upMsg.ok ? GREEN : RED, margin: '0 0 4px' }}>{upMsg.text}</p>}
       <p style={{ margin: 0 }}>
         <strong style={{ color: INK }}>Card on file:</strong>{' '}
         {b.card

@@ -4,6 +4,8 @@ import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { eventReminderStaff, eventGuestReminder } from '@/lib/server/emails'
 import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib/server/event-facts'
 import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
+import { sendMissedHoldEmails } from '@/lib/server/hold-emails'
+import { sendBookingReminders } from '@/lib/server/booking-reminders'
 import { alertCustomerChanges } from '@/lib/server/customer-changes'
 import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
@@ -102,6 +104,12 @@ export async function GET(req: Request) {
   try {
     const reminders = await run()
     const standing = await rollStanding()
+    // Finished events close out first, so nothing below works on the past (0060).
+    const closed = await Promise.resolve(serviceDb().rpc('close_out_past_bookings')).then((r) => r.error ? null : r.data, () => null)
+    // Hold emails the browser never sent.
+    const missedHolds = await sendMissedHoldEmails().catch((e) => { console.error('[reminders] missed holds', e); return null })
+    // A week out / the day before, to customers and whoever runs it.
+    const bookingReminders = await sendBookingReminders().catch((e) => { console.error('[reminders] booking reminders', e); return null })
     // Unpaid holds: the 24-hour notice, then removal (0054). Its own
     // failure never takes the reminders down with it.
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
@@ -110,7 +118,7 @@ export async function GET(req: Request) {
     // Change-request emails that didn't go out at the time (0057).
     const requestEmails = await sendChangeRequestsReceived().catch(() => null)
     const decisionEmails = await sendChangeDecisions().catch(() => null)
-    return NextResponse.json({ ok: true, ...reminders, standing, holds, changeAlerts, requestEmails, decisionEmails })
+    return NextResponse.json({ ok: true, ...reminders, standing, closed, missedHolds, bookingReminders, holds, changeAlerts, requestEmails, decisionEmails })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })

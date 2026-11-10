@@ -88,7 +88,10 @@ export async function POST(req: Request) {
   }
 
   let stripeRefundId: string | null = null
-  if (p.method === 'stripe') {
+  // Anything Stripe took — a card, or Cash App Pay through Stripe Checkout
+  // (recorded as 'cashapp') — goes back through Stripe. Only money handed
+  // over at the desk (no Stripe reference) is refunded by hand.
+  if (p.method === 'stripe' || p.stripe_payment_intent_id) {
     if (!stripeConfigured()) {
       return NextResponse.json({ error: 'stripe_not_configured' }, { status: 501 })
     }
@@ -134,13 +137,22 @@ export async function POST(req: Request) {
     }, { status: 500 })
   }
 
-  // Tell the customer their money is coming back.
-  if (p.account_id) {
-    const { data: people } = await db.from('clients')
-      .select('full_name, email, is_primary')
-      .eq('account_id', p.account_id)
-      .order('is_primary', { ascending: false }).limit(1)
-    const person = (people as { full_name: string; email: string | null }[] | null)?.[0]
+  // Tell the customer their money is coming back — members by their
+  // account, desk guests by the booking's own contact email.
+  {
+    let person: { full_name: string; email: string | null } | null = null
+    if (p.account_id) {
+      const { data: people } = await db.from('clients')
+        .select('full_name, email, is_primary')
+        .eq('account_id', p.account_id)
+        .order('is_primary', { ascending: false }).limit(1)
+      person = (people as { full_name: string; email: string | null }[] | null)?.[0] ?? null
+    }
+    if (!person?.email && p.booking_id) {
+      const { data: bk } = await db.from('bookings').select('client_name, contact_email').eq('id', p.booking_id).maybeSingle()
+      const g = bk as { client_name: string; contact_email: string | null } | null
+      if (g?.contact_email) person = { full_name: g.client_name, email: g.contact_email }
+    }
     if (person?.email) {
       const { data: pay } = await db.from('payments').select('memo').eq('id', p.id).maybeSingle()
       await sendAndLog('refund.issued', person.email, refundIssued({

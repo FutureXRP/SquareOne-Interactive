@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { stripe, stripeConfigured, siteUrl } from '@/lib/server/billing'
+import { stripe, stripeConfigured, siteUrl, serviceDb } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { bookingDoc, ensureBookingCustomer } from '@/lib/server/booking-card'
 import { waiversDueForBooking, WAIVER_FIRST_MESSAGE } from '@/lib/server/booking-waivers'
@@ -66,8 +66,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     } catch (e) {
       console.warn('[pay] customer for card on file unavailable', e)
     }
+    // A checkout page shouldn't outlive the hold it pays for: when the
+    // 24-hour deposit clock is running, the page closes at the deadline
+    // (Stripe allows 30 minutes to 24 hours).
+    let expiresAt: number | undefined
+    try {
+      const { data: h } = await serviceDb().from('bookings').select('status, hold_expires_at, hold_warned_at').eq('id', row.id).maybeSingle()
+      const hold = h as { status: string; hold_expires_at: string | null; hold_warned_at: string | null } | null
+      if (hold?.status === 'hold' && hold.hold_warned_at && hold.hold_expires_at) {
+        const now = Math.floor(Date.now() / 1000)
+        const deadline = Math.floor(new Date(hold.hold_expires_at).getTime() / 1000)
+        expiresAt = Math.min(now + 24 * 3600 - 60, Math.max(now + 31 * 60, deadline))
+      }
+    } catch { /* pre-0054: no clock */ }
     const session = await stripe().checkout.sessions.create({
       mode: 'payment',
+      ...(expiresAt ? { expires_at: expiresAt } : {}),
       ...(customer ? { customer } : {}),
       line_items: [{
         quantity: 1,

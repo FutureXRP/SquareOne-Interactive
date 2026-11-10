@@ -4,6 +4,7 @@
 // already listens for. The shopping cart stays device-local (normal for
 // carts); saved cards stay local until Stripe arrives.
 
+import { tulsaInstant, tulsaDayHour } from '@/lib/tulsa-time'
 import { supabase, emit, isSupabaseConfigured } from '@/lib/supabase'
 import { notify } from '@/lib/notify-client'
 
@@ -175,6 +176,9 @@ export interface MemberBooking {
   // card is on file — undefined before 0037/0053.
   payToken?: string
   cardOnFile?: boolean
+  // Their rental agreement on this booking — signed online or uploaded by
+  // staff (0059). undefined before 0053.
+  agreementSigned?: boolean
   // A change they asked for that's waiting on our team (0057).
   pendingChange?: { newDuring: string | null; newRoomIds: string[] | null; newAddonIds: string[] | null } | null
 }
@@ -221,6 +225,9 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   }
   if (!rows) throw new Error('bookings query failed')
   const pending = await myPendingChanges().catch(() => new Map())
+  // Which of their bookings carry a signed agreement (member read own).
+  const agRes = await supabase().from('rental_agreements').select('booking_id')
+  const signedIds = agRes.error ? null : new Set(((agRes.data ?? []) as { booking_id: string }[]).map((r) => r.booking_id))
   return rows.flatMap((r) => {
     // A package's extra rooms ride on its lead booking (0055) — the
     // member sees one booking, not one per room.
@@ -234,8 +241,8 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       code: r.code,
       roomId: r.facility_id,
       title: r.title ?? 'Room rental',
-      date: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`,
-      startH: from.getHours() + from.getMinutes() / 60,
+      date: tulsaDayHour(from).dateIso,
+      startH: tulsaDayHour(from).hour,
       hours: (to.getTime() - from.getTime()) / 3600_000,
       priceCents: r.price_cents,
       paidCents: (r.payments ?? []).filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0),
@@ -246,6 +253,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       payToken: r.pay_token ?? undefined,
       cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
       pendingChange: pending.get(r.id) ?? null,
+      agreementSigned: signedIds ? signedIds.has(r.id) : undefined,
     }]
   })
 }
@@ -266,8 +274,7 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   if (!profile) return { ok: false, conflict: false }
   const sb = supabase()
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
-  const [y, mo, d] = date.split('-').map(Number)
-  const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const from = tulsaInstant(date, startH) // Tulsa time, whatever the browser's zone
   const to = new Date(from.getTime() + hours * 3600_000)
   const base = {
     org_id: (org as { id: string }).id,
@@ -326,8 +333,7 @@ export async function cancelMyBooking(id: string): Promise<{ ok: boolean; error?
 
 export async function rescheduleMyBooking(id: string, date: string, startH: number, hours: number):
   Promise<{ ok: boolean; conflict?: boolean; error?: string }> {
-  const [y, mo, d] = date.split('-').map(Number)
-  const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const from = tulsaInstant(date, startH) // Tulsa time, whatever the browser's zone
   const to = new Date(from.getTime() + hours * 3600_000)
   const { error } = await supabase().rpc('member_reschedule_booking', {
     p_id: id, p_from: from.toISOString(), p_to: to.toISOString(),

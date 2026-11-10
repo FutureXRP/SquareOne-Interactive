@@ -24,7 +24,13 @@ export interface BookingDoc {
   addons: string[] // every active add-on
   contactEmail: string | null
   card: { brand: string | null; last4: string; customerId: string | null; pmId: string | null } | null
-  agreement: { signedAt: string; signature: string; repName: string | null; repSignedAt: string | null; answers: AgreementAnswers; snapshot: AgreementSnapshot } | null
+  agreement: {
+    signedAt: string; signature: string; repName: string | null; repSignedAt: string | null
+    answers: AgreementAnswers; snapshot: AgreementSnapshot
+    // 'online' = signed on the booking page; 'uploaded' = a PDF signed
+    // elsewhere that staff attached (0059), kept at filePath.
+    source: 'online' | 'uploaded'; filePath: string | null; fileName: string | null
+  } | null
 }
 
 interface Row {
@@ -89,7 +95,11 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
   const [roomsRes, addonsRes, agreementRes, compsRes] = await Promise.all([
     db.from('facilities').select('name, active, sort').order('sort'),
     db.from('addons').select('id, name, active'),
-    db.from('rental_agreements').select('signed_at, signature, rep_name, rep_signed_at, answers, snapshot').eq('booking_id', row.id).maybeSingle(),
+    // source/file_* arrive with 0059 (an agreement signed elsewhere, uploaded).
+    db.from('rental_agreements').select('signed_at, signature, rep_name, rep_signed_at, answers, snapshot, source, file_path, file_name').eq('booking_id', row.id).maybeSingle()
+      .then(async (r) => r.error
+        ? db.from('rental_agreements').select('signed_at, signature, rep_name, rep_signed_at, answers, snapshot').eq('booking_id', row.id).maybeSingle()
+        : r),
     db.from('bookings').select('status, facilities:facility_id(name)').eq('lead_booking_id', row.id),
   ])
   const companionRooms = compsRes.error ? [] : ((compsRes.data ?? []) as unknown as { status: string; facilities: { name: string } | null }[])
@@ -101,6 +111,7 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
   const a = agreementRes.error ? null : agreementRes.data as {
     signed_at: string; signature: string; rep_name: string | null; rep_signed_at: string | null
     answers: AgreementAnswers; snapshot: AgreementSnapshot
+    source?: 'online' | 'uploaded'; file_path?: string | null; file_name?: string | null
   } | null
 
   const snapshot: AgreementSnapshot = {
@@ -149,7 +160,11 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
       ? { brand: row.card_brand ?? null, last4: row.card_last4, customerId: row.card_customer_id ?? null, pmId: row.card_pm_id ?? null }
       : null,
     agreement: a
-      ? { signedAt: a.signed_at, signature: a.signature, repName: a.rep_name, repSignedAt: a.rep_signed_at, answers: a.answers, snapshot: a.snapshot }
+      ? {
+        signedAt: a.signed_at, signature: a.signature, repName: a.rep_name, repSignedAt: a.rep_signed_at,
+        answers: a.answers, snapshot: a.snapshot,
+        source: a.source ?? 'online', filePath: a.file_path ?? null, fileName: a.file_name ?? null,
+      }
       : null,
   }
 }

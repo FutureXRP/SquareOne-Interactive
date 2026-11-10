@@ -166,7 +166,7 @@ export async function sendAndLog(
   kind: string,
   to: string,
   body: { subject: string; html: string },
-  meta: { accountId?: string | null; bookingId?: string | null } = {},
+  meta: { accountId?: string | null; bookingId?: string | null; attachments?: EmailAttachment[] } = {},
 ): Promise<void> {
   if (!to) return
   // Staff wording from the Email health tab lands here — the one door
@@ -181,7 +181,7 @@ export async function sendAndLog(
   let ok = true
   let error: string | null = null
   try {
-    await sendEmail(to, finalBody.subject, finalBody.html)
+    await sendEmail(to, finalBody.subject, finalBody.html, meta.attachments)
   } catch (e) {
     ok = false
     error = e instanceof Error ? e.message : 'send failed'
@@ -220,7 +220,10 @@ export function resendFrom(): string {
 // refuses. Silently ignoring the response is how a broken sender looks
 // healthy: the API answers 403 "domain is not verified" with a 200-shaped
 // fetch, so the status has to be checked explicitly.
-export async function sendEmail(to: string, subject: string, html: string): Promise<string> {
+// A file riding on an email — content is base64, as Resend expects.
+export interface EmailAttachment { filename: string; content: string }
+
+export async function sendEmail(to: string, subject: string, html: string, attachments?: EmailAttachment[]): Promise<string> {
   const key = process.env.RESEND_API_KEY
   if (!key) throw new Error('RESEND_API_KEY is not set on this deployment.')
   if (!to) throw new Error('No recipient address.')
@@ -235,6 +238,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         to: [to],
         subject,
         html,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       }),
     })
   } catch (e) {

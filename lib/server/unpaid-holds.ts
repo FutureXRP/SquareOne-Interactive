@@ -133,9 +133,14 @@ export async function alertAdminsOfUnpaidHold(bookingId: string, customerEmail?:
   for (const addr of await adminRecipients(customerEmail)) await sendAndLog('booking.unpaid_alert', addr, body, { bookingId })
 }
 
+// A Cash App "I've sent it" protects a hold while the desk checks — for
+// three days. Past that, an unverified claim no longer keeps it alive.
+const CLAIM_GRACE_MS = 3 * 24 * 60 * 60 * 1000
+
 async function hasPendingClaim(bookingId: string): Promise<boolean> {
+  const since = new Date(Date.now() - CLAIM_GRACE_MS).toISOString()
   const { data, error } = await serviceDb().from('payment_claims')
-    .select('id').eq('booking_id', bookingId).eq('status', 'pending').limit(1)
+    .select('id').eq('booking_id', bookingId).eq('status', 'pending').gte('created_at', since).limit(1)
   return !error && (data ?? []).length > 0
 }
 
@@ -152,6 +157,7 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
 
   const warned: HoldDigestItem[] = []
   const released: HoldDigestItem[] = []
+  const keptItems: HoldDigestItem[] = []
   let kept = 0
 
   for (const r of data as unknown as HoldRow[]) {
@@ -184,6 +190,7 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
       // booking under someone who says they paid would be the wrong call.
       if (await hasPendingClaim(r.id)) {
         kept += 1
+        keptItems.push(digestItem(r, { note: 'Kept — they reported a Cash App payment; confirm or reject it under Payments' }))
         continue
       }
       const { data: gone } = await db.from('bookings')
@@ -206,8 +213,11 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
     }
   }
 
+  // Kept holds ride along when a digest is going out anyway — they never
+  // trigger an hourly email on their own (staff hear about each claim the
+  // moment it's filed).
   if (warned.length > 0 || released.length > 0) {
-    const body = unpaidHoldsAlert({ warned, released })
+    const body = unpaidHoldsAlert({ warned, released, kept: keptItems })
     for (const addr of await adminRecipients()) await sendAndLog('booking.unpaid_alert', addr, body, {})
   }
   return { warned: warned.length, released: released.length, kept }
