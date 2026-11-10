@@ -169,7 +169,7 @@ export default function AccountOverview() {
                 <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>Quick actions</p>
                 {[
                   ['Rent a room', '/facilities'],
-                  ['Book a party', '/facilities/party'],
+                  ['Event Packages', '/packages'],
                   // The shop quick link follows the Shop nav tab's switch.
                   ...(navTabOn(siteContent, 'shop') ? [['Shop gear', '/shop']] : []),
                   ['Update payment method', '/account/billing'],

@@ -142,8 +142,8 @@ export default async function PayPage({ params, searchParams }: {
           </p>
         ) : settled ? (
           <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>
-            You&rsquo;re all paid up — nothing further to do. Come a few minutes early so we can get
-            you settled.
+            You&rsquo;re all paid up — nothing further to pay. Please arrive and leave within the setup and
+            cleanup times on your rental agreement.
           </p>
         ) : (
           <PayPanel token={token} target={t} cashtag={tag} bookingCode={t.code} cashQr={cashQr} />

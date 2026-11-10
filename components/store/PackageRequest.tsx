@@ -147,7 +147,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
         {busy ? 'Sending…' : 'Send request'}
       </button>
       <p style={{ fontSize: 11, color: FAINT, margin: 0, lineHeight: 1.5 }}>
-        This places a 24-hour hold. The front desk confirms it with you by phone and takes the deposit. <span style={{ color: INK }}>Nothing is charged now.</span>
+        This holds the date while the front desk reviews it — they&rsquo;ll confirm with you, then you sign the rental agreement and add a card on file. <span style={{ color: INK }}>Nothing is charged now.</span>
       </p>
     </div>
   )

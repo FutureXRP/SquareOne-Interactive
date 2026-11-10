@@ -122,6 +122,7 @@ export async function bookingFactsAny(bookingId: string):
       // migration, so the email nudge only speaks once the step exists.
       agreementSigned,
       cardOnFile: 'card_last4' in b ? !!b.card_last4 : undefined,
+      inReview: 'approved_at' in b ? b.approved_at === null : undefined,
       // The direct pay link, when 0037 has run and there's something owed.
       payUrl: b.pay_token ? `${site()}/pay/${b.pay_token}` : undefined,
       setupMin: setupMin > 0 ? setupMin : undefined,

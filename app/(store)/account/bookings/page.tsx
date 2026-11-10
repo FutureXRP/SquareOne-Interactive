@@ -64,7 +64,7 @@ export default function MyBookingsPage() {
           )}
 
           <p style={{ fontSize: 11.5, color: FAINT, margin: '18px 0 0' }}>
-            Holds are kept for 24 hours. Questions? Call the front desk or <Link href="/facilities" style={{ color: BLUE, fontWeight: 600 }}>book another room</Link>.
+            Requests hold your time while our team reviews them. Questions? Call the front desk or <Link href="/facilities" style={{ color: BLUE, fontWeight: 600 }}>book another room</Link>.
           </p>
         </div>
       )}

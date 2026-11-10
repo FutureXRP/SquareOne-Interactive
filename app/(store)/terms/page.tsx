@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: 'The rules for using SquareOne Interactive — memberships, room rentals, parties, payments, and conduct.',
 }
 
-const UPDATED = 'August 13, 2026'
+const UPDATED = 'November 10, 2026'
 
 const SECTIONS: LegalSection[] = [
   {
@@ -42,7 +42,7 @@ const SECTIONS: LegalSection[] = [
     id: 'bookings',
     heading: 'Room rentals, parties, and packages',
     paragraphs: [
-      'When you book a space online, you receive a hold, not a confirmed reservation. A hold becomes a confirmed booking once the required deposit or full payment is received. Unpaid holds expire automatically, generally within 24 hours, and the time returns to the calendar.',
+      'When you book a space online, you receive a hold, not a confirmed reservation. The hold reserves your time while our team reviews the request; it becomes a confirmed booking once we approve it and the required deposit or payment is received. Every event also requires a signed Event Rental Agreement and a credit card on file.',
       'Rooms and event spaces normally require advance notice to book online — 48 hours unless posted otherwise for a particular space. For anything shorter, call the front desk and we will help if staffing allows.',
       'Prices are shown before you book and can vary by room, day of the week, time of day, and rental length. Add-ons such as inflatables or photo booths are limited equipment: booking one reserves it for your time slot, and it cannot be double-booked.',
       'Your rental covers only the space, times, and add-ons listed on your confirmation. Please arrive and vacate on time — another party may be scheduled right after you, and staying past your window may incur an additional hourly charge.',
@@ -53,8 +53,8 @@ const SECTIONS: LegalSection[] = [
     id: 'payments',
     heading: 'Payments, deposits, and refunds',
     paragraphs: [
-      'We accept cards, cash, and Cash App. Card payments are processed by Stripe; we never see or store your full card number.',
-      'Deposits hold your reservation and are applied to your final balance. Any remaining balance is due before or at the time of your event unless we have agreed otherwise in writing.',
+      'We accept cards, cash, and Cash App. Card payments are processed by Stripe; your full card number never reaches our system. Every reservation keeps a card on file, saved securely by Stripe, which may be charged for damages, cleaning, storage, a late exit, or an unpaid balance as described in your Event Rental Agreement. We contact you before any such charge.',
+      'Deposits hold your reservation and are applied to your final balance. As your Event Rental Agreement states, the deposit is due at least 14 days before your event — if it is not received, the date may be released — and any remaining balance is due no later than 10 minutes before your event starts, unless we have agreed otherwise in writing.',
       'Refunds are issued at our discretion, in whole or in part, and are returned by the same method you paid. Card refunds typically take 5–10 business days to appear on your statement, depending on your bank.',
       'Our general practice on cancellations is:',
       [

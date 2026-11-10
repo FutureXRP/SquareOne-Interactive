@@ -31,8 +31,8 @@ export const TEXT_FIELDS: TextField[] = [
   { key: 'tile2.sub', group: 'Home quick tiles', label: 'Tile 2 subtitle', def: 'Monthly plans · cancel anytime' },
   { key: 'tile3.title', group: 'Home quick tiles', label: 'Tile 3 title', def: 'Shop merch' },
   { key: 'tile3.sub', group: 'Home quick tiles', label: 'Tile 3 subtitle', def: 'Tees, hoodies & more' },
-  { key: 'tile4.title', group: 'Home quick tiles', label: 'Tile 4 title', def: 'Book a party' },
-  { key: 'tile4.sub', group: 'Home quick tiles', label: 'Tile 4 subtitle', def: 'Arcade party packages with a host' },
+  { key: 'tile4.title', group: 'Home quick tiles', label: 'Tile 4 title (links to Event Packages)', def: 'Event Packages' },
+  { key: 'tile4.sub', group: 'Home quick tiles', label: 'Tile 4 subtitle', def: 'Party & promotional packages — see current pricing' },
 
   { key: 'home.section.plans', group: 'Home sections', label: 'Memberships section label', def: 'Fitness memberships' },
   { key: 'home.section.rooms', group: 'Home sections', label: 'Rooms section label', def: 'Rooms & facilities' },
