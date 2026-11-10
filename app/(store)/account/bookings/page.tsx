@@ -1,4 +1,5 @@
 'use client'
+import { DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AccountShell } from '@/components/store/AccountShell'
@@ -52,7 +53,7 @@ export default function MyBookingsPage() {
                       </p>
                     </div>
                     {b.status === 'hold'
-                      ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '3px 11px', borderRadius: 999 }}>Unpaid hold — pay within 24 hrs</span>
+                      ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '3px 11px', borderRadius: 999 }}>Hold — deposit due</span>
                       : b.status === 'canceled'
                         ? <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '3px 11px', borderRadius: 999 }}>Canceled</span>
                         : <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '3px 11px', borderRadius: 999 }}>Confirmed</span>}
@@ -64,7 +65,7 @@ export default function MyBookingsPage() {
           )}
 
           <p style={{ fontSize: 11.5, color: FAINT, margin: '18px 0 0' }}>
-            A hold keeps your time for 24 hours — unpaid holds are removed after that, so pay from your booking&rsquo;s page or email to keep it. Questions? Call the front desk or <Link href="/facilities" style={{ color: BLUE, fontWeight: 600 }}>book another room</Link>.
+            {DEPOSIT_RULE_GENERAL} Pay from your booking&rsquo;s page or email. Questions? Call the front desk or <Link href="/facilities" style={{ color: BLUE, fontWeight: 600 }}>book another room</Link>.
           </p>
         </div>
       )}

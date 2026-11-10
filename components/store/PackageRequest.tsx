@@ -14,6 +14,8 @@ import type { EventPackage } from '@/lib/packages-store'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
 import { facilityBusy } from '@/lib/staff-bookings-store'
+import { depositRuleSentence, DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
+import { getActiveRooms } from '@/lib/facilities-store'
 
 function isoToday(offsetDays = 0): string {
   const d = new Date()
@@ -51,6 +53,16 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   }, [open])
 
   const roomId = pkg.roomIds[0]
+  // The lead room's deposit, when it requires one — what "at least the
+  // deposit" means for this package.
+  const [depositCents, setDepositCents] = useState<number | null>(null)
+  useEffect(() => {
+    if (!open || !roomId) return
+    getActiveRooms().then((rs) => {
+      const r = rs.find((x) => x.id === roomId)
+      setDepositCents(r?.depositRequired && (r.depositCents ?? 0) > 0 ? Math.min(r.depositCents as number, pkg.priceCents) : null)
+    }).catch(() => {})
+  }, [open, roomId, pkg.priceCents])
 
   // What's already on the calendar in ANY of the package's rooms that day —
   // a party that needs the gym can't start while the gym is taken, even
@@ -110,7 +122,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   const place = async () => {
     if (!roomId || !date || startH == null) { setBusy(false); return }
     const note = requests.trim() ? `Package request · Requests: ${requests.trim()}` : 'Package request'
-    const res = await requestMemberHold(roomId, `${pkg.name} package`, date, startH, pkg.hours, pkg.priceCents, undefined, note, undefined, undefined, phone.trim(), { packageId: pkg.id })
+    const res = await requestMemberHold(roomId, `${pkg.name} package`, date, startH, pkg.hours, pkg.priceCents, depositCents ?? undefined, note, undefined, undefined, phone.trim(), { packageId: pkg.id })
     setBusy(false)
     if (res.ok) setDone({ code: res.code })
     else if (res.conflict) setError('That time is already taken in one of the package rooms. Try another start time or date.')
@@ -118,12 +130,16 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     else setError('Something went wrong sending your request. Please call the front desk.')
   }
 
+  const doneRule = date && startH != null
+    ? depositRuleSentence({ start: new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), Math.floor(startH)), depositCents })
+    : DEPOSIT_RULE_GENERAL
+
   if (done) {
     return (
       <div style={{ background: '#e5f2ea', border: '1px solid #bfe0cc', borderRadius: 10, padding: '10px 13px' }}>
         <p style={{ fontSize: 12.5, fontWeight: 700, color: GREEN, margin: '0 0 2px' }}>Request received! Confirmation {done.code}</p>
         <p style={{ fontSize: 12, color: SUB, margin: 0, lineHeight: 1.5 }}>
-          {day?.label}{startH != null ? `, ${formatHour(startH)}` : ''}. Your confirmation and payment link are on their way to your email. Please pay within 24 hours to keep the date — unpaid holds are removed after 24 hours.
+          {day?.label}{startH != null ? `, ${formatHour(startH)}` : ''}. Your confirmation and payment link are on their way to your email. {doneRule}
         </p>
       </div>
     )
@@ -208,7 +224,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
         {busy ? 'Sending…' : 'Send request'}
       </button>
       <p style={{ fontSize: 11, color: FAINT, margin: 0, lineHeight: 1.5 }}>
-        Any waiver for the room is signed as part of this request — nobody signs at the door. Sending holds the date for 24 hours; <span style={{ color: INK }}>pay from the link in your confirmation email to keep it</span>, or the hold is removed. Then sign the rental agreement and add a card on file before the day.
+        Any waiver for the room is signed as part of this request — nobody signs at the door. <span style={{ color: INK }}>{DEPOSIT_RULE_GENERAL}</span> Pay from the link in your confirmation email, then sign the rental agreement and add a card on file before the day.
       </p>
     </div>
   )

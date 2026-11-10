@@ -1,4 +1,5 @@
 import { serviceDb, sendAndLog, alertRecipients } from '@/lib/server/billing'
+import { withinDepositWindow } from '@/lib/payment-policy'
 import { bookingFactsAny, deadlinePhrase } from '@/lib/server/booking-facts'
 import { emailForStaffUser } from '@/lib/server/event-facts'
 import {
@@ -6,10 +7,13 @@ import {
   type HoldDigestItem,
 } from '@/lib/server/emails'
 
-// The 24-hour rule for unpaid holds. A hold with nothing paid gets one
-// notice — the customer is told they have 24 hours to pay or it will be
-// removed, and the admins are told it's unpaid — and the clock starts
-// then. When it runs out with still nothing paid, the hold is canceled,
+// The 24-hour rule for unpaid holds (lib/payment-policy.ts). A party
+// within 14 days of its event must have at least the deposit paid within
+// 24 hours. Booked inside 14 days, the clock starts at booking; booked
+// further out, nothing is due until the event is 14 days away, and the
+// clock starts then. Either way the hold gets one notice — the customer
+// is told they have 24 hours to pay at least the deposit or it will be
+// removed, and the admins are told it's unpaid. When it runs out with still nothing paid, the hold is canceled,
 // the customer gets the "hold ran out" email, and the admins get the
 // list. Any payment confirms the booking (status leaves 'hold'), which
 // is what stops the clock; so does staff confirming it by hand.
@@ -100,6 +104,9 @@ export async function startHoldClock(bookingId: string, now = Date.now()): Promi
   if (r.status !== 'hold' || r.hold_warned_at || r.price_cents <= 0 || paidOn(r) > 0) return null
   const start = startOf(r.during)
   if (!start || start.getTime() <= now) return null
+  // More than 14 days out: nothing is due yet — the hourly job starts
+  // the clock when the event comes within 14 days.
+  if (!withinDepositWindow(start, now)) return null
   const deadline = deadlineFor(start, now).toISOString()
   const { data: stamped } = await db.from('bookings')
     .update({ hold_warned_at: new Date(now).toISOString(), hold_expires_at: deadline })
@@ -153,6 +160,8 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
     // A hold for something that has already started is history, not a
     // booking anyone can still pay for in time — leave it to the desk.
     if (!start || start.getTime() <= now) continue
+    // Not within 14 days yet — no clock, nothing due.
+    if (!r.hold_warned_at && !withinDepositWindow(start, now)) continue
 
     if (!r.hold_warned_at) {
       const deadline = await startHoldClock(r.id, now)
