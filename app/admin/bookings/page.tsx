@@ -263,8 +263,11 @@ export default function AdminBookingsPage() {
         }
         : {}),
     }
-    const res = extraRooms.length > 0
-      ? await addStaffBookingMulti(details, extraRooms, (id) => rooms.find((r) => r.id === id)?.name ?? 'a room')
+    // A package's other rooms are booked with it by the database (0055);
+    // the multi path reports exactly which room is in the way.
+    const pkgRooms = (packages.find((p) => p.id === nbPackage)?.roomIds ?? []).filter((id) => id !== room.id)
+    const res = extraRooms.length > 0 || pkgRooms.length > 0
+      ? await addStaffBookingMulti(details, extraRooms, (id) => rooms.find((r) => r.id === id)?.name ?? 'a room', pkgRooms)
       : await addStaffBooking(details)
     if (res.ok && nbPay === 'stripe') {
       const fresh = await getStaffBookings()
@@ -798,6 +801,9 @@ export default function AdminBookingsPage() {
                     setNbHours(Math.min(Math.max(pkg.hours, 1), 6))
                     setNbPrice((pkg.priceCents / 100).toFixed(2))
                     if (pkg.roomIds.length > 0) setNbRoom(pkg.roomIds[0])
+                    // Every room in the package is blocked with it — shown
+                    // ticked so the desk sees it before saving.
+                    setNbMoreRooms(pkg.roomIds.slice(1))
                   } else {
                     setNbPrice('')
                   }

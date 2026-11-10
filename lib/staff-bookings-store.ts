@@ -59,6 +59,8 @@ export interface StaffBooking {
   holdDeadline?: string | null
   // The account behind a member booking (null = guest/desk booking).
   accountId: string | null
+  createdAt?: string | null
+  leadBookingId?: string | null
   // Guest contact email typed at the desk (0029). Member bookings carry
   // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
@@ -125,14 +127,18 @@ interface Row {
   addon_ids?: string[] | null
   hold_expires_at?: string | null
   hold_warned_at?: string | null
+  created_at?: string
+  lead_booking_id?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
 
-const SELECT = 'id, code, facility_id, account_id, title, client_name, during, status, price_cents, note, staff:created_by(name), payments(amount_cents, method, status)'
+const SELECT = 'id, code, facility_id, account_id, title, client_name, during, status, price_cents, note, created_at, staff:created_by(name), payments(amount_cents, method, status)'
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  // lead_booking_id arrives with 0055, the hold clock with 0054.
+  `lead_booking_id, hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -185,6 +191,9 @@ function fromRow(r: Row): StaffBooking | null {
     // An unpaid hold's 24-hour deadline, once the customer has been told (0054).
     holdDeadline: r.status === 'hold' && r.hold_warned_at && r.hold_expires_at ? r.hold_expires_at : null,
     accountId: r.account_id ?? null,
+    createdAt: r.created_at ?? null,
+    // A companion room riding on another booking (0055).
+    leadBookingId: r.lead_booking_id ?? null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
     contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,
     setupMin: 'setup_min' in r ? (r.setup_min ?? 0) : undefined,
@@ -293,6 +302,11 @@ export interface NewBooking {
   // Skip the customer-facing email for this insert — companion room holds
   // and other synthetic rows that must never speak to the customer.
   quiet?: boolean
+  // A companion room's lead booking (0055): it moves and cancels with it.
+  leadBookingId?: string
+  // Hold every email for this insert; the caller sends them once the
+  // whole group is secured.
+  deferEmails?: boolean
 }
 
 // The account behind an email address, if one exists — so a staff-made
@@ -342,6 +356,7 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
     ...(b.createdBy ? { approved_at: new Date().toISOString(), approved_by: b.createdBy } : {}),
     ...(b.setupMin !== undefined ? { setup_min: b.setupMin } : {}),
     ...(b.cleanupMin !== undefined ? { cleanup_min: b.cleanupMin } : {}),
+    ...(b.leadBookingId ? { lead_booking_id: b.leadBookingId } : {}),
   }
   const hasExtras = Object.keys(extras).length > 0
   const payload = (hasExtras ? { ...base, ...extras } : base) as typeof base
@@ -363,34 +378,57 @@ export async function addStaffBooking(b: NewBooking): Promise<{ ok: true; code: 
   // (with the pay link if anything is owed, and a sign-up nudge when no
   // account is behind the booking). Skipped silently when there's no
   // email to reach.
-  if (b.hold) notify('booking.hold', row.id)
-  else if (!b.quiet) notify('booking.confirmed', row.id)
-  // Somebody named as running this at the desk gets their shift email now.
-  if (b.runByStaffId) notify('booking.staff_assigned', row.id)
+  if (!b.deferEmails) sendNewBookingEmails(b, row.id)
   return { ok: true, code: row.code, id: row.id }
 }
 
+function sendNewBookingEmails(b: NewBooking, id: string) {
+  if (b.hold) notify('booking.hold', id)
+  else if (!b.quiet) notify('booking.confirmed', id)
+  // Somebody named as running this at the desk gets their shift email now.
+  if (b.runByStaffId) notify('booking.staff_assigned', id)
+}
+
+// Which of these rooms already have something overlapping the window —
+// the names a conflict message shows the desk.
+async function roomsBusyAt(roomIds: string[], date: string, startH: number, hours: number): Promise<string[]> {
+  const { fromIso, toIso } = localRange(date, startH, hours)
+  const out: string[] = []
+  for (const id of roomIds) {
+    const { data, error } = await supabase().rpc('facility_busy', { p_facility_id: id, p_from: fromIso, p_to: toIso })
+    if (!error && (data as unknown[]).length > 0) out.push(id)
+  }
+  return out
+}
+
 // One event, several rooms — a facility-wide promotion, a party that
-// spills across spaces. The lead room carries the price, deposit, extras
-// and emails exactly like a normal booking; every other room gets a $0
-// confirmed companion under the same name, so each calendar is blocked
-// and nothing lands in the unpaid queue twice. All or nothing: if any
-// room is already taken, everything created here is quietly removed and
-// the taken room names come back so staff can see exactly what's in the
-// way.
+// spills across spaces, a package. The lead room carries the price,
+// deposit, extras and emails exactly like a normal booking; every other
+// room gets a $0 companion linked to it (0055), so each calendar is
+// blocked, the rooms move and cancel together, and nothing lands in the
+// unpaid queue twice. A package's own rooms are booked by the database
+// in the same insert as the lead. All or nothing: if any room is taken,
+// everything is removed before a single email goes out, and the taken
+// room names come back so staff can see exactly what's in the way.
 export async function addStaffBookingMulti(
   b: NewBooking,
   extraRoomIds: string[],
   roomName: (id: string) => string,
+  packageRoomIds: string[] = [],
 ): Promise<{ ok: true; code: string } | { ok: false; conflict: boolean; addonConflict?: boolean; takenRooms?: string[] }> {
-  // Companions go in first: they send no emails, so if any room turns out
-  // to be taken the whole thing unwinds before a single word reaches
-  // anyone. The lead booking — the one that emails — is created last,
-  // only once every room is secured.
-  const companionIds: string[] = []
+  const extras = [...new Set(extraRoomIds)].filter((id) => id !== b.roomId && !packageRoomIds.includes(id))
+
+  const primary = await addStaffBooking({ ...b, deferEmails: true })
+  if (!primary.ok) {
+    if (primary.conflict && !primary.addonConflict) {
+      const taken = await roomsBusyAt([b.roomId, ...packageRoomIds], b.date, b.startH, b.hours).catch(() => [] as string[])
+      return { ...primary, takenRooms: (taken.length > 0 ? taken : [b.roomId]).map(roomName) }
+    }
+    return primary
+  }
+
   const taken: string[] = []
-  for (const roomId of extraRoomIds) {
-    if (roomId === b.roomId) continue
+  for (const roomId of extras) {
     const res = await addStaffBooking({
       roomId,
       title: b.title,
@@ -404,37 +442,18 @@ export async function addStaffBookingMulti(
       createdBy: b.createdBy,
       accountId: b.accountId ?? null,
       ...(b.depositCents !== undefined ? { depositCents: null } : {}),
-      note: 'Companion room hold — priced on the lead booking.',
+      note: `Companion room hold — priced on ${primary.code}.`,
+      leadBookingId: primary.id,
     })
-    if (res.ok) companionIds.push(res.id)
-    else taken.push(roomName(roomId))
-  }
-
-  const unwind = async () => {
-    if (companionIds.length > 0) {
-      await supabase().from('bookings').delete().in('id', companionIds)
-      emit(BOOKINGS_EVENT)
-    }
+    if (!res.ok) taken.push(roomName(roomId))
   }
   if (taken.length > 0) {
-    await unwind()
+    // Deleting the lead takes every linked companion with it.
+    await supabase().from('bookings').delete().eq('id', primary.id)
+    emit(BOOKINGS_EVENT)
     return { ok: false, conflict: true, takenRooms: taken }
   }
-
-  const primary = await addStaffBooking(b)
-  if (!primary.ok) {
-    await unwind()
-    if (primary.conflict && !primary.addonConflict) {
-      return { ...primary, takenRooms: [roomName(b.roomId)] }
-    }
-    return primary
-  }
-  // Stamp the companions with the lead booking's code for the paper trail.
-  if (companionIds.length > 0) {
-    await supabase().from('bookings')
-      .update({ note: `Companion room hold — priced on ${primary.code}.` })
-      .in('id', companionIds)
-  }
+  sendNewBookingEmails(b, primary.id)
   return { ok: true, code: primary.code }
 }
 

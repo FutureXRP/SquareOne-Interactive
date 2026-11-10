@@ -246,9 +246,11 @@ export async function addEvent(e: NewEvent): Promise<{ id: string } | 'conflict'
       eventId: id, kind: e.kind, guestName: e.guestName ?? '', facilityId: e.facilityId,
       fromIso: from, toIso: to, createdBy: e.createdBy ?? null,
     })
-    if (held === 'conflict') {
+    // Anything but a secured room unwinds the event — an event that names
+    // a room but doesn't hold it is exactly how a room gets double-booked.
+    if (held !== 'ok') {
       await sb.from('staff_events').delete().eq('id', id)
-      return 'conflict'
+      return held === 'conflict' ? 'conflict' : null
     }
   }
   emit(EVENTS_EVENT)
@@ -278,19 +280,32 @@ export async function patchEvent(id: string, patch: Partial<{
     fields.staff_reminder_sent_at = null // a new person needs their own reminder
   }
   if (Object.keys(fields).length === 0) return false
-  // Canceling frees the held room; changing the room moves the hold.
+  // Canceling frees the held room. Changing the room — or bringing a
+  // canceled event back — secures the new hold FIRST, and only then lets
+  // go of the old one, so the event is never left holding nothing.
   if (patch.status === 'canceled' || (patch.facilityId !== undefined && !patch.facilityId)) {
     await deleteHoldBooking(id)
-  } else if (patch.facilityId) {
-    const { data: ev } = await supabase().from('staff_events').select('kind, guest_name, starts_at, ends_at, created_by').eq('id', id).maybeSingle()
-    const row = ev as { kind: EventKind; guest_name: string; starts_at: string; ends_at: string; created_by: string | null } | null
-    if (row) {
-      await deleteHoldBooking(id)
+  } else if (patch.facilityId || patch.status === 'scheduled') {
+    const { data: ev } = await supabase().from('staff_events').select('kind, guest_name, starts_at, ends_at, created_by, facility_id').eq('id', id).maybeSingle()
+    const row = ev as { kind: EventKind; guest_name: string; starts_at: string; ends_at: string; created_by: string | null; facility_id: string | null } | null
+    const room = patch.facilityId || row?.facility_id || null
+    const oldHold = await holdBookingIdOf(id)
+    let oldHoldLive = false
+    if (oldHold) {
+      const { data: hb } = await supabase().from('bookings').select('facility_id, status').eq('id', oldHold).maybeSingle()
+      const h = hb as { facility_id: string; status: string } | null
+      oldHoldLive = !!h && h.facility_id === room && (h.status === 'confirmed' || h.status === 'hold')
+    }
+    if (row && room && !oldHoldLive) {
       const held = await createHoldBooking({
-        eventId: id, kind: row.kind, guestName: row.guest_name, facilityId: patch.facilityId,
+        eventId: id, kind: row.kind, guestName: row.guest_name, facilityId: room,
         fromIso: row.starts_at, toIso: row.ends_at, createdBy: row.created_by,
       })
-      if (held === 'conflict') return false
+      if (held !== 'ok') return false
+      if (oldHold) {
+        await supabase().from('bookings').delete().eq('id', oldHold).eq('price_cents', 0)
+        emit(BOOKINGS_EVENT)
+      }
     }
   }
   const { error } = await supabase().from('staff_events').update(fields).eq('id', id)

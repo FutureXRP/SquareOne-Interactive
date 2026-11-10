@@ -97,6 +97,18 @@ export function rentalWaiversForRoom(rows: FormRow[], roomId: string): RequiredW
     .filter(hasSubstance)
 }
 
+// Every waiver a booking spanning several rooms needs — each form once.
+export function rentalWaiversForRooms(rows: FormRow[], roomIds: string[]): RequiredWaiver[] {
+  const seen = new Set<string>()
+  const out: RequiredWaiver[] = []
+  for (const id of roomIds) {
+    for (const w of rentalWaiversForRoom(rows, id)) {
+      if (!seen.has(w.id)) { seen.add(w.id); out.push(w) }
+    }
+  }
+  return out
+}
+
 export interface WaiverSignature {
   form_id: string
   account_id: string | null

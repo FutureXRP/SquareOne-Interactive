@@ -1,6 +1,6 @@
 import { serviceDb } from '@/lib/server/billing'
 import {
-  FORM_COL_SETS, rentalWaiversForRoom, waiverCovered,
+  FORM_COL_SETS, rentalWaiversForRooms, waiverCovered,
   type FormRow, type RequiredWaiver, type WaiverSignature,
 } from '@/lib/waiver-forms'
 
@@ -10,7 +10,7 @@ import {
 // account — asks this first: waivers are signed before money moves, never
 // at the door.
 
-interface BookingBits { id: string; facility_id: string; account_id: string | null; created_at?: string | null }
+interface BookingBits { id: string; facility_id: string; account_id: string | null; created_at?: string | null; package_id?: string | null }
 
 async function rentalForms(): Promise<FormRow[]> {
   const db = serviceDb()
@@ -43,10 +43,27 @@ async function signaturesFor(formIds: string[], b: BookingBits): Promise<{ sigs:
 }
 
 export async function bookingBits(bookingId: string): Promise<BookingBits | null> {
-  const { data, error } = await serviceDb().from('bookings')
-    .select('id, facility_id, account_id, created_at').eq('id', bookingId).maybeSingle()
-  if (error || !data) return null
-  return data as BookingBits
+  const db = serviceDb()
+  for (const cols of ['id, facility_id, account_id, created_at, package_id', 'id, facility_id, account_id, created_at']) {
+    const { data, error } = await db.from('bookings').select(cols).eq('id', bookingId).maybeSingle()
+    if (!error) return (data as unknown as BookingBits | null)
+  }
+  return null
+}
+
+// Every room the booking uses: its own, its linked companions (0055), and
+// its package's rooms — a gym-only waiver applies to a party that
+// spills into the gym, whichever room the booking was made under.
+async function roomsOf(b: BookingBits): Promise<string[]> {
+  const db = serviceDb()
+  const rooms = new Set<string>([b.facility_id])
+  const { data: comps } = await db.from('bookings').select('facility_id').eq('lead_booking_id', b.id)
+  for (const c of (comps ?? []) as { facility_id: string }[]) rooms.add(c.facility_id)
+  if (b.package_id) {
+    const { data: pr } = await db.from('event_package_rooms').select('facility_id').eq('package_id', b.package_id)
+    for (const r of (pr ?? []) as { facility_id: string }[]) rooms.add(r.facility_id)
+  }
+  return [...rooms]
 }
 
 // Every waiver this booking's room requires that isn't covered yet, in the
@@ -57,7 +74,7 @@ export async function waiversDueForBooking(bookingId: string): Promise<RequiredW
   try {
     const b = await bookingBits(bookingId)
     if (!b) return []
-    const required = rentalWaiversForRoom(await rentalForms(), b.facility_id)
+    const required = rentalWaiversForRooms(await rentalForms(), await roomsOf(b))
     if (required.length === 0) return []
     const { sigs, trackable } = await signaturesFor(required.map((w) => w.id), b)
     // Never strand someone at the payment step over a signature the

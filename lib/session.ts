@@ -180,6 +180,7 @@ export interface MemberBooking {
 export async function getMyBookings(): Promise<MemberBooking[]> {
   // RLS scopes this to the member's own account.
   const sets = [
+    'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, lead_booking_id, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, payments(amount_cents, status)',
@@ -190,15 +191,19 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
     price_cents: number; status: string; note?: string | null
     deposit_cents?: number | null; approved_at?: string | null
     pay_token?: string | null; card_last4?: string | null
+    lead_booking_id?: string | null
     payments: { amount_cents: number; status: string }[]
   }
   let rows: Row[] | null = null
   for (const cols of sets) {
-    const res = await supabase().from('bookings').select(cols).order('during', { ascending: false }).limit(20)
+    const res = await supabase().from('bookings').select(cols).order('during', { ascending: false }).limit(40)
     if (!res.error) { rows = res.data as unknown as Row[]; break }
   }
   if (!rows) throw new Error('bookings query failed')
   return rows.flatMap((r) => {
+    // A package's extra rooms ride on its lead booking (0055) — the
+    // member sees one booking, not one per room.
+    if (r.lead_booking_id || (r.price_cents === 0 && (r.note ?? '').startsWith('Companion room hold'))) return []
     const m = /^[\[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(r.during)
     if (!m) return []
     const from = new Date(m[1])
