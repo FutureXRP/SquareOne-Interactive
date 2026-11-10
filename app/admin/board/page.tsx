@@ -16,7 +16,9 @@ export default function BoardPage() {
     let on = true
     const sync = () => {
       bookingsForDate(isoDate(0)).then((b) => {
-        if (on) setCounts({ bookings: b.length, holds: b.filter((x) => x.status === 'hold').length })
+        // A package's extra rooms are part of their main booking, not more bookings.
+        const leads = b.filter((x) => !x.leadBookingId)
+        if (on) setCounts({ bookings: leads.length, holds: leads.filter((x) => x.status === 'hold').length })
       }).catch(() => {})
     }
     sync()

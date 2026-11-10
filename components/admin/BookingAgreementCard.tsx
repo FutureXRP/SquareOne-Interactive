@@ -1,4 +1,6 @@
 'use client'
+import { agreementMatchesTime } from '@/lib/rental-agreement'
+import { tulsaInstant } from '@/lib/tulsa-time'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { INK, SUB, FAINT, LINE, BLUE, GREEN, RED } from '@/lib/theme'
@@ -80,7 +82,11 @@ export function BookingAgreementCard({ b, agreement, canCharge, leadCode }: {
 
   // Signed before the latest move or room change: it describes the old event.
   const lastMove = changes.find((c) => c.kind === 'moved' || c.kind === 'room')
-  const agreementOutdated = !!agreement && !!lastMove && new Date(lastMove.at) > new Date(agreement.signedAt)
+  const startAt = tulsaInstant(b.date, b.startH)
+  const agreementOutdated = !!agreement && (
+    (!!lastMove && new Date(lastMove.at) > new Date(agreement.signedAt))
+    || !agreementMatchesTime(agreement.snapshot, startAt, new Date(startAt.getTime() + b.hours * 3600_000))
+  )
   const who = (c: BookingChange) => c.actor === 'customer' ? 'Customer' : c.actor === 'staff' ? 'Staff' : 'System'
   const describe = (c: BookingChange): string => {
     if (c.kind === 'moved') return `${who(c)} moved it: ${rangeLabel(c.oldDuring)} → ${rangeLabel(c.newDuring)}`

@@ -4,6 +4,7 @@
 // already listens for. The shopping cart stays device-local (normal for
 // carts); saved cards stay local until Stripe arrives.
 
+import { agreementMatchesTime, type AgreementSnapshot } from '@/lib/rental-agreement'
 import { tulsaInstant, tulsaDayHour } from '@/lib/tulsa-time'
 import { supabase, emit, isSupabaseConfigured } from '@/lib/supabase'
 import { notify } from '@/lib/notify-client'
@@ -226,8 +227,9 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
   if (!rows) throw new Error('bookings query failed')
   const pending = await myPendingChanges().catch(() => new Map())
   // Which of their bookings carry a signed agreement (member read own).
-  const agRes = await supabase().from('rental_agreements').select('booking_id')
-  const signedIds = agRes.error ? null : new Set(((agRes.data ?? []) as { booking_id: string }[]).map((r) => r.booking_id))
+  const agRes = await supabase().from('rental_agreements').select('booking_id, snapshot')
+  const signedSnaps = agRes.error ? null
+    : new Map(((agRes.data ?? []) as { booking_id: string; snapshot: AgreementSnapshot | null }[]).map((r) => [r.booking_id, r.snapshot]))
   return rows.flatMap((r) => {
     // A package's extra rooms ride on its lead booking (0055) — the
     // member sees one booking, not one per room.
@@ -253,7 +255,8 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       payToken: r.pay_token ?? undefined,
       cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
       pendingChange: pending.get(r.id) ?? null,
-      agreementSigned: signedIds ? signedIds.has(r.id) : undefined,
+      // Signed AND still describing this date and time.
+      agreementSigned: signedSnaps ? (signedSnaps.has(r.id) && agreementMatchesTime(signedSnaps.get(r.id), from, to)) : undefined,
     }]
   })
 }
@@ -269,7 +272,7 @@ export async function getMyPhone(): Promise<string | null> {
 }
 
 export async function requestMemberHold(roomId: string, title: string, date: string, startH: number, hours: number, priceCents: number, depositCents?: number | null, note?: string, addonIds?: string[], buffers?: { setupMin: number; cleanupMin: number }, phone?: string, opts?: { packageId?: string }):
-  Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean }> {
+  Promise<{ ok: true; code: string; id: string } | { ok: false; conflict: boolean; addonConflict?: boolean; message?: string }> {
   const profile = await getProfile()
   if (!profile) return { ok: false, conflict: false }
   const sb = supabase()
@@ -313,7 +316,10 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   if (res.error) {
     const conflict = res.error.code === '23P01'
     if (!conflict) console.error('[session]', res.error.message)
-    return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict') }
+    // The database's own words for a rule it enforces (notice window, room
+    // not available, …) — said to the customer instead of nothing.
+    const message = res.error.code === '22023' ? res.error.message : undefined
+    return { ok: false, conflict, addonConflict: conflict && res.error.message.includes('addon_conflict'), message }
   }
   emit(SESSION_EVENT)
   const row = res.data as { id: string; code: string }

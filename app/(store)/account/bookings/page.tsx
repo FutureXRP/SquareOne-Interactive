@@ -1,4 +1,5 @@
 'use client'
+import { StatusChip, stageOf } from '@/components/store/MyBookingsCard'
 import { DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -52,11 +53,8 @@ export default function MyBookingsPage() {
                         {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {b.code}
                       </p>
                     </div>
-                    {b.status === 'hold'
-                      ? <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '3px 11px', borderRadius: 999 }}>Hold — deposit due</span>
-                      : b.status === 'canceled'
-                        ? <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '3px 11px', borderRadius: 999 }}>Canceled</span>
-                        : <span style={{ fontSize: 10.5, fontWeight: 700, color: GREEN, background: '#e5f2ea', padding: '3px 11px', borderRadius: 999 }}>Confirmed</span>}
+                    {/* Same labels as My bookings on the account page. */}
+                    <StatusChip stage={stageOf(b)} />
                     <span style={{ fontSize: 14, fontWeight: 800, color: INK, fontVariantNumeric: 'tabular-nums' }}>{formatCents(b.priceCents)}</span>
                   </div>
                 )

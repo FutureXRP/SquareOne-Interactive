@@ -17,18 +17,20 @@ const CHIP: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 700, padding: '2px 10px', borderRadius: 999, whiteSpace: 'nowrap',
 }
 
-type Stage = 'review' | 'hold' | 'confirmed' | 'done'
+type Stage = 'review' | 'hold' | 'confirmed' | 'done' | 'canceled'
 
 // approvedAt is undefined until migration 0033 runs — before that there's
 // no review step to show, so bookings read the way they always did.
-function stageOf(b: MemberBooking): Stage {
+export function stageOf(b: MemberBooking): Stage {
+  if (b.status === 'canceled') return 'canceled'
   if (b.status === 'completed') return 'done'
   if (b.approvedAt === null) return 'review'
   if (b.status === 'hold') return 'hold'
   return 'confirmed'
 }
 
-function StatusChip({ stage }: { stage: Stage }) {
+export function StatusChip({ stage }: { stage: Stage }) {
+  if (stage === 'canceled') return <span style={{ ...CHIP, color: SUB, background: '#eef2f8' }}>Canceled</span>
   if (stage === 'review') return <span style={{ ...CHIP, color: '#5b4708', background: '#fdf3dc' }}>Reservation in review</span>
   if (stage === 'hold') return <span style={{ ...CHIP, color: GOLD, background: '#faf0dc' }}>On hold</span>
   if (stage === 'done') return <span style={{ ...CHIP, color: SUB, background: '#eef2f8' }}>Completed</span>
@@ -88,7 +90,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
 
   const cancel = async () => {
     if (busy) return
-    if (!window.confirm(`Cancel ${b.title} on ${b.date}? Anything you’ve paid is refunded separately — we’ll email you about it.`)) return
+    if (!window.confirm(`Cancel ${b.title} on ${b.date}?\n\nOur cancellation practice: more than 7 days before — full refund of what you've paid; 3–7 days before — refund less the deposit; under 72 hours — no refund (we'll try to rebook you). Refunds go back the way you paid, and we'll email you.`)) return
     setBusy(true); setMsg(null)
     const res = await cancelMyBooking(b.id)
     setBusy(false)

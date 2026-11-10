@@ -42,6 +42,8 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [takenAddons, setTakenAddons] = useState<string[]>([]) // booked elsewhere for the chosen window
   const [requesting, setRequesting] = useState(false)
   const [conflict, setConflict] = useState(false)
+  // Anything else the booking couldn't get past, in plain words.
+  const [failMsg, setFailMsg] = useState<string | null>(null)
   const [addonConflict, setAddonConflict] = useState(false)
   // What the customer wants the desk to know — decorations, timing, etc.
   const [requests, setRequests] = useState('')
@@ -242,9 +244,16 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
   const placeHold = async () => {
     if (!day || startH == null || requesting || !phoneOk) return
-    setRequesting(true)
     setConflict(false)
     setAddonConflict(false)
+    setFailMsg(null)
+    // A discount that covers the whole booking can't be requested online
+    // (a priced room never books for $0 here) — the desk finishes it.
+    if (priceCents <= 0 && f.perHourCents > 0) {
+      setFailMsg('That discount covers the whole booking — call the front desk and we’ll book it for you.')
+      return
+    }
+    setRequesting(true)
     const parts: string[] = []
     if (pickedAddons.length > 0) {
       parts.push(`Add-ons: ${pickedAddons.map((a) => `${a.name} (${formatCents(addonPriceCents(a, hours))})`).join(', ')}`)
@@ -279,6 +288,10 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         payToken = (data as { pay_token?: string } | null)?.pay_token ?? undefined
       } catch { /* the confirmation email has the link too */ }
       setConfirmed({ code: res.code, startH, hours, priceCents, payToken })
+    } else if (!res.conflict) {
+      setFailMsg(res.message
+        ? `We couldn’t place that booking: ${res.message}.`
+        : 'We couldn’t place that booking. Please try again, or call the front desk.')
     } else if (res.conflict) {
       if (res.addonConflict) {
         setAddonConflict(true)
@@ -435,6 +448,9 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
 
         {/* Slots — live availability from the booking book */}
         <p className="sq-label">Available start times {day ? `· ${day.weekday} ${day.label}` : ''}</p>
+        {failMsg && (
+          <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 10px' }}>{failMsg}</p>
+        )}
         {conflict && (
           <p style={{ fontSize: 12.5, color: RED, fontWeight: 600, margin: '0 0 10px' }}>
             That slot was just taken — here&apos;s what&apos;s still open.

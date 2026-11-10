@@ -83,8 +83,9 @@ export default function TodayPage() {
   }, [])
 
   const today = isoDate(0)
-  const todays = bookings.filter((b) => b.date === today && b.status !== 'canceled')
-  const holds = bookings.filter((b) => b.status === 'hold')
+  // A package's extra rooms ride on their main booking — not counted twice.
+  const todays = bookings.filter((b) => b.date === today && b.status !== 'canceled' && !b.leadBookingId)
+  const holds = bookings.filter((b) => b.status === 'hold' && !b.leadBookingId)
   const revenueTodayCents = payments.filter((p) => p.dateIso === today).reduce((n, p) => n + p.amountCents, 0)
   const owing = clients.filter((c) => c.balanceCents > 0)
 

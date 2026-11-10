@@ -2,6 +2,7 @@ import type Stripe from 'stripe'
 import { serviceDb, sendAndLog, stripe } from '@/lib/server/billing'
 import { bookingPayment, paymentOnCanceledAlert } from '@/lib/server/emails'
 import { adminRecipients } from '@/lib/server/unpaid-holds'
+import { isSecured } from '@/lib/payment-policy'
 import { bookingFacts } from '@/lib/server/booking-facts'
 import { saveCardFromPaymentIntent } from '@/lib/server/booking-card'
 
@@ -39,6 +40,20 @@ async function howTheyPaid(ref: string | Stripe.PaymentIntent):
 // Record a Stripe invoice payment in our payments ledger, so membership
 // charges (first signup and every monthly renewal) show on Payments and
 // Reports beside desk payments. Idempotent on the invoice id.
+// A hold becomes confirmed once it's secured (at least the deposit, or any
+// payment when it has none). A finished or canceled booking is never
+// reopened by a payment.
+async function secureIfPaid(bookingId: string): Promise<void> {
+  const db = serviceDb()
+  const { data } = await db.from('bookings').select('status, deposit_cents, payments(amount_cents, status)').eq('id', bookingId).maybeSingle()
+  const r = data as { status: string; deposit_cents: number | null; payments: { amount_cents: number; status: string }[] } | null
+  if (!r || r.status !== 'hold') return
+  const paid = (r.payments ?? []).filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
+  if (!isSecured(paid, r.deposit_cents)) return
+  await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null, hold_warned_at: null })
+    .eq('id', bookingId).eq('status', 'hold')
+}
+
 // Money on a canceled booking needs a person: refund it or rebook them.
 async function alertCanceledPayment(b: { id: string; code: string; title: string }, amount: number, method: string) {
   try {
@@ -84,8 +99,9 @@ export async function recordInvoicePayment(invoice: Stripe.Invoice): Promise<voi
 // payments ledger exactly the way the desk would, stop the hold from
 // expiring, and mail the deposit/paid-in-full receipt. Idempotent on the
 // Checkout session id, so a replayed webhook can't double-charge the
-// ledger. Approval is deliberately untouched — paying doesn't confirm a
-// reservation, a person does.
+// ledger. Two separate things: paying at least the deposit SECURES the
+// booking (status → confirmed, the deposit clock stops); APPROVAL of a
+// customer's request (approved_at) is a person's call and is untouched here.
 export async function recordBookingCheckout(session: Stripe.Checkout.Session): Promise<void> {
   const bookingId = session.metadata?.booking_id
   const amount = session.amount_total ?? 0
@@ -123,9 +139,7 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   // and quietly resurrecting the booking would put a room back on the
   // calendar that everyone believes is free. The payment above is still
   // recorded, because the money is real and somebody now owes a refund.
-  if (!wasCanceled) {
-    await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
-  }
+  if (!wasCanceled) await secureIfPaid(b.id)
 
   // The card they just paid with becomes the booking's card on file when
   // none is saved yet — the rental agreement requires one for damages.
@@ -189,7 +203,10 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
     await alertCanceledPayment(b, amount, paidWith.label)
     return true
   }
-  await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
+  await secureIfPaid(b.id)
+  // The card they paid with becomes the booking's card on file — the same
+  // as the Checkout path, whichever Stripe event arrives first.
+  try { await saveCardFromPaymentIntent(pi, b.id) } catch { /* recorded either way */ }
 
   const resolved = await bookingFacts(b.id)
   if (resolved) {

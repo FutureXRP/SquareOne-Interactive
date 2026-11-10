@@ -2,7 +2,7 @@ import { serviceDb } from '@/lib/server/billing'
 import type { BookingFacts } from '@/lib/server/emails'
 import { waiversDueForBooking } from '@/lib/server/booking-waivers'
 import { bookingDoc } from '@/lib/server/booking-card'
-import { withinDepositWindow, clockStartsAt } from '@/lib/payment-policy'
+import { withinDepositWindow, clockStartsAt, isSecured } from '@/lib/payment-policy'
 
 function site(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
@@ -165,13 +165,14 @@ export async function bookingFactsAny(bookingId: string):
       canceledVia: (b.canceled_via as BookingFacts['canceledVia']) ?? undefined,
       canceledByName: b.canceled_by_staff?.name ?? undefined,
       // The unpaid hold's 24-hour deadline, once it has been given one.
-      holdDeadline: b.status === 'hold' && b.hold_warned_at && b.hold_expires_at && paid === 0
+      holdDeadline: b.status === 'hold' && b.hold_warned_at && b.hold_expires_at && !isSecured(paid, b.deposit_cents)
         ? deadlinePhrase(b.hold_expires_at)
         : undefined,
       waiversDue: waiversDue > 0 ? waiversDue : undefined,
+      status: b.status,
       // More than 14 days out with nothing paid: the day the 24 hours to
       // pay the deposit will start.
-      depositClockOn: b.status === 'hold' && paid === 0 && !b.hold_warned_at && range && !withinDepositWindow(range.from)
+      depositClockOn: b.status === 'hold' && !isSecured(paid, b.deposit_cents) && !b.hold_warned_at && range && !withinDepositWindow(range.from)
         ? clockStartsAt(range.from).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' })
         : undefined,
     },
