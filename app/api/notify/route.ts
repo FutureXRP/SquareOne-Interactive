@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import {
-  bookingHeld, bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
-  bookingRemoved, bookingPayment, bookingApproved, bookingApprovalAlert, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
+  bookingConfirmed, bookingCanceled, bookingRescheduled, bookingUpdated,
+  bookingRemoved, bookingPayment, bookingApproved, bookingStaffAssigned, paymentReceipt, paymentVoided, refundIssued,
   membershipCanceled, membershipResumed,
   eventAssigned, eventGuestConfirmed, eventMoved,
 } from '@/lib/server/emails'
 import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
-import { startHoldClock, alertAdminsOfUnpaidHold, adminRecipients } from '@/lib/server/unpaid-holds'
+import { sendHoldEmails } from '@/lib/server/hold-emails'
 import { alertCustomerChanges } from '@/lib/server/customer-changes'
 import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
@@ -35,12 +35,42 @@ async function callerId(req: Request): Promise<string | null> {
   return data?.user?.id ?? null
 }
 
+const MEMBER_KINDS = new Set(['booking.hold', 'booking.canceled', 'booking.change_requested', 'membership.canceled', 'membership.resumed'])
+
+async function notAllowed(userId: string, kind: string, id: string): Promise<string | null> {
+  const db = serviceDb()
+  const { data: staff } = await db.from('staff').select('active').eq('user_id', userId).maybeSingle()
+  if ((staff as { active?: boolean } | null)?.active) return null
+  if (!MEMBER_KINDS.has(kind)) return 'staff_only'
+  if (kind.startsWith('membership.')) return null // their own membership; the route resolves "me"
+  const { data: mine } = await db.from('clients').select('account_id').eq('user_id', userId)
+  const accounts = new Set(((mine ?? []) as { account_id: string }[]).map((r) => r.account_id))
+  const { data: bk } = await db.from('bookings').select('account_id, status, canceled_via').eq('id', id).maybeSingle()
+  const b = bk as { account_id: string | null; status: string; canceled_via?: string | null } | null
+  if (!b || !b.account_id || !accounts.has(b.account_id)) return 'not_your_booking'
+  if (kind === 'booking.hold') {
+    if (b.status !== 'hold') return 'wrong_state'
+    // The hold email goes once; the hourly job covers a missed one.
+    const { data: sent } = await db.from('email_log').select('id').eq('booking_id', id).eq('kind', 'booking.hold').limit(1)
+    if ((sent ?? []).length > 0) return 'already_sent'
+  }
+  if (kind === 'booking.canceled' && !(b.status === 'canceled' && b.canceled_via === 'member')) return 'wrong_state'
+  return null
+}
+
 export async function POST(req: Request) {
   const user = await callerId(req)
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const { kind, id } = (await req.json().catch(() => ({}))) as { kind?: string; id?: string }
   if (!kind || !id) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+
+  // Who may trigger what. Staff may send any of these. A customer may only
+  // announce what they themselves just did, on their own booking, and only
+  // when the booking really is in that state — so nobody can replay a
+  // "hold" to flood the desk, or send a fake "approved" or "canceled".
+  const denied = await notAllowed(user, kind, id)
+  if (denied) return NextResponse.json({ error: denied }, { status: 403 })
 
   try {
     // A customer's change request (0057), named by booking id, and the
@@ -55,44 +85,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, sent })
     }
 
-    if (kind === 'booking.hold' || kind === 'booking.confirmed' || kind === 'booking.canceled'
+    if (kind === 'booking.hold') {
+      const r = await sendHoldEmails(id)
+      return NextResponse.json({ ok: true, ...r })
+    }
+
+    if (kind === 'booking.confirmed' || kind === 'booking.canceled'
       || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted'
       || kind === 'booking.approved') {
-      // A new unpaid hold gets its 24 hours from right now, so the hold
-      // email itself can say exactly when it goes (0054).
-      const clock = kind === 'booking.hold' ? await startHoldClock(id).catch(() => null) : null
       // A customer moving or canceling their own booking tells the house
       // too (0056) — with or without a customer address on file.
       if (kind === 'booking.rescheduled' || kind === 'booking.canceled') {
         await alertCustomerChanges(id).catch((e) => console.error('[notify] customer change alert', e))
       }
       const resolved = await bookingFacts(id)
-      if (!resolved) {
-        // No customer address — the admins still need to know it's unpaid.
-        if (clock) await alertAdminsOfUnpaidHold(id)
-        return NextResponse.json({ ok: true, skipped: 'no_email' })
-      }
+      if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
       const body =
-        kind === 'booking.hold' ? bookingHeld(resolved.facts)
-        : kind === 'booking.approved' ? bookingApproved(resolved.facts)
+        kind === 'booking.approved' ? bookingApproved(resolved.facts)
         : kind === 'booking.confirmed' ? bookingConfirmed(resolved.facts)
         : kind === 'booking.rescheduled' ? bookingRescheduled(resolved.facts)
         : kind === 'booking.updated' ? bookingUpdated(resolved.facts)
         : kind === 'booking.deleted' ? bookingRemoved(resolved.facts)
         : bookingCanceled(resolved.facts)
       await sendAndLog(kind, resolved.to.email, body, { accountId: resolved.b.account_id, bookingId: resolved.b.id })
-      // A customer hold that nobody has approved also wakes the house —
-      // to whatever address Settings names (0045). Staff-made bookings
-      // carry approved_at from birth and stay silent here.
-      // The approval alert says it's unpaid and when it comes off the
-      // calendar; a hold staff placed gets the plain unpaid notice.
-      if (kind === 'booking.hold' && !resolved.b.approved_at) {
-        for (const alertTo of await adminRecipients(resolved.to.email)) {
-          await sendAndLog('booking.approval_alert', alertTo, bookingApprovalAlert(resolved.facts), { bookingId: resolved.b.id })
-        }
-      } else if (kind === 'booking.hold' && clock) {
-        await alertAdminsOfUnpaidHold(id, resolved.to.email)
-      }
       return NextResponse.json({ ok: true })
     }
 

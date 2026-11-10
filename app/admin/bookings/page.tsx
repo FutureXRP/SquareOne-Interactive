@@ -504,7 +504,9 @@ export default function AdminBookingsPage() {
                     {amount <= 0
                       ? 'Enter an amount to collect.'
                       : leftAfter > 0
-                        ? `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the slot is locked in.`
+                        ? (b.depositCents && b.paidCents + amount < b.depositCents
+                          ? `Taking ${formatCents(amount)} — that's below the ${formatCents(b.depositCents)} deposit, so the booking isn't secured yet (${formatCents(leftAfter)} still due).`
+                          : `Taking ${formatCents(amount)} as a deposit — ${formatCents(leftAfter)} still due, and the booking is secured.`)
                         : `Taking ${formatCents(amount)} — paid in full.`}
                   </p>
                   <p style={{ fontSize: 11.5, color: FAINT, margin: '4px 0 0', lineHeight: 1.5 }}>

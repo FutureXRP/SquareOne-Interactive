@@ -43,6 +43,6 @@ export function rangeLabel(range: string | null): string {
   if (!m) return '—'
   const from = new Date(m[1])
   const to = new Date(m[2])
-  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined })
-  return `${from.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, ${t(from)} – ${t(to)}`
+  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined, timeZone: 'America/Chicago' })
+  return `${from.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Chicago' })}, ${t(from)} – ${t(to)}`
 }

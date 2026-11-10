@@ -6,7 +6,8 @@ import { PHOTO_OPTIONS, type AgreementAnswers } from '@/lib/rental-agreement'
 import { fileAgreementRequest, sendChangeRequestsReceived } from '@/lib/server/change-requests'
 import { agreementFile } from '@/lib/server/agreement-file'
 import { bookingFacts } from '@/lib/server/booking-facts'
-import { agreementSignedCopy } from '@/lib/server/emails'
+import { agreementSignedCopy, agreementResignedAlert } from '@/lib/server/emails'
+import { adminRecipients } from '@/lib/server/unpaid-holds'
 
 // Signs the Event Rental Agreement for one booking. Same authorization as
 // the pay page: holding the booking's link is the permission, so guests
@@ -122,6 +123,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         : {}),
     })
     if (filed) await sendChangeRequestsReceived(doc.id).catch((e) => console.error('[pay/agreement] request emails', e))
+  }
+  // Re-signing clears a countersignature staff already made — tell them.
+  if (doc.agreement?.repName) {
+    try {
+      const r = await bookingFacts(doc.id)
+      if (r) {
+        const body = agreementResignedAlert(r.facts, { signer: signature, previousRep: doc.agreement.repName })
+        for (const to of await adminRecipients(r.to.email)) await sendAndLog('booking.agreement_resigned', to, body, { bookingId: doc.id })
+      }
+    } catch (e) { console.error('[pay/agreement] resign alert', e) }
   }
   // Their signed copy, as a PDF, by email — best effort, never blocks.
   try {

@@ -3,6 +3,7 @@
 // conflict prevention. The Board, Bookings page, and member portal all read
 // from here. Money is integer cents.
 
+import { tulsaInstant, tulsaDayHour, tulsaToday } from '@/lib/tulsa-time'
 import { supabase, emit } from '@/lib/supabase'
 import { notify, notifyReport } from '@/lib/notify-client'
 
@@ -74,17 +75,12 @@ export interface StaffBooking {
 }
 
 export function isoDate(offset = 0): string {
-  const d = new Date()
-  d.setDate(d.getDate() + offset)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return tulsaToday(offset)
 }
 
 export function localRange(date: string, startH: number, hours: number): { fromIso: string; toIso: string } {
-  const [y, m, d] = date.split('-').map(Number)
-  const from = new Date(y, m - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  // Tulsa time, whatever time zone this browser is in.
+  const from = tulsaInstant(date, startH)
   const to = new Date(from.getTime() + hours * 3600_000)
   return { fromIso: from.toISOString(), toIso: to.toISOString() }
 }
@@ -157,8 +153,7 @@ const SELECT_SETS = [
 function fromRow(r: Row): StaffBooking | null {
   const range = parseRange(r.during)
   if (!range) return null
-  const date = `${range.from.getFullYear()}-${String(range.from.getMonth() + 1).padStart(2, '0')}-${String(range.from.getDate()).padStart(2, '0')}`
-  const startH = range.from.getHours() + range.from.getMinutes() / 60
+  const { dateIso: date, hour: startH } = tulsaDayHour(range.from)
   const hours = Math.max((range.to.getTime() - range.from.getTime()) / 3600_000, 0.5)
   const paid = r.payments.filter((p) => p.status === 'paid')
   return {
@@ -608,6 +603,8 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
   const { data: paymentRow, error } = await sb.from('payments').insert({
     org_id: (org as { id: string }).id,
     booking_id: booking.id,
+    // So the payment shows in the customer's own account.
+    account_id: booking.accountId ?? null,
     method,
     status: 'paid',
     amount_cents: amount,
@@ -627,7 +624,15 @@ export async function recordPayment(booking: StaffBooking, method: PayMethod, st
       staff_id: staffId,
     })
   }
-  await supabase().from('bookings').update({ status: 'confirmed', note: null, hold_expires_at: null }).eq('id', booking.id)
+  // At least the deposit secures a hold (lib/payment-policy.ts). Only a
+  // hold is ever promoted — a canceled or finished booking stays as it is —
+  // and the booking's note (requests, extras, coupon trail) is kept.
+  const paidAfter = booking.paidCents + amount
+  const secured = !booking.depositCents || booking.depositCents <= 0 || paidAfter >= booking.depositCents
+  if (booking.status === 'hold' && secured) {
+    await supabase().from('bookings').update({ status: 'confirmed', hold_expires_at: null })
+      .eq('id', booking.id).eq('status', 'hold')
+  }
   emit(BOOKINGS_EVENT)
   // One email that reads as a deposit receipt or a paid-in-full
   // confirmation, whichever this payment made true.
@@ -646,6 +651,12 @@ export async function voidPayment(p: PaymentRow, staffId: string | null): Promis
     return { ok: false, message: 'Card payments are real Stripe charges — use Refund instead.' }
   }
   const sb = supabase()
+  // Cash App Pay through Stripe is recorded as Cash App but is just as real
+  // a charge — anything with a Stripe reference is refunded, never struck.
+  const { data: ref } = await sb.from('payments').select('stripe_payment_intent_id').eq('id', p.id).maybeSingle()
+  if ((ref as { stripe_payment_intent_id?: string | null } | null)?.stripe_payment_intent_id) {
+    return { ok: false, message: 'This payment went through Stripe — use Refund so the money actually goes back.' }
+  }
   const { data, error } = await sb.from('payments')
     .update({ status: 'voided', voided_by: staffId, voided_at: new Date().toISOString() })
     .eq('id', p.id)
@@ -669,6 +680,18 @@ export async function voidPayment(p: PaymentRow, staffId: string | null): Promis
       })
     }
   }
+  // With that payment gone, a booking left below its deposit isn't
+  // secured any more — it goes back on the deposit clock as a hold.
+  if (p.bookingId) {
+    const { data: bk } = await sb.from('bookings')
+      .select('status, deposit_cents, payments(amount_cents, status)').eq('id', p.bookingId).maybeSingle()
+    const row = bk as { status: string; deposit_cents: number | null; payments: { amount_cents: number; status: string }[] } | null
+    if (row && row.status === 'confirmed') {
+      const paidNow = row.payments.filter((x) => x.status === 'paid').reduce((n, x) => n + x.amount_cents, 0)
+      const floor = row.deposit_cents && row.deposit_cents > 0 ? row.deposit_cents : 1
+      if (paidNow < floor) await sb.from('bookings').update({ status: 'hold' }).eq('id', p.bookingId).eq('status', 'confirmed')
+    }
+  }
   // The customer already holds a receipt for this, so the correction
   // can't be silent — the server builds the email from the voided row.
   if (p.bookingId) notify('payment.voided', p.id)
@@ -678,6 +701,13 @@ export async function voidPayment(p: PaymentRow, staffId: string | null): Promis
 
 // Hard-delete a booking row (payments/ledger keep their records, unlinked).
 export async function deleteBooking(id: string): Promise<boolean> {
+  // Never delete a booking that has money on it — its payments would be
+  // orphaned and drop out of "refund owed". Cancel it instead.
+  const { data: paid } = await supabase().from('payments').select('id').eq('booking_id', id).eq('status', 'paid').limit(1)
+  if ((paid ?? []).length > 0) {
+    if (typeof window !== 'undefined') window.alert('This booking has payments on it, so it can’t be deleted — cancel it instead, and refund what’s owed.')
+    return false
+  }
   // Send first — once the row is gone the server has nothing left to
   // build the email from.
   await notify('booking.deleted', id)
@@ -800,11 +830,13 @@ export async function facilityBusy(facilityId: string, date: string): Promise<{ 
   const { fromIso, toIso } = localRange(date, 0, 24)
   const { data, error } = await supabase().rpc('facility_busy', { p_facility_id: facilityId, p_from: fromIso, p_to: toIso })
   if (error) throw error
-  return (data as { busy_from: string; busy_to: string }[]).map((r) => {
-    const from = new Date(r.busy_from)
-    const to = new Date(r.busy_to)
-    return { fromH: from.getHours() + from.getMinutes() / 60, toH: to.getHours() + to.getMinutes() / 60 }
-  })
+  // Hours from the start of that Tulsa day — a window that runs past
+  // midnight reads as 25, 26…, never wraps back to the morning.
+  const dayStart = tulsaInstant(date, 0).getTime()
+  return (data as { busy_from: string; busy_to: string }[]).map((r) => ({
+    fromH: (new Date(r.busy_from).getTime() - dayStart) / 3600_000,
+    toH: (new Date(r.busy_to).getTime() - dayStart) / 3600_000,
+  }))
 }
 
 // Everything that already happened, newest first, back as far as `months`.

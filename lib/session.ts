@@ -4,6 +4,7 @@
 // already listens for. The shopping cart stays device-local (normal for
 // carts); saved cards stay local until Stripe arrives.
 
+import { tulsaInstant, tulsaDayHour } from '@/lib/tulsa-time'
 import { supabase, emit, isSupabaseConfigured } from '@/lib/supabase'
 import { notify } from '@/lib/notify-client'
 
@@ -240,8 +241,8 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       code: r.code,
       roomId: r.facility_id,
       title: r.title ?? 'Room rental',
-      date: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`,
-      startH: from.getHours() + from.getMinutes() / 60,
+      date: tulsaDayHour(from).dateIso,
+      startH: tulsaDayHour(from).hour,
       hours: (to.getTime() - from.getTime()) / 3600_000,
       priceCents: r.price_cents,
       paidCents: (r.payments ?? []).filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0),
@@ -273,8 +274,7 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   if (!profile) return { ok: false, conflict: false }
   const sb = supabase()
   const { data: org } = await sb.from('organizations').select('id').limit(1).single()
-  const [y, mo, d] = date.split('-').map(Number)
-  const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const from = tulsaInstant(date, startH) // Tulsa time, whatever the browser's zone
   const to = new Date(from.getTime() + hours * 3600_000)
   const base = {
     org_id: (org as { id: string }).id,
@@ -333,8 +333,7 @@ export async function cancelMyBooking(id: string): Promise<{ ok: boolean; error?
 
 export async function rescheduleMyBooking(id: string, date: string, startH: number, hours: number):
   Promise<{ ok: boolean; conflict?: boolean; error?: string }> {
-  const [y, mo, d] = date.split('-').map(Number)
-  const from = new Date(y, mo - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const from = tulsaInstant(date, startH) // Tulsa time, whatever the browser's zone
   const to = new Date(from.getTime() + hours * 3600_000)
   const { error } = await supabase().rpc('member_reschedule_booking', {
     p_id: id, p_from: from.toISOString(), p_to: to.toISOString(),

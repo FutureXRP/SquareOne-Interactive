@@ -1,6 +1,7 @@
 import type Stripe from 'stripe'
 import { serviceDb, sendAndLog, stripe } from '@/lib/server/billing'
-import { bookingPayment } from '@/lib/server/emails'
+import { bookingPayment, paymentOnCanceledAlert } from '@/lib/server/emails'
+import { adminRecipients } from '@/lib/server/unpaid-holds'
 import { bookingFacts } from '@/lib/server/booking-facts'
 import { saveCardFromPaymentIntent } from '@/lib/server/booking-card'
 
@@ -38,6 +39,18 @@ async function howTheyPaid(ref: string | Stripe.PaymentIntent):
 // Record a Stripe invoice payment in our payments ledger, so membership
 // charges (first signup and every monthly renewal) show on Payments and
 // Reports beside desk payments. Idempotent on the invoice id.
+// Money on a canceled booking needs a person: refund it or rebook them.
+async function alertCanceledPayment(b: { id: string; code: string; title: string }, amount: number, method: string) {
+  try {
+    const { data } = await serviceDb().from('bookings').select('client_name').eq('id', b.id).maybeSingle()
+    const name = (data as { client_name?: string } | null)?.client_name ?? 'A customer'
+    const body = paymentOnCanceledAlert({ code: b.code, name, amountCents: amount, method })
+    for (const to of await adminRecipients()) await sendAndLog('booking.payment_on_canceled', to, body, { bookingId: b.id })
+  } catch (e) {
+    console.error('[record-payments] canceled alert', e)
+  }
+}
+
 export async function recordInvoicePayment(invoice: Stripe.Invoice): Promise<void> {
   if (!invoice.id || !invoice.amount_paid || invoice.amount_paid <= 0) return
   const db = serviceDb()
@@ -90,7 +103,7 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
 
   const paidWith = await howTheyPaid(ref)
   const { data: org } = await db.from('organizations').select('id').limit(1).single()
-  const { data: paymentRow } = await db.from('payments').insert({
+  const { data: paymentRow, error: insErr } = await db.from('payments').insert({
     org_id: (org as { id: string }).id,
     account_id: b.account_id,
     booking_id: b.id,
@@ -100,6 +113,10 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
     memo: `${b.title} · ${b.code}`,
     stripe_payment_intent_id: ref,
   }).select('id, code').single()
+  // The other event for this same payment got here first (0060's unique
+  // index) — it's recorded once, and its emails went with it.
+  if (insErr?.code === '23505') return
+  if (wasCanceled) await alertCanceledPayment(b, amount, paidWith.label)
 
   // A canceled booking stays canceled. This can genuinely happen — the
   // customer pays, the webhook is delayed, staff cancel in the meantime —
@@ -156,7 +173,7 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
 
   const paidWith = await howTheyPaid(pi)
   const { data: org } = await db.from('organizations').select('id').limit(1).single()
-  await db.from('payments').insert({
+  const { error: insErr } = await db.from('payments').insert({
     org_id: (org as { id: string }).id,
     account_id: b.account_id,
     booking_id: b.id,
@@ -166,8 +183,12 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
     memo: `${b.title} · ${b.code}`,
     stripe_payment_intent_id: pi.id,
   })
+  if (insErr?.code === '23505') return true // recorded once already
 
-  if (wasCanceled) return true // money recorded; a canceled booking stays canceled
+  if (wasCanceled) { // money recorded; a canceled booking stays canceled
+    await alertCanceledPayment(b, amount, paidWith.label)
+    return true
+  }
   await db.from('bookings').update({ status: 'confirmed', hold_expires_at: null }).eq('id', b.id)
 
   const resolved = await bookingFacts(b.id)

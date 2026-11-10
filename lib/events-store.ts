@@ -3,6 +3,7 @@
 // rentals. A tour is someone coming to look around before they book;
 // events and meetings work the same way. Needs migration 0032.
 
+import { tulsaInstant, tulsaDayHour } from '@/lib/tulsa-time'
 import { supabase, emit } from '@/lib/supabase'
 import { BOOKINGS_EVENT } from '@/lib/staff-bookings-store'
 import { notify } from '@/lib/notify-client'
@@ -85,8 +86,8 @@ function fromRow(r: Row): StaffEvent {
     facilityId: r.facility_id,
     startsAtIso: r.starts_at,
     endsAtIso: r.ends_at,
-    dateIso: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`,
-    startH: from.getHours() + from.getMinutes() / 60,
+    dateIso: tulsaDayHour(from).dateIso,
+    startH: tulsaDayHour(from).hour,
     hours: (to.getTime() - from.getTime()) / 3600_000,
     timeLabel: `${hour(from)} – ${hour(to)}`,
     assignedStaffId: r.assigned_staff_id,
@@ -148,8 +149,7 @@ export interface NewEvent {
 }
 
 function rangeOf(date: string, startH: number, hours: number): { from: string; to: string } {
-  const [y, m, d] = date.split('-').map(Number)
-  const from = new Date(y, m - 1, d, Math.floor(startH), Math.round((startH % 1) * 60))
+  const from = tulsaInstant(date, startH)
   const to = new Date(from.getTime() + hours * 3600_000)
   return { from: from.toISOString(), to: to.toISOString() }
 }

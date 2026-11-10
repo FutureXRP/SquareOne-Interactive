@@ -30,10 +30,12 @@ export interface BookingRecord {
   card_last4?: string | null
   hold_expires_at?: string | null
   hold_warned_at?: string | null
+  addon_ids?: string[] | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const COL_SETS = [
+  'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, hold_expires_at, hold_warned_at, addon_ids, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, hold_expires_at, hold_warned_at, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, card_last4, facilities:facility_id(name), payments(amount_cents, status)',
   'id, code, title, client_name, during, price_cents, status, account_id, deposit_cents, contact_email, contact_phone, note, approved_at, pay_token, canceled_via, canceled_by_staff:canceled_by(name), setup_min, cleanup_min, facilities:facility_id(name), payments(amount_cents, status)',
@@ -117,7 +119,15 @@ export async function bookingFactsAny(bookingId: string):
   const paid = b.payments.filter((p) => p.status === 'paid').reduce((n, p) => n + p.amount_cents, 0)
   // Waivers still owed (0054) — only worth a lookup while it's live.
   const waiversDue = b.status === 'hold' || b.status === 'confirmed' ? (await waiversDueForBooking(b.id)).length : 0
-  const addons = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : undefined
+  // Extras from what's actually booked (addon_ids); the old "Add-ons:"
+  // note line only for rows from before add-ons were tracked.
+  let addons: string | undefined
+  if (b.addon_ids && b.addon_ids.length > 0) {
+    const { data: ad } = await serviceDb().from('addons').select('id, name').in('id', b.addon_ids)
+    const names = ((ad ?? []) as { id: string; name: string }[]).map((x) => x.name)
+    addons = names.length > 0 ? names.join(', ') : undefined
+  }
+  if (!addons && b.note?.startsWith('Add-ons:')) addons = b.note.replace('Add-ons: ', '')
   return {
     b,
     to,

@@ -1,4 +1,5 @@
 'use client'
+import { tulsaDayHour, TULSA_TZ } from '@/lib/tulsa-time'
 import Link from 'next/link'
 import { useState } from 'react'
 import { card, INK, SUB, FAINT, LINE, BLUE, GREEN, RED, GOLD } from '@/lib/theme'
@@ -111,7 +112,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
     const m = /^[[(]"?([^",]+)"?\s*,\s*"?([^")\]]+)"?[)\]]$/.exec(pc.newDuring as string)
     if (!m) return null
     const f = new Date(m[1]); const t = new Date(m[2])
-    return `${f.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, ${formatHour(f.getHours() + f.getMinutes() / 60)}–${formatHour(t.getHours() + t.getMinutes() / 60)}`
+    return `${f.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: TULSA_TZ })}, ${formatHour(tulsaDayHour(f).hour)}–${formatHour(tulsaDayHour(t).hour)}`
   })() : null
 
   return (

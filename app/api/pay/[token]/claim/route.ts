@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
-import { serviceDb } from '@/lib/server/billing'
+import { serviceDb, sendAndLog } from '@/lib/server/billing'
+import { bookingFactsAny } from '@/lib/server/booking-facts'
+import { adminRecipients } from '@/lib/server/unpaid-holds'
+import { cashAppClaimAlert } from '@/lib/server/emails'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { waiversDueForBooking, WAIVER_FIRST_MESSAGE } from '@/lib/server/booking-waivers'
 
@@ -44,6 +47,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       amount_cents: amount,
     })
     if (error) return NextResponse.json({ error: 'failed' }, { status: 500 })
+    // Tell the desk right away — the claim only helps once someone checks.
+    try {
+      const resolved = await bookingFactsAny(row.id)
+      if (resolved) {
+        const body = cashAppClaimAlert(resolved.facts, amount)
+        for (const to of await adminRecipients(resolved.to?.email)) {
+          await sendAndLog('payment.cashapp_claim', to, body, { bookingId: row.id })
+        }
+      }
+    } catch (e) { console.error('[pay/claim] alert', e) }
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error('[pay/claim]', e)
