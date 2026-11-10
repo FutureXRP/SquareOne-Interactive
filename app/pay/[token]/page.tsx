@@ -59,10 +59,10 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 export default async function PayPage({ params, searchParams }: {
   params: Promise<{ token: string }>
-  searchParams: Promise<{ paid?: string; signed?: string; card_session?: string }>
+  searchParams: Promise<{ paid?: string; signed?: string; asked?: string; card_session?: string }>
 }) {
   const { token } = await params
-  const { paid, signed, card_session: cardSession } = await searchParams
+  const { paid, signed, asked, card_session: cardSession } = await searchParams
   const [found, tag] = await Promise.all([bookingForToken(token), cashtag()])
 
   // Back from Stripe's "save a card" page: record the card now rather
@@ -172,20 +172,33 @@ export default async function PayPage({ params, searchParams }: {
               {signed === '1' ? 'Agreement signed — thank you.' : 'Card saved — thank you.'}
             </p>
           )}
+          {signed === '1' && asked === '1' && (
+            <p style={{ fontSize: 12.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 9, padding: '9px 12px', margin: '0 0 10px', lineHeight: 1.5 }}>
+              You asked for different spaces or extras than what&rsquo;s booked. We&rsquo;ve let the front desk know —
+              they&rsquo;ll call you to confirm. Until then, your booking stays as shown above.
+            </p>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '4px 0 12px', borderBottom: `1px solid ${LINE}` }}>
-            <span style={{ fontSize: 16, lineHeight: '20px', color: doc.agreement ? GREEN : RED }}>{doc.agreement ? '✓' : '1'}</span>
+            <span style={{ fontSize: 16, lineHeight: '20px', color: doc.agreement && !doc.agreementStale ? GREEN : RED }}>{doc.agreement && !doc.agreementStale ? '✓' : '1'}</span>
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>Event rental agreement</p>
               <p style={{ fontSize: 12.5, color: SUB, margin: '2px 0 8px', lineHeight: 1.5 }}>
-                {doc.agreement
+                {doc.agreement && doc.agreementStale
+                  ? 'Your booking’s date, time, or rooms changed after you signed — please sign the updated agreement.'
+                  : doc.agreement
                   ? `Signed by ${doc.agreement.signature} on ${new Date(doc.agreement.signedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}.`
                   : 'Required for every event — facility rules, setup and cleanup, fees, and photo permission. Takes about three minutes.'}
               </p>
-              <Link href={`/pay/${token}/agreement`} className={doc.agreement ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}
-                style={{ padding: doc.agreement ? '6px 13px' : '9px 16px', fontSize: doc.agreement ? 12 : 13, textDecoration: 'none' }}>
-                {doc.agreement ? 'View your signed copy' : 'Read & sign the agreement'}
-              </Link>
+              {(() => {
+                const done = !!doc.agreement && !doc.agreementStale
+                return (
+                  <Link href={`/pay/${token}/agreement`} className={done ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}
+                    style={{ padding: done ? '6px 13px' : '9px 16px', fontSize: done ? 12 : 13, textDecoration: 'none' }}>
+                    {done ? 'View your signed copy' : doc.agreement ? 'Sign the updated agreement' : 'Read & sign the agreement'}
+                  </Link>
+                )
+              })()}
             </div>
           </div>
 

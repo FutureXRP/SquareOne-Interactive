@@ -10,6 +10,7 @@ import {
 import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
 import { startHoldClock, alertAdminsOfUnpaidHold, adminRecipients } from '@/lib/server/unpaid-holds'
+import { alertCustomerChanges } from '@/lib/server/customer-changes'
 
 // Confirmation emails for things that happen in the browser — a member
 // booking a room, the desk taking a payment, a booking being canceled.
@@ -47,6 +48,11 @@ export async function POST(req: Request) {
       // A new unpaid hold gets its 24 hours from right now, so the hold
       // email itself can say exactly when it goes (0054).
       const clock = kind === 'booking.hold' ? await startHoldClock(id).catch(() => null) : null
+      // A customer moving or canceling their own booking tells the house
+      // too (0056) — with or without a customer address on file.
+      if (kind === 'booking.rescheduled' || kind === 'booking.canceled') {
+        await alertCustomerChanges(id).catch((e) => console.error('[notify] customer change alert', e))
+      }
       const resolved = await bookingFacts(id)
       if (!resolved) {
         // No customer address — the admins still need to know it's unpaid.

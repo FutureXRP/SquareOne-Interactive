@@ -558,6 +558,75 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
   }
 }
 
+export interface CustomerChange {
+  kind: 'moved' | 'room' | 'canceled' | 'spaces_requested'
+  at: string // "Mon, Nov 9, 3:12 PM"
+  oldWhen?: string
+  newWhen?: string
+  oldRoom?: string
+  newRoom?: string
+  booked?: string[]
+  requested?: string[]
+  addonsAdded?: string[]
+  addonsDropped?: string[]
+}
+
+// The house's heads-up when a customer changes their own booking — moved
+// it, canceled it, or asked on their agreement for different rooms or
+// extras. Says exactly what changed, from what to what, and what's needed.
+export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[], o: { agreementSigned?: boolean } = {}): EmailBody {
+  const lines = changes.map((c) => {
+    const when = `<span style="color:#8a98ab;">${c.at}</span>`
+    if (c.kind === 'moved') {
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Moved the time</strong> — ${when}<br>
+        <span style="text-decoration:line-through;">${c.oldWhen ?? '—'}</span> → <strong style="color:${INK};">${c.newWhen ?? '—'}</strong>
+        <br>It's back in review until someone approves the new time.</li>`
+    }
+    if (c.kind === 'room') {
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Changed the room</strong> — ${when}<br>
+        <span style="text-decoration:line-through;">${c.oldRoom ?? '—'}</span> → <strong style="color:${INK};">${c.newRoom ?? '—'}</strong></li>`
+    }
+    if (c.kind === 'canceled') {
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Canceled the booking</strong> — ${when}<br>
+        ${c.oldWhen ?? ''}${b.paidCents > 0 ? ` · ${money(b.paidCents)} was paid — decide on any refund.` : ''}</li>`
+    }
+    const parts = [
+      c.requested ? `Booked: <strong style="color:${INK};">${(c.booked ?? []).join(', ') || '—'}</strong><br>Their agreement asks for: <strong style="color:${INK};">${c.requested.join(', ') || '—'}</strong>` : '',
+      c.addonsAdded && c.addonsAdded.length ? `Extras they added: <strong style="color:${INK};">${c.addonsAdded.join(', ')}</strong>` : '',
+      c.addonsDropped && c.addonsDropped.length ? `Extras they unchecked: <strong style="color:${INK};">${c.addonsDropped.join(', ')}</strong>` : '',
+    ].filter(Boolean).join('<br>')
+    return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Asked for different spaces or extras</strong> on their rental agreement — ${when}<br>
+      ${parts}<br>Nothing on the booking has changed — call them, then update the booking if it works.</li>`
+  }).join('')
+  const moved = changes.some((c) => c.kind === 'moved' || c.kind === 'room')
+  const canceled = changes.some((c) => c.kind === 'canceled')
+  const subject = canceled
+    ? `Customer canceled ${b.code} — ${b.name}, ${b.date}`
+    : `Customer changed ${b.code} — ${b.name}, ${b.date}`
+  return {
+    subject,
+    html: shell(
+      canceled ? 'A customer canceled their booking' : 'A customer changed their booking',
+      `<p style="margin:0 0 6px;">${b.name} made ${changes.length === 1 ? 'a change' : 'changes'} to their booking online:</p>
+       <ul style="margin:8px 0 12px;padding-left:18px;">${lines}</ul>
+       ${detailRows([
+         ['Confirmation', b.code],
+         ['What', b.what],
+         ['Room now', b.room],
+         ['When now', `${b.date}, ${b.time}`],
+         ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
+         ['Total', money(b.priceCents)],
+         ['Paid so far', money(b.paidCents)],
+       ])}
+       ${moved && o.agreementSigned
+         ? `<p style="margin:0 0 6px;">Their signed rental agreement still shows the old details — their booking page now asks them to sign the updated one.</p>`
+         : ''}
+       <p style="margin:0;">Check the staff and anything else scheduled around the old and new times.</p>`,
+      { label: 'Open bookings', href: siteLink('/admin/bookings') },
+    ),
+  }
+}
+
 export function bookingRescheduled(b: BookingFacts): EmailBody {
   return {
     subject: `Moved — ${b.room} is now ${b.date}`,

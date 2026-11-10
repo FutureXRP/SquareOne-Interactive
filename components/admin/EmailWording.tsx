@@ -25,6 +25,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
       { kind: 'booking.hold_warning', label: 'Unpaid hold: 24 hours to pay', blurb: 'To the customer on an unpaid hold — pay within 24 hours or the booking is removed.' },
       { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
+      { kind: 'booking.customer_changed', label: 'Staff: customer changed a booking', blurb: 'A customer moved or canceled their booking, or asked on their agreement for different rooms or extras.' },
       { kind: 'booking.unpaid_alert', label: 'Staff: unpaid holds', blurb: 'To the Settings alert address (or owners and admins): holds that are unpaid with their deadline, and holds removed after 24 hours.' },
     ],
   },

@@ -4,6 +4,7 @@ import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { eventReminderStaff, eventGuestReminder } from '@/lib/server/emails'
 import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib/server/event-facts'
 import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
+import { alertCustomerChanges } from '@/lib/server/customer-changes'
 
 // Sends "this is tomorrow" reminders for tours and scheduled events, to
 // the staff member running it and to the visitor coming in. Runs on a
@@ -103,7 +104,9 @@ export async function GET(req: Request) {
     // Unpaid holds: the 24-hour notice, then removal (0054). Its own
     // failure never takes the reminders down with it.
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
-    return NextResponse.json({ ok: true, ...reminders, standing, holds })
+    // Customer changes staff haven't been told about yet (0056).
+    const changeAlerts = await alertCustomerChanges().catch((e) => { console.error('[reminders] changes', e); return null })
+    return NextResponse.json({ ok: true, ...reminders, standing, holds, changeAlerts })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })

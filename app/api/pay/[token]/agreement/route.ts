@@ -3,6 +3,7 @@ import { serviceDb } from '@/lib/server/billing'
 import { bookingForToken } from '@/lib/server/pay-links'
 import { bookingDoc } from '@/lib/server/booking-card'
 import { PHOTO_OPTIONS, type AgreementAnswers } from '@/lib/rental-agreement'
+import { recordSpacesRequest, alertCustomerChanges } from '@/lib/server/customer-changes'
 
 // Signs the Event Rental Agreement for one booking. Same authorization as
 // the pay page: holding the booking's link is the permission, so guests
@@ -30,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const answers: AgreementAnswers = {
     address: text(body.address, 300),
     guestCount: Math.max(0, Math.min(5000, Math.round(Number(body.guestCount) || 0))),
-    spaces: (Array.isArray(body.spaces) ? body.spaces : []).map((s) => text(s, 80)).filter((s) => doc.rooms.includes(s) || s === doc.bookedRoom),
+    spaces: (Array.isArray(body.spaces) ? body.spaces : []).map((s) => text(s, 80)).filter((s) => doc.rooms.includes(s) || doc.bookedRooms.includes(s)),
     addons: (Array.isArray(body.addons) ? body.addons : []).map((s) => text(s, 80)).filter((s) => doc.addons.includes(s) || doc.bookedAddons.includes(s)),
     initials: {
       guidelines: text(initialsIn.guidelines, 8),
@@ -59,7 +60,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ message: `Still needed: ${missing.join(', ')}.` }, { status: 400 })
   }
 
-  const snapshot = { ...doc.snapshot, phone: phone || doc.snapshot.phone }
+  const snapshot = { ...doc.snapshot, phone: phone || doc.snapshot.phone, bookedRooms: doc.bookedRooms }
+
+  // Spaces or extras other than what's booked are a REQUEST — the booking
+  // doesn't change until the desk confirms. Staff hear about it now, once
+  // per new request (re-signing the same ask doesn't re-send it).
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
+  const roomsDiffer = !same(answers.spaces, doc.bookedRooms)
+  const addonsAdded = answers.addons.filter((x) => !doc.bookedAddons.includes(x))
+  const addonsDropped = doc.bookedAddons.filter((x) => !answers.addons.includes(x))
+  const asks = roomsDiffer || addonsAdded.length > 0 || addonsDropped.length > 0
+  const prev = doc.agreement?.answers
+  const sameAsBefore = !!prev && same(prev.spaces ?? [], answers.spaces) && same(prev.addons ?? [], answers.addons)
   const { error } = await serviceDb().from('rental_agreements').upsert({
     org_id: doc.orgId,
     booking_id: doc.id,
@@ -83,5 +95,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   if (phone && !doc.snapshot.phone) {
     await serviceDb().from('bookings').update({ contact_phone: phone }).eq('id', doc.id)
   }
-  return NextResponse.json({ ok: true })
+  if (asks && !sameAsBefore) {
+    const logged = await recordSpacesRequest(doc.id, {
+      ...(roomsDiffer ? { booked: doc.bookedRooms, requested: answers.spaces } : {}),
+      ...(addonsAdded.length ? { addonsAdded } : {}),
+      ...(addonsDropped.length ? { addonsDropped } : {}),
+    })
+    if (logged) await alertCustomerChanges(doc.id).catch((e) => console.error('[pay/agreement] alert', e))
+  }
+  return NextResponse.json({ ok: true, changeRequested: asks })
 }

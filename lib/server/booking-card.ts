@@ -14,7 +14,12 @@ export interface BookingDoc {
   status: string
   snapshot: AgreementSnapshot
   bookedRoom: string | null
+  // Every room the booking holds — its own plus linked companions (0055).
+  bookedRooms: string[]
   bookedAddons: string[]
+  // Signed, but the booking's date, time, or rooms have changed since —
+  // the renter needs to sign the agreement as it stands now.
+  agreementStale: boolean
   rooms: string[] // every active room, for the "spaces reserved" checklist
   addons: string[] // every active add-on
   contactEmail: string | null
@@ -81,16 +86,50 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
     }
   }
 
-  const [roomsRes, addonsRes, agreementRes] = await Promise.all([
+  const [roomsRes, addonsRes, agreementRes, compsRes] = await Promise.all([
     db.from('facilities').select('name, active, sort').order('sort'),
     db.from('addons').select('id, name, active'),
     db.from('rental_agreements').select('signed_at, signature, rep_name, rep_signed_at, answers, snapshot').eq('booking_id', row.id).maybeSingle(),
+    db.from('bookings').select('status, facilities:facility_id(name)').eq('lead_booking_id', row.id),
   ])
+  const companionRooms = compsRes.error ? [] : ((compsRes.data ?? []) as unknown as { status: string; facilities: { name: string } | null }[])
+    .filter((c) => c.status === 'hold' || c.status === 'confirmed')
+    .map((c) => c.facilities?.name)
+    .filter((n): n is string => !!n)
+  const bookedRooms = [...new Set([...(row.facilities?.name ? [row.facilities.name] : []), ...companionRooms])]
   const allAddons = (addonsRes.data ?? []) as { id: string; name: string; active?: boolean }[]
   const a = agreementRes.error ? null : agreementRes.data as {
     signed_at: string; signature: string; rep_name: string | null; rep_signed_at: string | null
     answers: AgreementAnswers; snapshot: AgreementSnapshot
   } | null
+
+  const snapshot: AgreementSnapshot = {
+    renterName: row.client_name,
+    phone,
+    eventType: row.title,
+    eventDate: from ? from.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : '—',
+    timeFrom: from ? hour(from) : '—',
+    timeTo: to ? hour(to) : '—',
+    setupTime: from ? hour(new Date(from.getTime() - setupMin * 60_000)) : '—',
+    leaveTime: to ? hour(new Date(to.getTime() + cleanupMin * 60_000)) : '—',
+    totalCents: row.price_cents,
+    depositCents: row.deposit_cents ?? 0,
+    balanceCents: Math.max(0, row.price_cents - paid),
+    code: row.code,
+  }
+  // The agreement is about a date, a time, and rooms. If any of those
+  // moved after signing, what they signed no longer describes the event.
+  // (The renter's own ticked spaces are a request, not the booking — the
+  // rooms compared are the ones the booking held when they signed.)
+  const signedRooms = a?.snapshot?.bookedRooms
+  const sameRooms = !signedRooms
+    || (signedRooms.length === bookedRooms.length && bookedRooms.every((r) => signedRooms.includes(r)))
+  const agreementStale = !!a && (
+    a.snapshot?.eventDate !== snapshot.eventDate
+    || a.snapshot?.timeFrom !== snapshot.timeFrom
+    || a.snapshot?.timeTo !== snapshot.timeTo
+    || !sameRooms
+  )
 
   return {
     id: row.id,
@@ -98,21 +137,10 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
     code: row.code,
     accountId: row.account_id,
     status: row.status,
-    snapshot: {
-      renterName: row.client_name,
-      phone,
-      eventType: row.title,
-      eventDate: from ? from.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : '—',
-      timeFrom: from ? hour(from) : '—',
-      timeTo: to ? hour(to) : '—',
-      setupTime: from ? hour(new Date(from.getTime() - setupMin * 60_000)) : '—',
-      leaveTime: to ? hour(new Date(to.getTime() + cleanupMin * 60_000)) : '—',
-      totalCents: row.price_cents,
-      depositCents: row.deposit_cents ?? 0,
-      balanceCents: Math.max(0, row.price_cents - paid),
-      code: row.code,
-    },
+    snapshot,
     bookedRoom: row.facilities?.name ?? null,
+    bookedRooms,
+    agreementStale,
     bookedAddons: (row.addon_ids ?? []).map((id) => allAddons.find((x) => x.id === id)?.name).filter((n): n is string => !!n),
     rooms: ((roomsRes.data ?? []) as { name: string; active?: boolean }[]).filter((r) => r.active !== false).map((r) => r.name),
     addons: allAddons.filter((x) => x.active !== false).map((x) => x.name),

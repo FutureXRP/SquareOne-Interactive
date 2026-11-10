@@ -173,4 +173,6 @@ export interface AgreementSnapshot {
   depositCents: number
   balanceCents: number
   code: string
+  // The rooms the booking actually held when it was signed (0055+).
+  bookedRooms?: string[]
 }
