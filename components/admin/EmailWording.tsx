@@ -23,7 +23,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.canceled', label: 'Booking canceled', blurb: 'Canceled by the customer, staff, or an expired hold.' },
       { kind: 'booking.deleted', label: 'Booking removed', blurb: 'A booking row was deleted outright.' },
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
-      { kind: 'booking.hold_warning', label: 'Deposit due: 24 hours to pay', blurb: 'To the customer when an unpaid party is within 14 days (at booking, or when it gets there) — pay at least the deposit within 24 hours or the booking is removed.' },
+      { kind: 'booking.hold_warning', label: 'Deposit due: 24 hours to pay', blurb: 'To the customer when an unpaid party is within 14 days (at booking, or when it gets there) — pay at least the deposit within 24 hours to keep the booking.' },
       { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
       { kind: 'booking.agreement_signed', label: 'Signed agreement copy', blurb: 'To the renter right after they sign the rental agreement online, with the signed PDF attached.' },
       { kind: 'booking.reminder_week', label: 'Reminder: one week to go', blurb: 'A week before the event — details plus anything still missing (balance, agreement, waiver, card).' },
@@ -37,7 +37,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.change_declined', label: 'Change declined', blurb: 'To the customer when a change request is declined — the booking stays as it was.' },
       { kind: 'booking.change_request_alert', label: 'Staff: change request waiting', blurb: 'To the Settings alert address (or owners and admins) when a customer asks for a change.' },
       { kind: 'booking.customer_changed', label: 'Staff: customer canceled a booking', blurb: 'A customer canceled their own booking online.' },
-      { kind: 'booking.unpaid_alert', label: 'Staff: unpaid holds', blurb: 'To the Settings alert address (or owners and admins): holds that are unpaid with their deadline, and holds removed after 24 hours.' },
+      { kind: 'booking.unpaid_alert', label: 'Staff: unpaid holds', blurb: 'To the Settings alert address (or owners and admins): holds that are unpaid with their deadline, and holds whose deposit is overdue and need your decision.' },
     ],
   },
   {

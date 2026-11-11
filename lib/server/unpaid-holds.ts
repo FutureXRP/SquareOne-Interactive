@@ -3,7 +3,7 @@ import { withinDepositWindow, isSecured } from '@/lib/payment-policy'
 import { bookingFactsAny, deadlinePhrase } from '@/lib/server/booking-facts'
 import { emailForStaffUser } from '@/lib/server/event-facts'
 import {
-  holdPaymentWarning, bookingCanceled, unpaidHoldsAlert,
+  holdPaymentWarning, unpaidHoldsAlert,
   type HoldDigestItem,
 } from '@/lib/server/emails'
 
@@ -11,16 +11,14 @@ import {
 // within 14 days of its event must have at least the deposit paid within
 // 24 hours. Booked inside 14 days, the clock starts at booking; booked
 // further out, nothing is due until the event is 14 days away, and the
-// clock starts then. Either way the hold gets one notice — the customer
-// is told they have 24 hours to pay at least the deposit or it will be
-// removed, and the admins are told it's unpaid. When it runs out with still nothing paid, the hold is canceled,
-// the customer gets the "hold ran out" email, and the admins get the
-// list. Any payment confirms the booking (status leaves 'hold'), which
-// is what stops the clock; so does staff choosing “Keep without deposit”.
+// clock starts then. The hold gets one notice — the customer is told they
+// have 24 hours to pay at least the deposit, and the admins are told it's
+// unpaid.
 //
-// Nothing is ever removed without its notice first: the deadline that
-// counts is the one set when the warning went out (hold_warned_at), never
-// the hold_expires_at a booking was born with.
+// When the 24 hours run out with no deposit, NOTHING IS REMOVED (0063):
+// the booking is flagged "deposit overdue", keeps its room, and waits for
+// staff to decide — "Keep without deposit" or "Cancel booking". Paying at
+// least the deposit also clears it.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -35,6 +33,7 @@ interface HoldRow {
   approved_at?: string | null
   hold_expires_at: string | null
   hold_warned_at: string | null
+  deposit_overdue_at?: string | null
   note: string | null
   facilities: { name: string } | null
   payments: { amount_cents: number; status: string }[]
@@ -150,14 +149,17 @@ async function hasPendingClaim(bookingId: string): Promise<boolean> {
 export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number; released: number; kept: number } | null> {
   const db = serviceDb()
   const { data, error } = await db.from('bookings')
-    .select('id, code, client_name, during, price_cents, deposit_cents, status, approved_at, hold_expires_at, hold_warned_at, note, facilities:facility_id(name), payments(amount_cents, status)')
+    .select('id, code, client_name, during, price_cents, deposit_cents, status, approved_at, hold_expires_at, hold_warned_at, deposit_overdue_at, note, facilities:facility_id(name), payments(amount_cents, status)')
     .eq('status', 'hold')
     .limit(500)
-  // hold_warned_at is missing until 0054 runs — then there is no clock.
+  // deposit_overdue_at arrives with 0063. Without it there is no safe way
+  // to mark a booking for a decision, so nothing past its deadline is
+  // touched at all (never removed) until the migration runs.
   if (error) return null
 
   const warned: HoldDigestItem[] = []
   const released: HoldDigestItem[] = []
+  const overdue: HoldDigestItem[] = []
   const keptItems: HoldDigestItem[] = []
   let kept = 0
 
@@ -188,30 +190,24 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
       continue
     }
 
-    if (r.hold_expires_at && new Date(r.hold_expires_at).getTime() <= now) {
-      // "I've sent it" on Cash App is waiting on the desk — removing the
-      // booking under someone who says they paid would be the wrong call.
+    if (!r.deposit_overdue_at && r.hold_expires_at && new Date(r.hold_expires_at).getTime() <= now) {
+      // "I've sent it" on Cash App is waiting on the desk — that's the
+      // desk's to confirm, not an overdue deposit (for up to 3 days).
       if (await hasPendingClaim(r.id)) {
         kept += 1
         keptItems.push(digestItem(r, { note: 'Kept — they reported a Cash App payment; confirm or reject it under Payments' }))
         continue
       }
-      const { data: gone } = await db.from('bookings')
-        .update({
-          status: 'canceled',
-          canceled_at: new Date(now).toISOString(),
-          canceled_via: 'hold_expired',
-          note: [r.note, 'hold expired — unpaid after 24 hours'].filter(Boolean).join(' · '),
-        })
-        .eq('id', r.id).eq('status', 'hold')
+      // The 24 hours are up with no deposit. Nothing is removed: the room
+      // stays held and the booking waits for staff to decide — keep it
+      // without the deposit, or cancel it (0063).
+      const { data: flagged } = await db.from('bookings')
+        .update({ deposit_overdue_at: new Date(now).toISOString() })
+        .eq('id', r.id).eq('status', 'hold').is('deposit_overdue_at', null)
         .select('id')
-      if ((gone ?? []).length === 0) continue // paid or confirmed in the meantime
-      const resolved = await bookingFactsAny(r.id)
-      if (resolved?.to) {
-        await sendAndLog('booking.canceled', resolved.to.email, bookingCanceled(resolved.facts), { accountId: resolved.b.account_id, bookingId: r.id })
-      }
-      released.push(digestItem(r, {
-        note: resolved?.to ? `Canceled — ${resolved.to.email} was emailed` : 'Canceled — no customer email on file',
+      if ((flagged ?? []).length === 0) continue
+      overdue.push(digestItem(r, {
+        note: 'Deposit overdue — decide on the Bookings page: Keep without deposit, or Cancel booking',
       }))
     }
   }
@@ -219,8 +215,8 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
   // Kept holds ride along when a digest is going out anyway — they never
   // trigger an hourly email on their own (staff hear about each claim the
   // moment it's filed).
-  if (warned.length > 0 || released.length > 0) {
-    const body = unpaidHoldsAlert({ warned, released, kept: keptItems })
+  if (warned.length > 0 || released.length > 0 || overdue.length > 0) {
+    const body = unpaidHoldsAlert({ warned, released, overdue, kept: keptItems })
     for (const addr of await adminRecipients()) await sendAndLog('booking.unpaid_alert', addr, body, {})
   }
   return { warned: warned.length, released: released.length, kept }
