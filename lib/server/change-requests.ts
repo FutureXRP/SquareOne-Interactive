@@ -1,7 +1,7 @@
 import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { bookingFactsAny } from '@/lib/server/booking-facts'
 import { adminRecipients } from '@/lib/server/unpaid-holds'
-import { rangePhrase } from '@/lib/server/customer-changes'
+import { rangePhrase, alertRequestDecision } from '@/lib/server/customer-changes'
 import {
   changeRequestReceived, changeRequestAlert, changeRequestDecided,
   type ChangeRequestFacts,
@@ -105,16 +105,39 @@ export async function sendChangeDecisions(requestId?: string): Promise<number> {
     .update({ decision_emailed_at: new Date().toISOString() })
     .in('id', (pending as { id: string }[]).map((p) => p.id))
     .is('decision_emailed_at', null)
-    .select(COLS)
-  const rows = (claimed ?? []) as RequestRow[]
+    .select(`${COLS}, decided_at, decided_by`)
+  const rows = (claimed ?? []) as (RequestRow & { decided_at: string | null; decided_by: string | null })[]
   if (rows.length === 0) return 0
   const n = await names()
   for (const r of rows) {
+    const approved = r.status === 'approved'
+    const f = factsOf(r, n)
+    // The admins hear the answer too, with who gave it. An approval's own
+    // moves are logged in the same transaction (same timestamp) — claim
+    // them here so the same change isn't announced twice.
+    if (approved && r.decided_at) {
+      await db.from('booking_changes').update({ alerted_at: new Date().toISOString() })
+        .eq('booking_id', r.booking_id).eq('changed_at', r.decided_at).is('alerted_at', null)
+    }
+    let by = 'staff'
+    if (r.decided_by) {
+      const { data: st } = await db.from('staff').select('name').eq('id', r.decided_by).maybeSingle()
+      const nm = (st as { name?: string } | null)?.name?.trim()
+      if (nm) by = `${nm} (staff)`
+    }
+    await alertRequestDecision(r.booking_id, {
+      kind: approved ? 'request_approved' : 'request_declined',
+      by,
+      oldWhen: f.oldWhen, newWhen: f.newWhen,
+      oldRoom: f.oldRooms?.join(', '), newRoom: f.newRooms?.join(', '),
+      oldExtras: f.oldExtras, newExtras: f.newExtras,
+      note: f.decisionNote,
+    }).catch((e) => console.error('[change-requests] admin decision alert', e))
+
     const resolved = await bookingFactsAny(r.booking_id)
     if (!resolved?.to) continue
-    const approved = r.status === 'approved'
     await sendAndLog(approved ? 'booking.change_approved' : 'booking.change_declined', resolved.to.email,
-      changeRequestDecided(resolved.facts, factsOf(r, n), approved),
+      changeRequestDecided(resolved.facts, f, approved),
       { accountId: resolved.b.account_id, bookingId: r.booking_id })
   }
   return rows.length

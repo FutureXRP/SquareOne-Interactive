@@ -6,7 +6,7 @@ import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib
 import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
 import { sendMissedHoldEmails } from '@/lib/server/hold-emails'
 import { sendBookingReminders } from '@/lib/server/booking-reminders'
-import { alertCustomerChanges } from '@/lib/server/customer-changes'
+import { alertBookingChanges } from '@/lib/server/customer-changes'
 import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
 // Sends "this is tomorrow" reminders for tours and scheduled events, to
@@ -114,7 +114,7 @@ export async function GET(req: Request) {
     // failure never takes the reminders down with it.
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
     // Customer changes staff haven't been told about yet (0056).
-    const changeAlerts = await alertCustomerChanges().catch((e) => { console.error('[reminders] changes', e); return null })
+    const changeAlerts = await alertBookingChanges().catch((e) => { console.error('[reminders] changes', e); return null })
     // Change-request emails that didn't go out at the time (0057).
     const requestEmails = await sendChangeRequestsReceived().catch(() => null)
     const decisionEmails = await sendChangeDecisions().catch(() => null)

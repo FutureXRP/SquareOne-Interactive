@@ -36,7 +36,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.change_approved', label: 'Change approved', blurb: 'To the customer once their change request is approved — shows the booking as it is now.' },
       { kind: 'booking.change_declined', label: 'Change declined', blurb: 'To the customer when a change request is declined — the booking stays as it was.' },
       { kind: 'booking.change_request_alert', label: 'Staff: change request waiting', blurb: 'To the Settings alert address (or owners and admins) when a customer asks for a change.' },
-      { kind: 'booking.customer_changed', label: 'Staff: customer canceled a booking', blurb: 'A customer canceled their own booking online.' },
+      { kind: 'booking.customer_changed', label: 'Staff: booking canceled or changed', blurb: 'To the Settings alert address (or owners and admins) whenever a booking is canceled, moved, edited, deleted, or a change request is answered — by a customer, staff, or the system. Says who did it.' },
       { kind: 'booking.unpaid_alert', label: 'Staff: unpaid holds', blurb: 'To the Settings alert address (or owners and admins): holds that are unpaid with their deadline, and holds whose deposit is overdue and need your decision.' },
     ],
   },

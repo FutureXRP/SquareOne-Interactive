@@ -571,7 +571,7 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
   if (o.warned.length > 0) {
     parts.push(`<p style="margin:0 0 4px;"><strong style="color:${INK};">Within 14 days and unpaid — the customer was just told they have 24 hours to pay at least the deposit:</strong></p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">
-        ${rows(o.warned, (i) => i.note ?? (i.deadline ? `Removed ${i.deadline} unless paid` : 'Unpaid'))}
+        ${rows(o.warned, (i) => i.note ?? (i.deadline ? `Deposit due ${i.deadline} — if unpaid, it comes to you to keep or cancel` : 'Unpaid'))}
       </table>`)
   }
   if (o.released.length > 0) {
@@ -613,7 +613,12 @@ export function unpaidHoldsAlert(o: { warned: HoldDigestItem[]; released: HoldDi
 }
 
 export interface CustomerChange {
-  kind: 'moved' | 'room' | 'canceled' | 'spaces_requested'
+  kind: 'moved' | 'room' | 'canceled' | 'spaces_requested' | 'details' | 'deleted' | 'request_approved' | 'request_declined'
+  // Who did it: "the customer", "Matt (staff)", "the system".
+  by?: string
+  oldExtras?: string[]
+  newExtras?: string[]
+  note?: string
   at: string // "Mon, Nov 9, 3:12 PM"
   oldWhen?: string
   newWhen?: string
@@ -625,16 +630,16 @@ export interface CustomerChange {
   addonsDropped?: string[]
 }
 
-// The house's heads-up when a customer changes their own booking — moved
-// it, canceled it, or asked on their agreement for different rooms or
+// The house's heads-up whenever a booking is canceled, moved, changed, or
+// deleted — by the customer, a staff member, or the system — and when a
+// customer asked on their agreement for different rooms or
 // extras. Says exactly what changed, from what to what, and what's needed.
 export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[], o: { agreementSigned?: boolean } = {}): EmailBody {
   const lines = changes.map((c) => {
-    const when = `<span style="color:#8a98ab;">${c.at}</span>`
+    const when = `<span style="color:#8a98ab;">${c.by ? `by ${c.by} · ` : ''}${c.at}</span>`
     if (c.kind === 'moved') {
       return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Moved the time</strong> — ${when}<br>
-        <span style="text-decoration:line-through;">${c.oldWhen ?? '—'}</span> → <strong style="color:${INK};">${c.newWhen ?? '—'}</strong>
-</li>`
+        <span style="text-decoration:line-through;">${c.oldWhen ?? '—'}</span> → <strong style="color:${INK};">${c.newWhen ?? '—'}</strong></li>`
     }
     if (c.kind === 'room') {
       return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Changed the room</strong> — ${when}<br>
@@ -644,6 +649,25 @@ export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[],
       return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Canceled the booking</strong> — ${when}<br>
         ${c.oldWhen ?? ''}${b.paidCents > 0 ? ` · ${money(b.paidCents)} was paid — decide on any refund.` : ''}</li>`
     }
+    if (c.kind === 'deleted') {
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Deleted the booking</strong> — ${when}<br>
+        It's no longer on the calendar.</li>`
+    }
+    if (c.kind === 'request_approved' || c.kind === 'request_declined') {
+      const ok = c.kind === 'request_approved'
+      const ask = [
+        c.newWhen ? `Time: <span style="text-decoration:line-through;">${c.oldWhen ?? '—'}</span> → <strong style="color:${INK};">${c.newWhen}</strong>` : '',
+        c.newRoom ? `Rooms: <span style="text-decoration:line-through;">${c.oldRoom ?? '—'}</span> → <strong style="color:${INK};">${c.newRoom}</strong>` : '',
+        c.newExtras ? `Extras: <span style="text-decoration:line-through;">${(c.oldExtras ?? []).join(', ') || 'none'}</span> → <strong style="color:${INK};">${c.newExtras.join(', ') || 'none'}</strong>` : '',
+        c.note ? `Note to the customer: “${c.note}”` : '',
+      ].filter(Boolean).join('<br>')
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">${ok ? 'Approved the customer’s change request' : 'Declined the customer’s change request — nothing changed'}</strong> — ${when}<br>
+        ${ask}</li>`
+    }
+    if (c.kind === 'details') {
+      return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Edited the booking's details</strong> (price, title, or deposit) — ${when}<br>
+        Here's how it stands now, below.</li>`
+    }
     const parts = [
       c.requested ? `Booked: <strong style="color:${INK};">${(c.booked ?? []).join(', ') || '—'}</strong><br>Their agreement asks for: <strong style="color:${INK};">${c.requested.join(', ') || '—'}</strong>` : '',
       c.addonsAdded && c.addonsAdded.length ? `Extras they added: <strong style="color:${INK};">${c.addonsAdded.join(', ')}</strong>` : '',
@@ -652,30 +676,34 @@ export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[],
     return `<li style="margin:0 0 8px;"><strong style="color:${INK};">Asked for different spaces or extras</strong> on their rental agreement — ${when}<br>
       ${parts}</li>`
   }).join('')
-  const moved = changes.some((c) => c.kind === 'moved' || c.kind === 'room')
-  const canceled = changes.some((c) => c.kind === 'canceled')
-  const subject = canceled
-    ? `Customer canceled ${b.code} — ${b.name}, ${b.date}`
-    : `Customer changed ${b.code} — ${b.name}, ${b.date}`
+  const byCustomer = changes.every((c) => !c.by || c.by === 'the customer')
+  const who = byCustomer ? 'the customer' : (changes.find((c) => c.by && c.by !== 'the customer')?.by ?? 'staff')
+  const verb = changes.some((c) => c.kind === 'deleted') ? 'deleted'
+    : changes.some((c) => c.kind === 'canceled') ? 'canceled'
+    : changes.every((c) => c.kind === 'request_declined') ? 'change request declined'
+    : changes.every((c) => c.kind === 'request_approved' || c.kind === 'moved' || c.kind === 'room') && changes.some((c) => c.kind === 'request_approved') ? 'change request approved'
+    : 'changed'
+  const subject = `Booking ${verb} — ${b.code}, ${b.name}, ${b.date} · by ${who}`
   return {
     subject,
     html: shell(
-      canceled ? 'A customer canceled their booking' : 'A customer changed their booking',
-      `<p style="margin:0 0 6px;">${b.name} made ${changes.length === 1 ? 'a change' : 'changes'} to their booking online:</p>
+      verb.startsWith('change request') ? `A ${verb.replace('request ', 'request was ')}` : `A booking was ${verb}`,
+      `<p style="margin:0 0 6px;">${changes.length === 1 ? 'A change was' : 'Changes were'} made to ${b.name}'s booking:</p>
        <ul style="margin:8px 0 12px;padding-left:18px;">${lines}</ul>
        ${detailRows([
          ['Confirmation', b.code],
          ['What', b.what],
          ['Room now', b.room],
          ['When now', `${b.date}, ${b.time}`],
+         ...(b.status ? [['Status now', b.status === 'hold' ? 'On hold' : b.status.charAt(0).toUpperCase() + b.status.slice(1)] as [string, string]] : []),
          ...(b.phone ? [['Their phone', b.phone] as [string, string]] : []),
          ['Total', money(b.priceCents)],
          ['Paid so far', money(b.paidCents)],
        ])}
-       ${moved && o.agreementSigned
+       ${changes.some((c) => c.kind === 'moved' || c.kind === 'room') && o.agreementSigned === false
          ? `<p style="margin:0 0 6px;">Their signed rental agreement still shows the old details — their booking page now asks them to sign the updated one.</p>`
          : ''}
-       <p style="margin:0;">Check the staff and anything else scheduled around the old and new times.</p>`,
+       <p style="margin:0;">Check the staff and anything else scheduled around this booking.</p>`,
       { label: 'Open bookings', href: siteLink('/admin/bookings') },
     ),
   }

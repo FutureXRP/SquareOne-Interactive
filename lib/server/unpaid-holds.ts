@@ -126,7 +126,7 @@ export async function alertAdminsOfUnpaidHold(bookingId: string, customerEmail?:
     warned: [{
       code: r.facts.code, name: r.facts.name, room: r.facts.room, when: `${r.facts.date}, ${r.facts.time}`,
       totalCents: r.facts.priceCents, deadline: r.facts.holdDeadline,
-      note: `Removed ${r.facts.holdDeadline} unless paid${r.to ? ` — ${r.to.email} was told` : ' — no customer email on file, so call them'}`,
+      note: `Deposit due ${r.facts.holdDeadline} — if unpaid, it comes to you to keep or cancel${r.to ? ` (${r.to.email} was told)` : ' (no customer email on file, so call them)'}`,
     }],
     released: [],
   })
@@ -144,8 +144,9 @@ async function hasPendingClaim(bookingId: string): Promise<boolean> {
   return !error && (data ?? []).length > 0
 }
 
-// The hourly pass: notice every unpaid hold that hasn't had one, remove
-// every noticed hold whose 24 hours are up, and tell the admins once.
+// The hourly pass: notice every unpaid hold that hasn't had one, flag
+// every noticed hold whose 24 hours are up for a staff decision, and tell
+// the admins once.
 export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number; released: number; kept: number } | null> {
   const db = serviceDb()
   const { data, error } = await db.from('bookings')
@@ -184,8 +185,8 @@ export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number
       warned.push(digestItem(r, {
         deadline: deadlinePhrase(deadline),
         note: resolved?.to
-          ? `Removed ${deadlinePhrase(deadline)} unless paid — ${resolved.to.email} was told`
-          : `Removed ${deadlinePhrase(deadline)} unless paid — no customer email on file, so call them`,
+          ? `Deposit due ${deadlinePhrase(deadline)} — if unpaid, it comes to you to keep or cancel (${resolved.to.email} was told)`
+          : `Deposit due ${deadlinePhrase(deadline)} — if unpaid, it comes to you to keep or cancel (no customer email on file, so call them)`,
       }))
       continue
     }

@@ -91,12 +91,13 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.change_approved': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The Dining Hall adds $50 — we updated your total.' }, true)
     case 'booking.change_declined': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The gym has a tournament that afternoon — we can do the same time on Saturday.' }, false)
     case 'booking.customer_changed': return customerChangedAlert(b, [
-      { kind: 'moved', at: 'Mon, Sep 7, 3:12 PM', oldWhen: 'Sat, Sep 12, 2 PM – 5 PM', newWhen: 'Sun, Sep 13, 4 PM – 7 PM' },
-      { kind: 'spaces_requested', at: 'Mon, Sep 7, 3:20 PM', booked: ['Gaming Zone', 'Gym'], requested: ['Gaming Zone', 'Dining Hall'], addonsAdded: ['Photo booth'] },
+      { kind: 'moved', by: 'Alexis Henson (staff)', at: 'Mon, Sep 7, 3:12 PM', oldWhen: 'Sat, Sep 12, 2 PM – 5 PM', newWhen: 'Sun, Sep 13, 4 PM – 7 PM' },
+      { kind: 'spaces_requested', by: 'the customer', at: 'Mon, Sep 7, 3:20 PM', booked: ['Gaming Zone', 'Gym'], requested: ['Gaming Zone', 'Dining Hall'], addonsAdded: ['Photo booth'] },
     ], { agreementSigned: true })
     case 'booking.unpaid_alert': return unpaidHoldsAlert({
-      warned: [{ code: 'BK-1234', name: 'Jordan Alvarez', room: b.room, when: 'Sat, Sep 12, 2 PM', totalCents: 30000, deadline: 'Wednesday, September 2 at 3 PM', note: 'Removed Wednesday, September 2 at 3 PM unless paid — jordan@example.com was told' }],
-      released: [{ code: 'BK-1199', name: 'Sam Rivera', room: 'Party Room', when: 'Sun, Sep 6, 1 PM', totalCents: 25000, note: 'Canceled — sam@example.com was emailed' }],
+      warned: [{ code: 'BK-1234', name: 'Jordan Alvarez', room: b.room, when: 'Sat, Sep 12, 2 PM', totalCents: 30000, deadline: 'Wednesday, September 2 at 3 PM', note: 'Deposit due Wednesday, September 2 at 3 PM — if unpaid, it comes to you to keep or cancel (jordan@example.com was told)' }],
+      released: [],
+      overdue: [{ code: 'BK-1199', name: 'Sam Rivera', room: 'Party Room', when: 'Sun, Sep 6, 1 PM', totalCents: 25000, note: 'Deposit overdue — decide on the Bookings page: Keep without deposit, or Cancel booking' }],
     })
     case 'payment.receipt': return paymentReceipt({ name: 'Jordan Alvarez', amountCents: 10000, method: 'Card', what: 'Birthday party · BK-1234', code: 'PM-1234', balanceCents: 20000 })
     case 'payment.voided': return paymentVoided(b, { amountCents: 10000, method: 'Cash App', code: 'PM-1234' })

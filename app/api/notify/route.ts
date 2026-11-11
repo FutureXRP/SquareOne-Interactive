@@ -10,7 +10,7 @@ import {
 import { eventFacts, emailForStaffUser } from '@/lib/server/event-facts'
 import { bookingFacts, bookingFactsAny, recipientFor } from '@/lib/server/booking-facts'
 import { sendHoldEmails } from '@/lib/server/hold-emails'
-import { alertCustomerChanges } from '@/lib/server/customer-changes'
+import { alertBookingChanges, alertBookingEdit, callerLabel } from '@/lib/server/customer-changes'
 import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
 
 // Confirmation emails for things that happen in the browser — a member
@@ -93,10 +93,17 @@ export async function POST(req: Request) {
     if (kind === 'booking.confirmed' || kind === 'booking.canceled'
       || kind === 'booking.rescheduled' || kind === 'booking.updated' || kind === 'booking.deleted'
       || kind === 'booking.approved') {
-      // A customer moving or canceling their own booking tells the house
-      // too (0056) — with or without a customer address on file.
+      // Every cancel, move, edit, or delete tells the admins too — whoever
+      // did it (customer or staff), with or without a customer address on
+      // file. Moves and cancels come from the database's change log (0056);
+      // edits and deletes aren't logged, so they're announced directly, and
+      // a delete before the row is gone.
       if (kind === 'booking.rescheduled' || kind === 'booking.canceled') {
-        await alertCustomerChanges(id).catch((e) => console.error('[notify] customer change alert', e))
+        await alertBookingChanges(id).catch((e) => console.error('[notify] change alert', e))
+      }
+      if (kind === 'booking.updated' || kind === 'booking.deleted') {
+        await alertBookingEdit(id, kind === 'booking.deleted' ? 'deleted' : 'details', await callerLabel(user))
+          .catch((e) => console.error('[notify] edit alert', e))
       }
       const resolved = await bookingFacts(id)
       if (!resolved) return NextResponse.json({ ok: true, skipped: 'no_email' })
