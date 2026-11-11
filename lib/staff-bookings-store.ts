@@ -63,6 +63,7 @@ export interface StaffBooking {
   accountId: string | null
   createdAt?: string | null
   leadBookingId?: string | null
+  depositOverdueAt?: string | null
   // Guest contact email typed at the desk (0029). Member bookings carry
   // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
@@ -126,6 +127,7 @@ interface Row {
   hold_warned_at?: string | null
   created_at?: string
   lead_booking_id?: string | null
+  deposit_overdue_at?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -134,6 +136,8 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  // deposit_overdue_at arrives with 0063.
+  `deposit_overdue_at, lead_booking_id, hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   // lead_booking_id arrives with 0055, the hold clock with 0054.
   `lead_booking_id, hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   `hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
@@ -190,6 +194,8 @@ function fromRow(r: Row): StaffBooking | null {
     createdAt: r.created_at ?? null,
     // A companion room riding on another booking (0055).
     leadBookingId: r.lead_booking_id ?? null,
+    // Past its 24 hours with no deposit — waiting for staff to decide (0063).
+    depositOverdueAt: r.status === 'hold' ? (r.deposit_overdue_at ?? null) : null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
     contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,
     setupMin: 'setup_min' in r ? (r.setup_min ?? 0) : undefined,
@@ -457,11 +463,14 @@ export async function addStaffBookingMulti(
 // confirmed, which stops the 24-hour deposit clock (the deposit is still
 // owed). The one deliberate override to the deposit rule.
 export async function keepWithoutDeposit(id: string): Promise<boolean> {
-  const { error } = await supabase().from('bookings')
+  const { data, error } = await supabase().from('bookings')
     .update({ status: 'confirmed', hold_expires_at: null, hold_warned_at: null })
     .eq('id', id).eq('status', 'hold')
+    .select('id')
   if (error) { console.error('[bookings]', error.message); return false }
   emit(BOOKINGS_EVENT)
+  // The customer hears it's confirmed (the email still lists what's owed).
+  if ((data ?? []).length > 0) notify('booking.confirmed', id)
   return true
 }
 

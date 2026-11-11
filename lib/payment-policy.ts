@@ -41,17 +41,17 @@ export function securePhrase(depositCents?: number | null): string {
 // The one-sentence rule for a booking, as the customer reads it.
 export function depositRuleSentence(o: { start: Date | number; depositCents?: number | null; now?: number }): string {
   if (withinDepositWindow(o.start, o.now)) {
-    return `Your event is within ${DEPOSIT_WINDOW_DAYS} days, so please ${securePhrase(o.depositCents)} within ${SECURE_HOURS} hours to secure your rooms — otherwise the booking is removed. You're welcome to pay in full.`
+    return `Your event is within ${DEPOSIT_WINDOW_DAYS} days, so please ${securePhrase(o.depositCents)} within ${SECURE_HOURS} hours to secure your rooms — after that, the booking may be released. You're welcome to pay in full.`
   }
   const due = clockStartsAt(o.start, o.now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' })
-  return `No payment is needed today. When your event is ${DEPOSIT_WINDOW_DAYS} days away (${due}), you'll have ${SECURE_HOURS} hours to ${securePhrase(o.depositCents)} to secure your rooms — otherwise the booking is removed. You're welcome to pay part or all of it sooner.`
+  return `No payment is needed today. When your event is ${DEPOSIT_WINDOW_DAYS} days away (${due}), you'll have ${SECURE_HOURS} hours to ${securePhrase(o.depositCents)} to secure your rooms — after that, the booking may be released. You're welcome to pay part or all of it sooner.`
 }
 
 // The general rule, for pages that aren't about one booking.
 export const DEPOSIT_RULE_GENERAL =
   `Parties booked within ${DEPOSIT_WINDOW_DAYS} days of the event must pay at least the deposit within ${SECURE_HOURS} hours to secure their rooms. ` +
   `Booked further out? Nothing is due yet — when your event is ${DEPOSIT_WINDOW_DAYS} days away, you'll have ${SECURE_HOURS} hours to pay at least the deposit. ` +
-  `Unpaid bookings are removed after those ${SECURE_HOURS} hours. You can always pay in full.`
+  `After those ${SECURE_HOURS} hours, an unpaid booking may be released. You can always pay in full.`
 
 // Is a booking secured? At least the deposit paid — or, when the booking
 // carries no deposit, any payment at all. One definition for the hourly

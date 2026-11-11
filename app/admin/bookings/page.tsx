@@ -385,12 +385,14 @@ export default function AdminBookingsPage() {
               ) : isInReview(b) ? (
                 // Booked by a customer and waiting on one of us to say yes.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
-                  In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : b.holdDeadline ? ` · unpaid, removed ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                  In review{b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : b.depositOverdueAt ? ' · deposit overdue' : b.holdDeadline ? ` · deposit due ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
                 </span>
               ) : b.status === 'hold' && b.paidCents === 0 ? (
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
-                  Hold — unpaid{b.holdDeadline ? ` · removed ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
-                </span>
+                b.depositOverdueAt
+                  ? <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8c2f24', background: '#fdecea', padding: '2px 10px', borderRadius: 999 }}>Deposit overdue — your decision</span>
+                  : <span style={{ fontSize: 10.5, fontWeight: 700, color: GOLD, background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
+                      Hold — unpaid{b.holdDeadline ? ` · deposit due ${new Date(b.holdDeadline).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                    </span>
               ) : b.paidCents > 0 && b.paidCents < b.priceCents ? (
                 // A deposit locks the slot in, but it isn't paid in full.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b07818', background: '#faf0dc', padding: '2px 10px', borderRadius: 999 }}>
@@ -420,7 +422,7 @@ export default function AdminBookingsPage() {
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
                       title="Stops the 24-hour deposit clock — the deposit is still owed"
                       onClick={async () => {
-                        if (!window.confirm(`Keep ${b.code} without its deposit? It won't be removed for non-payment — the deposit is still owed.`)) return
+                        if (!window.confirm(`Keep ${b.code} without its deposit? It won't go to the overdue-deposit list — the deposit is still owed.`)) return
                         setBusyWrite(true); await keepWithoutDeposit(b.id); setBusyWrite(false)
                       }}>Keep without deposit</button>
                   )}
@@ -1005,7 +1007,7 @@ export default function AdminBookingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 12, color: FAINT, margin: 0 }}>
               {nbPay === 'hold'
-                ? 'Books the slot as a striped hold until payment lands. Within 14 days of the event the customer gets 24 hours to pay at least the deposit; booked further out, the 24 hours start at 14 days out. Unpaid, it’s removed automatically.'
+                ? 'Books the slot as a striped hold until payment lands. Within 14 days of the event the customer gets 24 hours to pay at least the deposit; booked further out, the 24 hours start at 14 days out. If it’s still unpaid after that, it comes to you to keep or cancel.'
                 : nbPay === 'stripe'
                   ? `Books the slot and opens the secure card page for ${formatCents(priceCents)} — it confirms itself when Stripe does.`
                   : `Confirms the slot with ${formatCents(priceCents)} still owed in ${PAY_LABEL[nbPay]}. Nothing reads as paid until the money is in hand — record it then under Take payment.`}
@@ -1031,6 +1033,52 @@ export default function AdminBookingsPage() {
       )}
 
       {/* Reservations waiting on approval — pinned where nobody can miss them */}
+      {/* Deposit overdue — the 24 hours ran out; nothing is removed until one of us decides */}
+      {(() => {
+        const overdue = bookings.filter((b) => b.status === 'hold' && !!b.depositOverdueAt && !b.leadBookingId)
+          .sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH)
+        if (overdue.length === 0) return null
+        return (
+          <div className="sq-card" style={{ ...card, overflow: 'hidden', marginBottom: 16, border: '1px solid #f3c4bf' }}>
+            <div style={{ padding: '12px 20px', background: '#fdecea', borderBottom: `1px solid ${LINE}` }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#8c2f24', margin: 0 }}>
+                {overdue.length} booking{overdue.length === 1 ? '' : 's'} with an overdue deposit — your decision
+              </p>
+              <p style={{ fontSize: 12, color: SUB, margin: '2px 0 0', lineHeight: 1.5 }}>
+                The 24 hours to pay the deposit ran out. Nothing has been removed — the room is still held. Call the
+                customer if you can, then keep the booking without the deposit or cancel it.
+              </p>
+            </div>
+            {overdue.map((b, i) => (
+              <div key={b.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', padding: '12px 20px', borderTop: i ? `1px solid ${LINE}` : 'none' }}>
+                <div style={{ flex: 1, minWidth: 210 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: 0 }}>{b.title} · {b.code}</p>
+                  <p style={{ fontSize: 12, color: SUB, margin: 0 }}>
+                    {b.client} · {b.date} · {formatHour(b.startH)}–{formatHour(b.startH + b.hours)} · {formatCents(b.priceCents)}
+                    {b.paidCents > 0 ? ` · ${formatCents(b.paidCents)} paid` : ' · nothing paid'}
+                    {b.depositCents ? ` · deposit ${formatCents(b.depositCents)}` : ''}
+                  </p>
+                </div>
+                {canBook && (
+                  <span style={{ display: 'flex', gap: 6 }}>
+                    <button className="sq-btn sq-btn-primary" style={{ padding: '6px 13px', fontSize: 11.5 }} disabled={busyWrite}
+                      onClick={async () => {
+                        if (!window.confirm(`Keep ${b.code} for ${b.client} without the deposit? It stays on the calendar as confirmed, the deposit is still owed, and the customer is emailed.`)) return
+                        setBusyWrite(true); await keepWithoutDeposit(b.id); setBusyWrite(false)
+                      }}>Keep without deposit</button>
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '6px 13px', fontSize: 11.5, color: RED }} disabled={busyWrite}
+                      onClick={async () => {
+                        if (!window.confirm(`Cancel ${b.code} for ${b.client}? The room is released and the customer is emailed that we canceled it.`)) return
+                        setBusyWrite(true); await updateBookingFields(b.id, { status: 'canceled' }, me?.id ?? null); setBusyWrite(false)
+                      }}>Cancel booking</button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {/* Customer change requests — nothing moves until one of us says yes */}
       <ChangeRequestsQueue bookings={bookings} canDecide={!!me && ['owner', 'admin', 'manager'].includes(me.role)} />
 

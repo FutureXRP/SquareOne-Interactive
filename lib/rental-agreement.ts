@@ -101,7 +101,7 @@ export const AGREEMENT_SECTIONS: AgreementSection[] = [
     groups: [
       {
         bullets: [
-          '$50 deposit: for events booked within 14 days of the event date, the deposit MUST be paid within 24 hours of booking. For events booked further out, the deposit MUST be paid within 24 hours of the event becoming 14 days away. If the deposit is not paid on time, event date/time will be released. You may pay in full at any time.',
+          '$50 deposit: for events booked within 14 days of the event date, the deposit MUST be paid within 24 hours of booking. For events booked further out, the deposit MUST be paid within 24 hours of the event becoming 14 days away. If the deposit is not paid on time, event date/time may be released. You may pay in full at any time.',
           'Remaining Balance: Due NO LATER than 10 minutes before event starts. Accepted payments: Cash, CashApp or online payment.',
           'Pricing hours: 9:00 AM – 10:00 PM',
           'After-hours 10:00 PM – 1:00 AM (additional fee)',
