@@ -182,6 +182,8 @@ export interface MemberBooking {
   agreementSigned?: boolean
   // A change they asked for that's waiting on our team (0057).
   pendingChange?: { newDuring: string | null; newRoomIds: string[] | null; newAddonIds: string[] | null } | null
+  // Placed online but not sent yet — a card on file is needed first (0064).
+  awaitingCard?: boolean
 }
 
 // Their change requests still waiting, keyed by booking. Empty before 0057.
@@ -205,6 +207,7 @@ async function myPendingChanges(): Promise<Map<string, NonNullable<MemberBooking
 export async function getMyBookings(): Promise<MemberBooking[]> {
   // RLS scopes this to the member's own account.
   const sets = [
+    'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, lead_booking_id, awaiting_card_since, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, lead_booking_id, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, pay_token, card_last4, payments(amount_cents, status)',
     'id, code, facility_id, title, during, price_cents, status, note, deposit_cents, approved_at, payments(amount_cents, status)',
@@ -217,6 +220,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
     deposit_cents?: number | null; approved_at?: string | null
     pay_token?: string | null; card_last4?: string | null
     lead_booking_id?: string | null
+    awaiting_card_since?: string | null
     payments: { amount_cents: number; status: string }[]
   }
   let rows: Row[] | null = null
@@ -255,6 +259,7 @@ export async function getMyBookings(): Promise<MemberBooking[]> {
       payToken: r.pay_token ?? undefined,
       cardOnFile: 'card_last4' in r ? !!r.card_last4 : undefined,
       pendingChange: pending.get(r.id) ?? null,
+      awaitingCard: r.status === 'hold' && !!r.awaiting_card_since,
       // Signed AND still describing this date and time.
       agreementSigned: signedSnaps ? (signedSnaps.has(r.id) && agreementMatchesTime(signedSnaps.get(r.id), from, to)) : undefined,
     }]
@@ -323,8 +328,32 @@ export async function requestMemberHold(roomId: string, title: string, date: str
   }
   emit(SESSION_EVENT)
   const row = res.data as { id: string; code: string }
-  notify('booking.hold', row.id) // confirmation email, never blocks the booking
+  // The server holds this until the card is on file (0064), or sends it
+  // now when card payments aren't switched on. Never blocks the booking.
+  notify('booking.hold', row.id)
   return { ok: true, code: row.code, id: row.id }
+}
+
+// Right after a request is placed: the secure card page (Stripe — nothing
+// is charged). The request isn't sent to our team until a card is on file
+// (0064). Returns where to send them, or that card payments are off (the
+// request then goes straight through, as before).
+export async function startCardStep(bookingId: string): Promise<{ url?: string; payToken?: string; cardsOff?: boolean; message?: string }> {
+  let payToken: string | undefined
+  try {
+    const { data } = await supabase().from('bookings').select('pay_token').eq('id', bookingId).maybeSingle()
+    payToken = (data as { pay_token?: string } | null)?.pay_token ?? undefined
+  } catch { /* the booking page link comes by email too */ }
+  if (!payToken) return {}
+  try {
+    const res = await fetch(`/api/pay/${payToken}/card`, { method: 'POST' })
+    const json = (await res.json().catch(() => ({}))) as { url?: string; message?: string }
+    if (res.status === 501) return { payToken, cardsOff: true }
+    if (res.ok && json.url) return { url: json.url, payToken }
+    return { payToken, message: json.message }
+  } catch {
+    return { payToken }
+  }
 }
 
 // ── My bookings: cancel and move ─────────────────────────────

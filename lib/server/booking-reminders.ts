@@ -26,10 +26,18 @@ function startOf(during: string): number | null {
 
 export async function sendBookingReminders(now = Date.now()): Promise<{ week: number; day: number; staff: number } | null> {
   const db = serviceDb()
-  const { data, error } = await db.from('bookings')
-    .select('id, during, created_at, run_by_staff_id, reminder_week_sent_at, reminder_day_sent_at, staff_reminder_sent_at')
+  const COLS = 'id, during, created_at, run_by_staff_id, reminder_week_sent_at, reminder_day_sent_at, staff_reminder_sent_at'
+  // Requests still waiting on a card (0064) were never sent — no reminders.
+  let res = await db.from('bookings').select(COLS)
     .in('status', ['hold', 'confirmed']).is('lead_booking_id', null).gt('price_cents', 0)
+    .is('awaiting_card_since', null)
     .limit(1000)
+  if (res.error) {
+    res = await db.from('bookings').select(COLS)
+      .in('status', ['hold', 'confirmed']).is('lead_booking_id', null).gt('price_cents', 0)
+      .limit(1000)
+  }
+  const { data, error } = res
   if (error) return null // pre-0060
   let week = 0, day = 0, staff = 0
   for (const r of data as Row[]) {

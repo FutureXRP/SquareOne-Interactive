@@ -7,10 +7,10 @@ import { formatCents, formatHour } from '@/lib/format'
 import { getRoom, rentalPriceCents, rentalPriceCentsAt, roomDayHours, DAY_NAMES, type RoomConfig } from '@/lib/facilities-store'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
 import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } from '@/lib/addons-store'
-import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
+import { isSignedIn, requestMemberHold, startCardStep, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import { facilityBusy, addonsTaken } from '@/lib/staff-bookings-store'
 import { checkCoupon, couponDiscountCents, couponLabel, couponMessage, recordRedemption, type Coupon } from '@/lib/coupons-store'
-import { isSupabaseConfigured, supabase } from '@/lib/supabase'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { depositRuleSentence, DEPOSIT_RULE_GENERAL } from '@/lib/payment-policy'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
@@ -55,7 +55,7 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
   const [coupon, setCoupon] = useState<Coupon | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
   const [promoBusy, setPromoBusy] = useState(false)
-  const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number; payToken?: string } | null>(null)
+  const [confirmed, setConfirmed] = useState<{ code: string; startH: number; hours: number; priceCents: number; payToken?: string; needsCard?: boolean; cardError?: string } | null>(null)
 
   // Dates come from the real clock, so this renders client-side only.
   useEffect(() => {
@@ -279,15 +279,15 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           note: `${f.name} rental ${res.code}`,
         }).catch(() => {})
       }
-      // The booking's own page — where the renter signs the rental
-      // agreement, adds a card on file, and pays. RLS lets a member read
-      // their own booking's token; if not, the email carries the link.
-      let payToken: string | undefined
-      try {
-        const { data } = await supabase().from('bookings').select('pay_token').eq('id', res.id).maybeSingle()
-        payToken = (data as { pay_token?: string } | null)?.pay_token ?? undefined
-      } catch { /* the confirmation email has the link too */ }
-      setConfirmed({ code: res.code, startH, hours, priceCents, payToken })
+      // A card on file is part of the request (0064): straight to the
+      // secure card page (nothing charged). The request goes to our team
+      // once it's saved. If that page can't open, the confirmation below
+      // says so and links to the booking's own page to finish.
+      setRequesting(true)
+      const step = await startCardStep(res.id)
+      if (step.url) { window.location.assign(step.url); return }
+      setRequesting(false)
+      setConfirmed({ code: res.code, startH, hours, priceCents, payToken: step.payToken, needsCard: !step.cardsOff, cardError: step.message })
     } else if (!res.conflict) {
       setFailMsg(res.message
         ? `We couldn’t place that booking: ${res.message}.`
@@ -321,6 +321,29 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
     if (rest.length === 0) placeHold()
   }
 
+  if (confirmed?.needsCard && day) {
+    return (
+      <div className="sq-card" style={{ ...card, padding: '30px 32px', maxWidth: 560 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: INK, margin: '0 0 8px', letterSpacing: '-0.02em' }}>Almost done — add a card to send your request</h2>
+        <p style={{ fontSize: 13.5, color: SUB, margin: '0 0 16px', lineHeight: 1.6 }}>
+          <strong style={{ color: INK }}>{f.name}</strong> · {day.weekday}, {day.label} ·{' '}
+          {formatHour(confirmed.startH)}–{formatHour(confirmed.startH + confirmed.hours)} · {formatCents(confirmed.priceCents)}
+        </p>
+        <div style={{ background: '#faf0dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+          <p style={{ fontSize: 12.5, color: '#7a5a14', margin: 0, lineHeight: 1.55 }}>
+            <strong>Request {confirmed.code} hasn&rsquo;t been sent yet.</strong> Every reservation needs a card on file before
+            our team reviews it. Nothing is charged — the card is only used for damages, cleaning, or an unpaid balance, and we
+            contact you first. We&rsquo;re holding this time for you for one hour.
+            {confirmed.cardError ? ` (${confirmed.cardError})` : ''}
+          </p>
+        </div>
+        <Link href={confirmed.payToken ? `/pay/${confirmed.payToken}` : '/account/bookings'} className="sq-btn sq-btn-primary">
+          Add my card
+        </Link>
+      </div>
+    )
+  }
+
   if (confirmed && day) {
     return (
       <div className="sq-card" style={{ ...card, padding: '30px 32px', maxWidth: 560 }}>
@@ -342,17 +365,16 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
         </div>
         {confirmed.payToken && (
           <div style={{ background: '#eef4fb', border: '1px solid #cfe0f3', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: '0 0 3px' }}>Next: sign the rental agreement &amp; add a card on file</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: '0 0 3px' }}>Next: sign the rental agreement</p>
             <p style={{ fontSize: 12.5, color: SUB, margin: '0 0 10px', lineHeight: 1.55 }}>
-              Every event needs both — the agreement covers the facility rules and fees, and the card is only charged
-              for damages or an unpaid balance (we contact you first). About three minutes.
+              Every event needs it — it covers the facility rules, setup and cleanup, and fees. About three minutes.
             </p>
             <Link href={`/pay/${confirmed.payToken}/agreement`} className="sq-btn sq-btn-primary" style={{ padding: '9px 16px' }}>Sign the agreement</Link>
           </div>
         )}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <Link href={confirmed.payToken ? `/pay/${confirmed.payToken}` : '/account/bookings'} className={confirmed.payToken ? 'sq-btn sq-btn-ghost' : 'sq-btn sq-btn-primary'}>
-            {confirmed.payToken ? 'Pay & add a card' : 'View my bookings'}
+            {confirmed.payToken ? 'Pay now' : 'View my bookings'}
           </Link>
           <Link href="/facilities" className="sq-btn sq-btn-ghost">Book another room</Link>
         </div>
@@ -605,8 +627,9 @@ export function BookingFlow({ facilityId }: { facilityId: string }) {
           )}
           <p style={{ fontSize: 11, color: FAINT, margin: '10px 0 0', lineHeight: 1.5 }}>
             Availability is live — a slot can&apos;t be double-booked. Any waiver for the room is signed right
-            here, before you book — nobody signs at the door. {DEPOSIT_RULE_GENERAL} Sign the rental agreement
-            and add a card on file before the day.
+            here, before you book — nobody signs at the door. A card on file is required to send your request —
+            you&apos;ll add it on the next screen (nothing is charged). {DEPOSIT_RULE_GENERAL} Sign the rental agreement
+            before the day.
           </p>
         </div>
         )}

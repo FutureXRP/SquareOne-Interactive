@@ -23,6 +23,7 @@ const CATALOG: { group: string; items: { kind: string; label: string; blurb: str
       { kind: 'booking.canceled', label: 'Booking canceled', blurb: 'Canceled by the customer, staff, or an expired hold.' },
       { kind: 'booking.deleted', label: 'Booking removed', blurb: 'A booking row was deleted outright.' },
       { kind: 'booking.staff_assigned', label: 'Staff: you’re running this', blurb: 'To the staff member put on a booking.' },
+      { kind: 'booking.request_unfinished', label: 'Request not sent — no card', blurb: 'To the customer when they started a request online but never added the card on file it needs; the held time was released after an hour.' },
       { kind: 'booking.hold_warning', label: 'Deposit due: 24 hours to pay', blurb: 'To the customer when an unpaid party is within 14 days (at booking, or when it gets there) — pay at least the deposit within 24 hours to keep the booking.' },
       { kind: 'booking.approval_alert', label: 'Staff: reservation needs approval', blurb: 'The heads-up to the address chosen on Settings when a customer books (says when it’s unpaid).' },
       { kind: 'booking.agreement_signed', label: 'Signed agreement copy', blurb: 'To the renter right after they sign the rental agreement online, with the signed PDF attached.' },

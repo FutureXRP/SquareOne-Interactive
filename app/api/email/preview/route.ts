@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { serviceDb } from '@/lib/server/billing'
 import { applyEmailOverrides } from '@/lib/server/email-overrides'
-import { bookingFeeCharged, holdPaymentWarning, unpaidHoldsAlert, customerChangedAlert,
+import { bookingFeeCharged, holdPaymentWarning, unpaidHoldsAlert, customerChangedAlert, requestUnfinished,
   changeRequestReceived, changeRequestAlert, changeRequestDecided, agreementSignedCopy,
   bookingReminder, bookingStaffReminder, cashAppClaimAlert, paymentOnCanceledAlert, agreementResignedAlert,
   bookingHeld, bookingApproved, bookingApprovalAlert, bookingConfirmed, bookingPayment, bookingRescheduled,
@@ -90,6 +90,7 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.change_request_alert': return changeRequestAlert(b, SAMPLE_CHANGE)
     case 'booking.change_approved': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The Dining Hall adds $50 — we updated your total.' }, true)
     case 'booking.change_declined': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The gym has a tournament that afternoon — we can do the same time on Saturday.' }, false)
+    case 'booking.request_unfinished': return requestUnfinished(b)
     case 'booking.customer_changed': return customerChangedAlert(b, [
       { kind: 'moved', by: 'Alexis Henson (staff)', at: 'Mon, Sep 7, 3:12 PM', oldWhen: 'Sat, Sep 12, 2 PM – 5 PM', newWhen: 'Sun, Sep 13, 4 PM – 7 PM' },
       { kind: 'spaces_requested', by: 'the customer', at: 'Mon, Sep 7, 3:20 PM', booked: ['Gaming Zone', 'Gym'], requested: ['Gaming Zone', 'Dining Hall'], addonsAdded: ['Photo booth'] },

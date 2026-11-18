@@ -149,10 +149,12 @@ async function hasPendingClaim(bookingId: string): Promise<boolean> {
 // the admins once.
 export async function runUnpaidHolds(now = Date.now()): Promise<{ warned: number; released: number; kept: number } | null> {
   const db = serviceDb()
-  const { data, error } = await db.from('bookings')
-    .select('id, code, client_name, during, price_cents, deposit_cents, status, approved_at, hold_expires_at, hold_warned_at, deposit_overdue_at, note, facilities:facility_id(name), payments(amount_cents, status)')
-    .eq('status', 'hold')
-    .limit(500)
+  const COLS = 'id, code, client_name, during, price_cents, deposit_cents, status, approved_at, hold_expires_at, hold_warned_at, deposit_overdue_at, note, facilities:facility_id(name), payments(amount_cents, status)'
+  // A request still waiting on its card (0064) was never sent — no deposit
+  // clock until it is.
+  let res = await db.from('bookings').select(COLS).eq('status', 'hold').is('awaiting_card_since', null).limit(500)
+  if (res.error) res = await db.from('bookings').select(COLS).eq('status', 'hold').limit(500)
+  const { data, error } = res
   // deposit_overdue_at arrives with 0063. Without it there is no safe way
   // to mark a booking for a decision, so nothing past its deadline is
   // touched at all (never removed) until the migration runs.

@@ -138,8 +138,18 @@ export async function alertBookingChanges(bookingId?: string): Promise<number> {
     return labels.get(key) as string
   }
 
+  // A request that never got its card (0064) never reached the admins —
+  // its cancel or release isn't news to them.
+  const unsent = new Set<string>()
+  {
+    const { data: aw, error: awErr } = await db.from('bookings').select('id')
+      .in('id', [...byBooking.keys()]).not('awaiting_card_since', 'is', null)
+    if (!awErr) for (const r of (aw ?? []) as { id: string }[]) unsent.add(r.id)
+  }
+
   let sent = 0
   for (const [id, list] of byBooking) {
+    if (unsent.has(id)) continue
     if (await isEventRoomHold(id)) continue
     const resolved = await bookingFactsAny(id)
     if (!resolved) continue

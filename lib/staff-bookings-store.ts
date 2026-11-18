@@ -54,7 +54,7 @@ export interface StaffBooking {
   // Who ended it (0038). undefined = not migrated; all null = canceled
   // before this was tracked.
   canceledAt?: string | null
-  canceledVia?: 'staff' | 'member' | 'hold_expired' | null
+  canceledVia?: 'staff' | 'member' | 'hold_expired' | 'no_card' | null
   canceledByName?: string | null
   // The booking's own pay link (0037) — how a card is actually charged.
   payToken?: string | null
@@ -64,6 +64,8 @@ export interface StaffBooking {
   createdAt?: string | null
   leadBookingId?: string | null
   depositOverdueAt?: string | null
+  // A customer's online request not sent yet — no card on file (0064).
+  awaitingCardSince?: string | null
   // Guest contact email typed at the desk (0029). Member bookings carry
   // their address on the account instead — see contactsForAccounts().
   contactEmail?: string | null
@@ -128,6 +130,7 @@ interface Row {
   created_at?: string
   lead_booking_id?: string | null
   deposit_overdue_at?: string | null
+  awaiting_card_since?: string | null
   staff: { name: string } | null
   payments: { amount_cents: number; method: string; status: string }[]
 }
@@ -136,6 +139,8 @@ const SELECT = 'id, code, facility_id, account_id, title, client_name, during, s
 // deposit_cents arrives with migration 0009, the payout columns with 0023,
 // package_id with 0026 — fall back until each is run.
 const SELECT_SETS = [
+  // awaiting_card_since arrives with 0064.
+  `awaiting_card_since, deposit_overdue_at, lead_booking_id, hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   // deposit_overdue_at arrives with 0063.
   `deposit_overdue_at, lead_booking_id, hold_expires_at, hold_warned_at, card_brand, card_last4, setup_min, cleanup_min, contact_phone, addon_ids, contact_email, pay_token, canceled_at, canceled_via, canceled_by_staff:canceled_by(name), standing_id, approved_at, package_id, run_by_staff_id, payout_cents, payout_paid_at, payout_method, deposit_cents, ${SELECT}`,
   // lead_booking_id arrives with 0055, the hold clock with 0054.
@@ -196,6 +201,7 @@ function fromRow(r: Row): StaffBooking | null {
     leadBookingId: r.lead_booking_id ?? null,
     // Past its 24 hours with no deposit — waiting for staff to decide (0063).
     depositOverdueAt: r.status === 'hold' ? (r.deposit_overdue_at ?? null) : null,
+    awaitingCardSince: r.status === 'hold' ? (r.awaiting_card_since ?? null) : null,
     contactEmail: 'contact_email' in r ? (r.contact_email ?? null) : undefined,
     contactPhone: 'contact_phone' in r ? (r.contact_phone ?? null) : undefined,
     setupMin: 'setup_min' in r ? (r.setup_min ?? 0) : undefined,
@@ -249,12 +255,28 @@ export function canceledByLabel(b: StaffBooking): string | null {
   if (b.status !== 'canceled') return null
   if (b.canceledVia === 'member') return 'canceled by the customer'
   if (b.canceledVia === 'hold_expired') return 'hold expired unpaid'
+  if (b.canceledVia === 'no_card') return 'request never sent — no card added'
   if (b.canceledVia === 'staff') return b.canceledByName ? `canceled by ${b.canceledByName}` : 'canceled by staff'
   return null // canceled before this was tracked, or 0038 not run
 }
 
 export function isInReview(b: StaffBooking): boolean {
-  return b.approvedAt === null && b.status !== 'canceled'
+  // A request still waiting on its card hasn't been sent to us yet (0064).
+  return b.approvedAt === null && b.status !== 'canceled' && !b.awaitingCardSince
+}
+
+// A customer who couldn't add a card online (they called in, say): staff
+// send the request through without one. It then goes to review like any
+// other request, and the usual emails go out.
+export async function sendWithoutCard(id: string): Promise<boolean> {
+  const { data, error } = await supabase().from('bookings')
+    .update({ awaiting_card_since: null })
+    .eq('id', id).eq('status', 'hold').not('awaiting_card_since', 'is', null)
+    .select('id')
+  if (error) { console.error('[bookings]', error.message); return false }
+  emit(BOOKINGS_EVENT)
+  if ((data ?? []).length > 0) await notify('booking.hold', id)
+  return true
 }
 
 export async function getStaffBookings(): Promise<StaffBooking[]> {
