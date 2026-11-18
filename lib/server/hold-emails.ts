@@ -2,6 +2,7 @@ import { serviceDb, sendAndLog } from '@/lib/server/billing'
 import { bookingFacts, bookingFactsAny } from '@/lib/server/booking-facts'
 import { startHoldClock, alertAdminsOfUnpaidHold, adminRecipients } from '@/lib/server/unpaid-holds'
 import { bookingHeld, bookingApprovalAlert } from '@/lib/server/emails'
+import { cardGate } from '@/lib/server/card-gate'
 
 // Everything a new hold sends: its 24-hour clock when the event is within
 // 14 days, the customer's "we're holding it" email, and the house's alert
@@ -9,7 +10,10 @@ import { bookingHeld, bookingApprovalAlert } from '@/lib/server/emails'
 // customer left no email — or the unpaid notice for a hold staff placed).
 // Called right after the booking is made, and again by the hourly job for
 // any hold whose email never went out (a closed tab, a failed request).
-export async function sendHoldEmails(bookingId: string, parts: { customer?: boolean; staff?: boolean } = {}): Promise<{ customer: boolean; staff: boolean }> {
+export async function sendHoldEmails(bookingId: string, parts: { customer?: boolean; staff?: boolean } = {}): Promise<{ customer: boolean; staff: boolean; awaitingCard?: boolean }> {
+  // A customer's request isn't sent until their card is on file (0064) —
+  // nothing goes out, to them or to us, until then.
+  if (await cardGate(bookingId) === 'wait') return { customer: false, staff: false, awaitingCard: true }
   const wantCustomer = parts.customer !== false
   const wantStaff = parts.staff !== false
   const clock = await startHoldClock(bookingId).catch(() => null)
@@ -41,8 +45,14 @@ export async function sendHoldEmails(bookingId: string, parts: { customer?: bool
 export async function sendMissedHoldEmails(): Promise<number> {
   const db = serviceDb()
   const since = new Date(Date.now() - 4 * 24 * 3600_000).toISOString()
-  const { data, error } = await db.from('bookings').select('id, approved_at, created_at, contact_email, account_id')
-    .eq('status', 'hold').is('lead_booking_id', null).gte('created_at', since).limit(200)
+  // Requests still waiting on their card (0064) haven't been sent at all.
+  let res = await db.from('bookings').select('id, approved_at, created_at, contact_email, account_id')
+    .eq('status', 'hold').is('lead_booking_id', null).is('awaiting_card_since', null).gte('created_at', since).limit(200)
+  if (res.error) {
+    res = await db.from('bookings').select('id, approved_at, created_at, contact_email, account_id')
+      .eq('status', 'hold').is('lead_booking_id', null).gte('created_at', since).limit(200)
+  }
+  const { data, error } = res
   if (error || !data || data.length === 0) return 0
   const ids = (data as { id: string }[]).map((r) => r.id)
   const { data: logs } = await db.from('email_log').select('booking_id, kind')

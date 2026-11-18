@@ -104,6 +104,8 @@ export default async function PayPage({ params, searchParams }: {
   const t = found.target
   const settled = t.balanceCents <= 0
   const canceled = t.status === 'canceled'
+  // A customer's request not sent yet — it needs a card on file first (0064).
+  const awaitingCard = !!doc?.awaitingCard && !canceled
 
   // The Cash App QR carries the amount actually due right now — the same
   // deposit-or-balance choice PayPanel's buttons make.
@@ -127,13 +129,34 @@ export default async function PayPage({ params, searchParams }: {
           </div>
         )}
 
+        {cardJustSaved && !awaitingCard && t.inReview && !canceled && (
+          <div style={{ background: '#e5f2ea', border: '1px solid #bcdfc9', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1d6b3f', margin: '0 0 2px' }}>Card saved — your request has been sent.</p>
+            <p style={{ fontSize: 12.5, color: SUB, margin: 0, lineHeight: 1.5 }}>
+              Our team will review it and email you once it&rsquo;s approved. Your confirmation is on its way by email.
+            </p>
+          </div>
+        )}
+
+        {awaitingCard && (
+          <div style={{ background: '#fdf3dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#5b4708', margin: '0 0 4px' }}>Almost done — add a card to send your request</p>
+            <p style={{ fontSize: 12.5, color: '#5b4708', margin: '0 0 10px', lineHeight: 1.55 }}>
+              Your request hasn&rsquo;t been sent to our team yet. Every reservation needs a card on file first. Nothing is
+              charged — it&rsquo;s only used for damages, cleaning, or an unpaid balance, and we contact you before any charge.
+              We&rsquo;re holding this time for you for one hour; after that it&rsquo;s released.
+            </p>
+            <CardOnFileButton token={token} />
+          </div>
+        )}
+
         <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-          {canceled ? 'Canceled booking' : settled ? 'Paid in full' : 'Pay for your booking'}
+          {canceled ? 'Canceled booking' : awaitingCard ? 'Your request — not sent yet' : settled ? 'Paid in full' : 'Pay for your booking'}
         </p>
         <p style={{ fontSize: 19, fontWeight: 800, color: INK, margin: '0 0 2px', letterSpacing: '-0.02em' }}>{t.room}</p>
         <p style={{ fontSize: 13.5, color: SUB, margin: 0 }}>{t.date} · {t.time}</p>
 
-        {t.inReview && !canceled && (
+        {t.inReview && !canceled && !awaitingCard && (
           <p style={{ fontSize: 12.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 9, padding: '10px 12px', margin: '14px 0 0', lineHeight: 1.55 }}>
             This reservation is still being reviewed by our team. {DEPOSIT_RULE_GENERAL} If we can&rsquo;t
             approve it, we&rsquo;ll refund you in full.
@@ -168,6 +191,10 @@ export default async function PayPage({ params, searchParams }: {
             </p>
             {waivers.length > 0 && <PayWaivers token={token} waivers={waivers} paid />}
           </>
+        ) : awaitingCard ? (
+          <p style={{ fontSize: 13, color: SUB, margin: 0, lineHeight: 1.6 }}>
+            Payment opens once your card is on file and your request is sent.
+          </p>
         ) : waivers.length > 0 ? (
           <PayWaivers token={token} waivers={waivers} paid={false} />
         ) : (
@@ -176,7 +203,7 @@ export default async function PayPage({ params, searchParams }: {
       </div>
 
       {/* Before the day: the signed agreement and a card on file. */}
-      {doc && !canceled && (
+      {doc && !canceled && !awaitingCard && (
         <div className="sq-card" style={{ ...card, padding: '20px 24px', marginTop: 14 }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
             Before your event
@@ -231,7 +258,7 @@ export default async function PayPage({ params, searchParams }: {
               <p style={{ fontSize: 12.5, color: SUB, margin: '2px 0 8px', lineHeight: 1.5 }}>
                 {doc.card
                   ? `${(doc.card.brand ?? 'Card').replace(/^./, (c) => c.toUpperCase())} ending ${doc.card.last4} is on file. It's only charged for damages, cleaning, storage, or an unpaid balance — and we'll contact you before any charge.`
-                  : 'Every reservation keeps a card on file for damages or unpaid balances, as the agreement explains. Nothing is charged when you add it — and we contact you before any charge. Paying online saves your card automatically.'}
+                  : 'Every reservation keeps a card on file for damages or unpaid balances, as the agreement explains. Nothing is charged when you add it — and we contact you before any charge.'}
               </p>
               <CardOnFileButton token={token} replace={!!doc.card} />
             </div>

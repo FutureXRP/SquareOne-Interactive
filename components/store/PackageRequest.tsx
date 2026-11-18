@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { BLUE, INK, SUB, FAINT, GREEN, RED } from '@/lib/theme'
 import { formatHour } from '@/lib/format'
 import { getSiteConfig, siteDayHours, closureFor, type SiteConfig } from '@/lib/site-config-store'
-import { isSignedIn, requestMemberHold, getMyPhone, SESSION_EVENT } from '@/lib/session'
+import { isSignedIn, requestMemberHold, startCardStep, getMyPhone, SESSION_EVENT } from '@/lib/session'
 import type { EventPackage } from '@/lib/packages-store'
 import { WaiverPanel } from '@/components/store/WaiverPanel'
 import { unsignedRequiredWaivers, type RequiredWaiver } from '@/lib/waivers-live'
@@ -33,7 +33,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   const [requests, setRequests] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<{ code: string } | null>(null)
+  const [done, setDone] = useState<{ code: string; needsCard?: boolean; payToken?: string; cardError?: string } | null>(null)
   // The room's waivers, signed as part of the request — never at the door.
   const [pendingWaivers, setPendingWaivers] = useState<RequiredWaiver[]>([])
 
@@ -136,9 +136,17 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
     if (!roomId || !date || startH == null) { setBusy(false); return }
     const note = requests.trim() ? `Package request · Requests: ${requests.trim()}` : 'Package request'
     const res = await requestMemberHold(roomId, `${pkg.name} package`, date, startH, pkg.hours, pkg.priceCents, depositCents ?? undefined, note, undefined, undefined, phone.trim(), { packageId: pkg.id })
+    if (res.ok) {
+      // A card on file is part of the request (0064): straight to the
+      // secure card page. The request is sent once it's saved.
+      const step = await startCardStep(res.id)
+      if (step.url) { window.location.assign(step.url); return }
+      setBusy(false)
+      setDone({ code: res.code, needsCard: !step.cardsOff, payToken: step.payToken, cardError: step.message })
+      return
+    }
     setBusy(false)
-    if (res.ok) setDone({ code: res.code })
-    else if (res.conflict) setError('That time is already taken in one of the package rooms. Try another start time or date.')
+    if (res.conflict) setError('That time is already taken in one of the package rooms. Try another start time or date.')
     else if (!(await isSignedIn().catch(() => false))) setError('Your sign-in expired — sign in again and resend. Everything you typed is still here.')
     else setError('Something went wrong sending your request. Please call the front desk.')
   }
@@ -146,6 +154,22 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
   const doneRule = date && startH != null
     ? depositRuleSentence({ start: tulsaInstant(date, startH), depositCents })
     : DEPOSIT_RULE_GENERAL
+
+  if (done?.needsCard) {
+    return (
+      <div style={{ background: '#fdf3dc', border: '1px solid #f0ddb8', borderRadius: 10, padding: '10px 13px' }}>
+        <p style={{ fontSize: 12.5, fontWeight: 700, color: '#5b4708', margin: '0 0 2px' }}>Almost done — add a card to send request {done.code}</p>
+        <p style={{ fontSize: 12, color: SUB, margin: '0 0 8px', lineHeight: 1.5 }}>
+          Your request isn&rsquo;t sent to our team until a card is on file. Nothing is charged — it&rsquo;s only used for
+          damages, cleaning, or an unpaid balance, and we contact you first. We&rsquo;re holding the time for you for one hour.
+          {done.cardError ? ` (${done.cardError})` : ''}
+        </p>
+        {done.payToken
+          ? <Link href={`/pay/${done.payToken}`} className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 12.5 }}>Add my card</Link>
+          : <Link href="/account/bookings" className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 12.5 }}>Finish in My bookings</Link>}
+      </div>
+    )
+  }
 
   if (done) {
     return (
@@ -237,7 +261,7 @@ export function PackageRequest({ pkg, primary }: { pkg: EventPackage; primary: b
         {busy ? 'Sending…' : 'Send request'}
       </button>
       <p style={{ fontSize: 11, color: FAINT, margin: 0, lineHeight: 1.5 }}>
-        Any waiver for the room is signed as part of this request — nobody signs at the door. <span style={{ color: INK }}>{DEPOSIT_RULE_GENERAL}</span> Pay from the link in your confirmation email, then sign the rental agreement and add a card on file before the day.
+        Any waiver for the room is signed as part of this request — nobody signs at the door. <span style={{ color: INK }}>{DEPOSIT_RULE_GENERAL}</span> A card on file is required to send your request — you&rsquo;ll add it on the next screen (nothing is charged). Then pay from the link in your confirmation email and sign the rental agreement before the day.
       </p>
     </div>
   )

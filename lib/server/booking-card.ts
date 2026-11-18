@@ -1,6 +1,7 @@
 import type Stripe from 'stripe'
 import { stripe, serviceDb } from '@/lib/server/billing'
 import type { AgreementAnswers, AgreementSnapshot } from '@/lib/rental-agreement'
+import { submitAwaitingRequest } from '@/lib/server/card-gate'
 
 // Everything about a booking's rental agreement and card on file, read
 // server-side with the service role. Shared by the pay page, the
@@ -23,6 +24,8 @@ export interface BookingDoc {
   rooms: string[] // every active room, for the "spaces reserved" checklist
   addons: string[] // every active add-on
   contactEmail: string | null
+  // A customer's request not yet sent — it needs a card on file first (0064).
+  awaitingCard: boolean
   card: { brand: string | null; last4: string; customerId: string | null; pmId: string | null } | null
   agreement: {
     signedAt: string; signature: string; repName: string | null; repSignedAt: string | null
@@ -46,12 +49,14 @@ interface Row {
   card_pm_id?: string | null
   card_brand?: string | null
   card_last4?: string | null
+  awaiting_card_since?: string | null
   facilities: { name: string } | null
   payments: { amount_cents: number; status: string }[]
 }
 
 const BASE = 'id, org_id, code, title, client_name, during, price_cents, status, account_id, facilities:facility_id(name), payments(amount_cents, status)'
 const COL_SETS = [
+  `awaiting_card_since, deposit_cents, contact_email, contact_phone, setup_min, cleanup_min, addon_ids, card_customer_id, card_pm_id, card_brand, card_last4, ${BASE}`,
   `deposit_cents, contact_email, contact_phone, setup_min, cleanup_min, addon_ids, card_customer_id, card_pm_id, card_brand, card_last4, ${BASE}`,
   `deposit_cents, contact_email, contact_phone, setup_min, cleanup_min, addon_ids, ${BASE}`,
   `deposit_cents, contact_email, ${BASE}`,
@@ -156,6 +161,7 @@ export async function bookingDoc(bookingId: string): Promise<BookingDoc | null> 
     rooms: ((roomsRes.data ?? []) as { name: string; active?: boolean }[]).filter((r) => r.active !== false).map((r) => r.name),
     addons: allAddons.filter((x) => x.active !== false).map((x) => x.name),
     contactEmail: email,
+    awaitingCard: !!row.awaiting_card_since && row.status === 'hold',
     card: row.card_last4
       ? { brand: row.card_brand ?? null, last4: row.card_last4, customerId: row.card_customer_id ?? null, pmId: row.card_pm_id ?? null }
       : null,
@@ -212,6 +218,8 @@ async function storeCard(bookingId: string, customerId: string, pm: Stripe.Payme
     card_last4: pm.card.last4,
     card_saved_at: new Date().toISOString(),
   }).eq('id', bookingId)
+  // A request that was waiting on this card goes to our team now (0064).
+  await submitAwaitingRequest(bookingId).catch((e) => console.error('[booking-card] submit request', e))
 }
 
 // A finished "add a card" Checkout (setup mode). Idempotent — the pay

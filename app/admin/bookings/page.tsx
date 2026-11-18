@@ -12,7 +12,7 @@ import { getActiveAddons, addonPriceCents, addonPriceLabel, type AddonConfig } f
 import { getActivePackages, type EventPackage } from '@/lib/packages-store'
 import {
   getStaffBookings, addStaffBooking, addStaffBookingMulti, rescheduleBooking, updateBookingFields, recordPayment, deleteBooking, isoDate,
-  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, keepWithoutDeposit, reinstateBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, findAccountByEmail, type AccountContact,
+  markBookingsSeen, setBookingRunBy, addonsTaken, isInReview, approveBooking, keepWithoutDeposit, sendWithoutCard, reinstateBooking, canceledByLabel, bookingPayUrl, contactsForAccounts, findAccountByEmail, type AccountContact,
   BOOKINGS_EVENT, PAY_LABEL, type StaffBooking, type PayMethod,
 } from '@/lib/staff-bookings-store'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -307,7 +307,7 @@ export default function AdminBookingsPage() {
   // attention". In-review bookings stay in their own queue (approval is
   // step one); soonest event first, since that's the money at risk.
   const unpaid = active
-    .filter((b) => b.priceCents > 0 && b.paidCents < b.priceCents && !isInReview(b))
+    .filter((b) => b.priceCents > 0 && b.paidCents < b.priceCents && !isInReview(b) && !b.awaitingCardSince)
     .sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH)
 
   // Today first, then what's coming, then history newest-first. The desk
@@ -382,6 +382,13 @@ export default function AdminBookingsPage() {
               ) : b.standingId ? (
                 // Put here by a standing reservation on the Calendar tab.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: BLUE, background: '#eef4fb', padding: '2px 10px', borderRadius: 999 }}>Standing group</span>
+              ) : b.awaitingCardSince ? (
+                // Placed online, but the customer hasn't added the card the
+                // request needs — not sent to us yet (0064).
+                <span title="The customer hasn't added a card on file, so the request hasn't been sent. The time is held for them for an hour, then released."
+                  style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>
+                  Unfinished request — no card yet
+                </span>
               ) : isInReview(b) ? (
                 // Booked by a customer and waiting on one of us to say yes.
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5b4708', background: '#fdf3dc', padding: '2px 10px', borderRadius: 999 }}>
@@ -417,7 +424,15 @@ export default function AdminBookingsPage() {
                     <button className="sq-btn sq-btn-primary" style={{ padding: '5px 12px', fontSize: 11.5 }}
                       onClick={() => approveBooking(b.id, me?.id ?? null)}>Approve request</button>
                   )}
-                  {b.status === 'hold' && !b.leadBookingId && b.priceCents > 0
+                  {b.awaitingCardSince && (
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
+                      title="For a customer who can't add a card online — sends their request to review without one"
+                      onClick={async () => {
+                        if (!window.confirm(`Send ${b.code} to review without a card on file? Every reservation normally needs one.`)) return
+                        setBusyWrite(true); await sendWithoutCard(b.id); setBusyWrite(false)
+                      }}>Send without card</button>
+                  )}
+                  {b.status === 'hold' && !b.leadBookingId && b.priceCents > 0 && !b.awaitingCardSince
                     && !(b.depositCents && b.depositCents > 0 ? b.paidCents >= b.depositCents : b.paidCents > 0) && (
                     <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} disabled={busyWrite}
                       title="Stops the 24-hour deposit clock — the deposit is still owed"

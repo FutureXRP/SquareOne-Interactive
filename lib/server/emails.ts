@@ -240,6 +240,30 @@ export function bookingHeld(b: BookingFacts): EmailBody {
   }
 }
 
+// A customer started a request online but never added the card on file
+// it needs, so it was never sent to our team and the time was released
+// (0064). Sent once, by the hourly job.
+export function requestUnfinished(b: BookingFacts): EmailBody {
+  return {
+    subject: `Your request for ${b.room} on ${b.date} wasn't sent`,
+    html: shell(
+      `Your request wasn't sent, ${b.name.split(' ')[0]}`,
+      `<p style="margin:0 0 6px;">You started a reservation request with us, but it wasn't finished, so it never reached our team:</p>
+       ${detailRows([
+         ['Room', b.room],
+         ['What', b.what],
+         ['When', `${b.date}, ${b.time}`],
+       ])}
+       <p style="margin:0 0 6px;"><strong style="color:${INK};">Every reservation request needs a card on file before it's sent.</strong>
+         Nothing is charged when you add it — the card is only used for damages, cleaning, or an unpaid balance,
+         and we contact you before any charge.</p>
+       <p style="margin:0;">We held the time for you for an hour, and it's now open again. If you'd still like it,
+         please book again and add your card when asked — or call us and we'll help.</p>`,
+      { label: 'Book again', href: siteLink('/facilities') },
+    ),
+  }
+}
+
 // The invitation that turns a desk booking into a customer relationship:
 // sign up with this same email and the booking attaches to your account
 // automatically — view it, pay it, cancel it, all without calling us.

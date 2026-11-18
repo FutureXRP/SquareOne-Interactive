@@ -17,13 +17,14 @@ const CHIP: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 700, padding: '2px 10px', borderRadius: 999, whiteSpace: 'nowrap',
 }
 
-type Stage = 'review' | 'hold' | 'confirmed' | 'done' | 'canceled'
+type Stage = 'unsent' | 'review' | 'hold' | 'confirmed' | 'done' | 'canceled'
 
 // approvedAt is undefined until migration 0033 runs — before that there's
 // no review step to show, so bookings read the way they always did.
 export function stageOf(b: MemberBooking): Stage {
   if (b.status === 'canceled') return 'canceled'
   if (b.status === 'completed') return 'done'
+  if (b.awaitingCard) return 'unsent'
   if (b.approvedAt === null) return 'review'
   if (b.status === 'hold') return 'hold'
   return 'confirmed'
@@ -31,6 +32,7 @@ export function stageOf(b: MemberBooking): Stage {
 
 export function StatusChip({ stage }: { stage: Stage }) {
   if (stage === 'canceled') return <span style={{ ...CHIP, color: SUB, background: '#eef2f8' }}>Canceled</span>
+  if (stage === 'unsent') return <span style={{ ...CHIP, color: '#b3261e', background: '#fbe9e7' }}>Not sent — add a card</span>
   if (stage === 'review') return <span style={{ ...CHIP, color: '#5b4708', background: '#fdf3dc' }}>Reservation in review</span>
   if (stage === 'hold') return <span style={{ ...CHIP, color: GOLD, background: '#faf0dc' }}>On hold</span>
   if (stage === 'done') return <span style={{ ...CHIP, color: SUB, background: '#eef2f8' }}>Completed</span>
@@ -72,7 +74,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
   const customCents = Math.round((Number.parseFloat(customAmount.replace(/[$,\s]/g, '')) || 0) * 100)
   const customOk = customCents >= minPartial && customCents <= balance
   const notice = room?.minNoticeHours ?? 48
-  const canPay = balance > 0 && b.status !== 'canceled' && stage !== 'done'
+  const canPay = balance > 0 && b.status !== 'canceled' && stage !== 'done' && stage !== 'unsent'
   const extras = b.note?.startsWith('Add-ons:') ? b.note.replace('Add-ons: ', '') : null
 
   const pay = async (which: 'deposit' | 'balance' | 'custom') => {
@@ -128,6 +130,17 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
             {pcWhen ? <>You asked for <strong style={{ color: INK }}>{pcWhen}</strong>{pc?.newRoomIds ? ' and different rooms' : ''}. </> : pc?.newRoomIds || pc?.newAddonIds ? 'You asked for different rooms or extras. ' : ''}
             Until it&rsquo;s approved your booking stays as shown below. We&rsquo;ll email you either way.
           </p>
+        </div>
+      )}
+      {stage === 'unsent' && (
+        <div style={{ background: '#fbe9e7', border: '1px solid #f3c7c1', borderRadius: 10, padding: '10px 13px', margin: '12px 0 0' }}>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#b3261e', margin: '0 0 2px' }}>This request hasn&rsquo;t been sent yet</p>
+          <p style={{ fontSize: 12, color: SUB, margin: '0 0 8px', lineHeight: 1.5 }}>
+            Every reservation needs a card on file before our team reviews it. Nothing is charged — it&rsquo;s only used
+            for damages, cleaning, or an unpaid balance, and we contact you first. The time is held for one hour from
+            when you booked, then released.
+          </p>
+          {b.payToken && <a href={`/pay/${b.payToken}`} className="sq-btn sq-btn-primary" style={{ padding: '7px 14px', fontSize: 12.5, textDecoration: 'none' }}>Add my card</a>}
         </div>
       )}
       {stage === 'review' && (

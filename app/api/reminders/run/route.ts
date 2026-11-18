@@ -5,6 +5,7 @@ import { eventReminderStaff, eventGuestReminder } from '@/lib/server/emails'
 import { EVENT_SELECT, factsFrom, emailForStaffUser, type EventRow } from '@/lib/server/event-facts'
 import { runUnpaidHolds } from '@/lib/server/unpaid-holds'
 import { sendMissedHoldEmails } from '@/lib/server/hold-emails'
+import { releaseUnfinishedRequests } from '@/lib/server/card-gate'
 import { sendBookingReminders } from '@/lib/server/booking-reminders'
 import { alertBookingChanges } from '@/lib/server/customer-changes'
 import { sendChangeRequestsReceived, sendChangeDecisions } from '@/lib/server/change-requests'
@@ -106,11 +107,13 @@ export async function GET(req: Request) {
     const standing = await rollStanding()
     // Finished events close out first, so nothing below works on the past (0060).
     const closed = await Promise.resolve(serviceDb().rpc('close_out_past_bookings')).then((r) => r.error ? null : r.data, () => null)
+    // Online requests whose card was never added within the hour (0064).
+    const unfinished = await releaseUnfinishedRequests().catch((e) => { console.error('[reminders] unfinished requests', e); return null })
     // Hold emails the browser never sent.
     const missedHolds = await sendMissedHoldEmails().catch((e) => { console.error('[reminders] missed holds', e); return null })
     // A week out / the day before, to customers and whoever runs it.
     const bookingReminders = await sendBookingReminders().catch((e) => { console.error('[reminders] booking reminders', e); return null })
-    // Unpaid holds: the 24-hour notice, then removal (0054). Its own
+    // Unpaid holds: the 24-hour notice, then a staff decision (0063). Its own
     // failure never takes the reminders down with it.
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
     // Customer changes staff haven't been told about yet (0056).
@@ -118,7 +121,7 @@ export async function GET(req: Request) {
     // Change-request emails that didn't go out at the time (0057).
     const requestEmails = await sendChangeRequestsReceived().catch(() => null)
     const decisionEmails = await sendChangeDecisions().catch(() => null)
-    return NextResponse.json({ ok: true, ...reminders, standing, closed, missedHolds, bookingReminders, holds, changeAlerts, requestEmails, decisionEmails })
+    return NextResponse.json({ ok: true, ...reminders, standing, closed, unfinished, missedHolds, bookingReminders, holds, changeAlerts, requestEmails, decisionEmails })
   } catch (e) {
     console.error('[reminders]', e)
     return NextResponse.json({ error: 'failed', message: e instanceof Error ? e.message : 'run failed' }, { status: 500 })
