@@ -780,7 +780,20 @@ export function changeRequestReceived(b: BookingFacts, c: ChangeRequestFacts): E
 }
 
 // To the house: a request waiting on an owner, admin, or manager.
-export function changeRequestAlert(b: BookingFacts, c: ChangeRequestFacts, o: { conflicts?: string[] } = {}): EmailBody {
+// Approve / Decline, side by side. Each opens the request's own page in
+// the dashboard with that answer ready — it is never applied by the click
+// alone, since mail scanners open links on their own.
+function decideButtons(requestId?: string): string {
+  if (!requestId) return ''
+  const href = (d: 'approve' | 'decline') => siteLink(`/admin/bookings/request/${requestId}?decide=${d}`)
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 6px;"><tr>
+    <td style="padding:0 10px 0 0;"><a href="${href('approve')}" style="display:inline-block;background:#1d6b3f;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:9px;">Approve change</a></td>
+    <td><a href="${href('decline')}" style="display:inline-block;background:#b3261e;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:9px;">Decline change</a></td>
+  </tr></table>
+  <p style="margin:0 0 6px;font-size:12px;color:#8a98ab;">Each button opens the request in the dashboard, where you confirm it and can add a note for the customer. Nothing is applied until you confirm.</p>`
+}
+
+export function changeRequestAlert(b: BookingFacts, c: ChangeRequestFacts, o: { conflicts?: string[]; requestId?: string } = {}): EmailBody {
   return {
     subject: `Change request — ${b.code}, ${b.name}`,
     html: shell(
@@ -802,8 +815,9 @@ export function changeRequestAlert(b: BookingFacts, c: ChangeRequestFacts, o: { 
          ['Total', money(b.priceCents)],
          ['Paid so far', money(b.paidCents)],
        ])}
+       ${decideButtons(o.requestId)}
        <p style="margin:0;">Approving doesn't change the price — if the new time or rooms cost more or less, update the price after.</p>`,
-      { label: 'Review the request', href: siteLink('/admin/bookings') },
+      o.requestId ? undefined : { label: 'Review the request', href: siteLink('/admin/bookings') },
     ),
   }
 }

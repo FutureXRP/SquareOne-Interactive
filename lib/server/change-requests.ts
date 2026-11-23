@@ -98,7 +98,7 @@ export async function sendChangeRequestsReceived(bookingId?: string): Promise<nu
         { accountId: resolved.b.account_id, bookingId: r.booking_id })
     }
     const conflicts = await conflictsFor(r, n)
-    const alert = changeRequestAlert(resolved.facts, facts, { conflicts })
+    const alert = changeRequestAlert(resolved.facts, facts, { conflicts, requestId: r.id })
     for (const addr of await adminRecipients(resolved.to?.email)) {
       await sendAndLog('booking.change_request_alert', addr, alert, { bookingId: r.booking_id })
     }

@@ -87,7 +87,7 @@ function sampleFor(kind: string): EmailBody | null {
     case 'booking.payment_on_canceled': return paymentOnCanceledAlert({ code: 'BK-1234', name: 'Jordan Alvarez', amountCents: 10000, method: 'Card' })
     case 'booking.agreement_resigned': return agreementResignedAlert(b, { signer: 'Jordan Alvarez', previousRep: 'Alexis Henson' })
     case 'booking.change_requested': return changeRequestReceived(b, SAMPLE_CHANGE)
-    case 'booking.change_request_alert': return changeRequestAlert(b, SAMPLE_CHANGE)
+    case 'booking.change_request_alert': return changeRequestAlert(b, SAMPLE_CHANGE, { requestId: '00000000-0000-0000-0000-000000000000' })
     case 'booking.change_approved': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The Dining Hall adds $50 — we updated your total.' }, true)
     case 'booking.change_declined': return changeRequestDecided(b, { ...SAMPLE_CHANGE, decisionNote: 'The gym has a tournament that afternoon — we can do the same time on Saturday.' }, false)
     case 'booking.request_unfinished': return requestUnfinished(b)

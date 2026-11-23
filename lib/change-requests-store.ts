@@ -58,6 +58,51 @@ export async function getPendingChangeRequests(): Promise<ChangeRequest[] | null
   }))
 }
 
+// One request, whatever its state — for the page an email's Approve /
+// Decline button opens.
+export interface ChangeRequestDetail extends ChangeRequest {
+  status: 'pending' | 'approved' | 'declined' | 'withdrawn'
+  decidedAt: string | null
+  decisionNote: string | null
+  booking: { code: string; clientName: string; title: string; during: string; facilityId: string; status: string; priceCents: number } | null
+}
+
+export async function getChangeRequest(id: string): Promise<ChangeRequestDetail | null> {
+  if (!isSupabaseConfigured()) return null
+  const sb = supabase()
+  const { data, error } = await sb.from('booking_change_requests')
+    .select('id, booking_id, created_at, source, status, decided_at, decision_note, old_during, new_during, old_room_ids, new_room_ids, old_addon_ids, new_addon_ids, bookings:booking_id(code, client_name, title, during, facility_id, status, price_cents)')
+    .eq('id', id).maybeSingle()
+  if (error || !data) return null
+  const r = data as unknown as {
+    id: string; booking_id: string; created_at: string; source: ChangeRequest['source']
+    status: ChangeRequestDetail['status']; decided_at: string | null; decision_note: string | null
+    old_during: string | null; new_during: string | null
+    old_room_ids: string[] | null; new_room_ids: string[] | null
+    old_addon_ids: string[] | null; new_addon_ids: string[] | null
+    bookings: { code: string; client_name: string; title: string; during: string; facility_id: string; status: string; price_cents: number } | null
+  }
+  let conflicts: string[] = []
+  const during = r.new_during ?? r.old_during
+  const rooms = r.new_room_ids ?? r.old_room_ids
+  if (r.status === 'pending' && during && rooms && rooms.length > 0) {
+    const res = await sb.rpc('booking_group_conflicts', { p_booking: r.booking_id, p_during: during, p_rooms: rooms })
+    if (!res.error) conflicts = (res.data as string[] | null) ?? []
+  }
+  return {
+    id: r.id, bookingId: r.booking_id, createdAt: r.created_at, source: r.source,
+    oldDuring: r.old_during, newDuring: r.new_during,
+    oldRoomIds: r.old_room_ids, newRoomIds: r.new_room_ids,
+    oldAddonIds: r.old_addon_ids, newAddonIds: r.new_addon_ids,
+    conflicts,
+    status: r.status, decidedAt: r.decided_at, decisionNote: r.decision_note,
+    booking: r.bookings ? {
+      code: r.bookings.code, clientName: r.bookings.client_name, title: r.bookings.title,
+      during: r.bookings.during, facilityId: r.bookings.facility_id, status: r.bookings.status, priceCents: r.bookings.price_cents,
+    } : null,
+  }
+}
+
 export async function decideChangeRequest(id: string, approve: boolean, note: string):
   Promise<{ ok: true } | { ok: false; message: string }> {
   const { error } = await supabase().rpc(approve ? 'approve_booking_change' : 'decline_booking_change', {
