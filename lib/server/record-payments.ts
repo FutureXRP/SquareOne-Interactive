@@ -77,8 +77,8 @@ export async function recordInvoicePayment(invoice: Stripe.Invoice): Promise<voi
     .from('payments')
     .select('id')
     .eq('stripe_payment_intent_id', invoice.id)
-    .maybeSingle()
-  if (existing) return
+    .limit(1)
+  if ((existing ?? []).length > 0) return
   const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id
   let accountId: string | null = null
   if (customerId) {
@@ -112,8 +112,10 @@ export async function recordBookingCheckout(session: Stripe.Checkout.Session): P
   if (!bookingId || amount <= 0) return
   const db = serviceDb()
   const ref = typeof session.payment_intent === 'string' ? session.payment_intent : session.id
-  const { data: existing } = await db.from('payments').select('id').eq('stripe_payment_intent_id', ref).maybeSingle()
-  if (existing) return
+  const { data: existing } = await db.from('payments').select('id').eq('stripe_payment_intent_id', ref).limit(1)
+  // limit(1), not maybeSingle(): if two copies ever exist, maybeSingle()
+  // errors, reads as "not recorded", and the payment is recorded AGAIN.
+  if ((existing ?? []).length > 0) return
 
   const { data: bookingRow } = await db.from('bookings')
     .select('id, code, title, account_id, status').eq('id', bookingId).maybeSingle()
@@ -180,8 +182,8 @@ export async function recordBookingIntent(pi: Stripe.PaymentIntent): Promise<boo
   const amount = pi.amount_received ?? 0
   if (!bookingId || amount <= 0) return false
   const db = serviceDb()
-  const { data: existing } = await db.from('payments').select('id').eq('stripe_payment_intent_id', pi.id).maybeSingle()
-  if (existing) return true
+  const { data: existing } = await db.from('payments').select('id').eq('stripe_payment_intent_id', pi.id).limit(1)
+  if ((existing ?? []).length > 0) return true
 
   const { data: bookingRow } = await db.from('bookings')
     .select('id, code, title, account_id, status').eq('id', bookingId).maybeSingle()

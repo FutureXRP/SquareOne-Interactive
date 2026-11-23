@@ -59,15 +59,17 @@ export async function POST(req: Request) {
       if (session.metadata?.kind !== 'booking' || !session.metadata?.booking_id) continue
       checked += 1
       const ref = typeof session.payment_intent === 'string' ? session.payment_intent : session.id
-      const { data: already } = await db.from('payments').select('id').eq('stripe_payment_intent_id', ref).maybeSingle()
-      if (already) continue
+      // limit(1): two copies must still read as "already recorded".
+      const { data: already } = await db.from('payments').select('id').eq('stripe_payment_intent_id', ref).limit(1)
+      if ((already ?? []).length > 0) continue
 
       // Same code path the webhook uses — the payment row, the booking
       // status, and the receipt email all happen exactly once.
       await recordBookingCheckout(session)
 
       const { data: landed } = await db.from('payments')
-        .select('id, memo').eq('stripe_payment_intent_id', ref).maybeSingle()
+        .select('id, memo').eq('stripe_payment_intent_id', ref).limit(1)
+        .then((r) => ({ data: (r.data ?? [])[0] ?? null }))
       if (landed) {
         recovered.push({
           kind: 'booking',
@@ -82,13 +84,15 @@ export async function POST(req: Request) {
     for await (const invoice of s.invoices.list({ created: { gte: since }, status: 'paid', limit: 100 })) {
       if (!invoice.id || !invoice.amount_paid || invoice.amount_paid <= 0) continue
       checked += 1
-      const { data: already } = await db.from('payments').select('id').eq('stripe_payment_intent_id', invoice.id).maybeSingle()
-      if (already) continue
+      // limit(1): two copies must still read as "already recorded".
+      const { data: already } = await db.from('payments').select('id').eq('stripe_payment_intent_id', invoice.id).limit(1)
+      if ((already ?? []).length > 0) continue
 
       await recordInvoicePayment(invoice)
 
       const { data: landed } = await db.from('payments')
-        .select('id, memo').eq('stripe_payment_intent_id', invoice.id).maybeSingle()
+        .select('id, memo').eq('stripe_payment_intent_id', invoice.id).limit(1)
+        .then((r) => ({ data: (r.data ?? [])[0] ?? null }))
       if (landed) {
         recovered.push({
           kind: 'membership',
