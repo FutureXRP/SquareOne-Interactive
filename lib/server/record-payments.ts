@@ -1,4 +1,5 @@
 import type Stripe from 'stripe'
+import { submitAwaitingRequest } from '@/lib/server/card-gate'
 import { serviceDb, sendAndLog, stripe } from '@/lib/server/billing'
 import { bookingPayment, paymentOnCanceledAlert } from '@/lib/server/emails'
 import { adminRecipients } from '@/lib/server/unpaid-holds'
@@ -45,6 +46,9 @@ async function howTheyPaid(ref: string | Stripe.PaymentIntent):
 // reopened by a payment.
 async function secureIfPaid(bookingId: string): Promise<void> {
   const db = serviceDb()
+  // Paying shows they meant it: a request still waiting on its card is
+  // sent to our team now (0064) rather than stranded.
+  await submitAwaitingRequest(bookingId).catch((e) => console.error('[record-payments] submit request', e))
   const { data } = await db.from('bookings').select('status, deposit_cents, payments(amount_cents, status)').eq('id', bookingId).maybeSingle()
   const r = data as { status: string; deposit_cents: number | null; payments: { amount_cents: number; status: string }[] } | null
   if (!r || r.status !== 'hold') return

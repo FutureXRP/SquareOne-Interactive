@@ -21,6 +21,14 @@ function text(v: unknown, max = 200): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : ''
 }
 
+// Ticked rooms or extras, matched EXACTLY against the names on offer —
+// never trimmed or shortened, or a long or oddly spaced name would look
+// unticked and file a change nobody asked for. Duplicates collapse.
+function picks(v: unknown, allowed: string[]): string[] {
+  if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((s): s is string => typeof s === 'string' && allowed.includes(s)))]
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const found = await bookingForToken(token)
@@ -35,8 +43,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const answers: AgreementAnswers = {
     address: text(body.address, 300),
     guestCount: Math.max(0, Math.min(5000, Math.round(Number(body.guestCount) || 0))),
-    spaces: (Array.isArray(body.spaces) ? body.spaces : []).map((s) => text(s, 80)).filter((s) => doc.rooms.includes(s) || doc.bookedRooms.includes(s)),
-    addons: (Array.isArray(body.addons) ? body.addons : []).map((s) => text(s, 80)).filter((s) => doc.addons.includes(s) || doc.bookedAddons.includes(s)),
+    spaces: picks(body.spaces, [...doc.rooms, ...doc.bookedRooms]),
+    addons: picks(body.addons, [...doc.addons, ...doc.bookedAddons]),
     initials: {
       guidelines: text(initialsIn.guidelines, 8),
       expectations: text(initialsIn.expectations, 8),
@@ -74,6 +82,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const addonsAdded = answers.addons.filter((x) => !doc.bookedAddons.includes(x))
   const addonsDropped = doc.bookedAddons.filter((x) => !answers.addons.includes(x))
   const asks = roomsDiffer || addonsAdded.length > 0 || addonsDropped.length > 0
+  // A change is only ever filed when the renter said, in so many words,
+  // that they're asking for one. Boxes that merely differ — a stray click,
+  // a page out of date — are sent back to be confirmed or reset, never
+  // passed to our team as a request.
+  if (asks && body.requestChange !== true) {
+    return NextResponse.json({
+      message: 'The rooms or add-ons you checked are different from your booking. To ask our team for that change, tick “Yes, I’m asking to change my rooms or add-ons”. Otherwise press “Reset to my booking”.',
+      needsChangeConfirm: true,
+    }, { status: 409 })
+  }
   const prev = doc.agreement?.answers
   const sameAsBefore = !!prev && same(prev.spaces ?? [], answers.spaces) && same(prev.addons ?? [], answers.addons)
   const row = {
@@ -111,16 +129,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   // waits for an admin, and the renter is told it's under review.
   if (asks && !sameAsBefore) {
     const db = serviceDb()
-    const [fac, add] = await Promise.all([db.from('facilities').select('id, name'), db.from('addons').select('id, name')])
-    const roomId = new Map(((fac.data ?? []) as { id: string; name: string }[]).map((r) => [r.name, r.id]))
-    const addonId = new Map(((add.data ?? []) as { id: string; name: string }[]).map((r) => [r.name, r.id]))
+    const [fac, add, cur, held] = await Promise.all([
+      db.from('facilities').select('id, name, active'),
+      db.from('addons').select('id, name, active'),
+      db.from('bookings').select('addon_ids').eq('id', doc.id).maybeSingle(),
+      db.rpc('booking_room_ids', { p_booking: doc.id }),
+    ])
+    type Named = { id: string; name: string; active?: boolean }
+    // Names → ids, preferring what's on offer now when two share a name.
+    const idFor = (rows: Named[]) => {
+      const m = new Map<string, string>()
+      for (const r of [...rows].sort((a, b) => Number(a.active !== false) - Number(b.active !== false))) m.set(r.name, r.id)
+      return m
+    }
+    const facRows = (fac.data ?? []) as Named[]
+    const addRows = (add.data ?? []) as Named[]
+    const roomId = idFor(facRows)
+    const addonId = idFor(addRows)
+    const roomName = new Map(facRows.map((r) => [r.id, r.name]))
+    const addonName = new Map(addRows.map((r) => [r.id, r.name]))
+    // Keep the exact ids already booked for every name still ticked, and
+    // only look up ids for what was added — so an add-on that was renamed,
+    // retired, or shares a name never shows up as a change.
+    const heldRooms = ((held.data as string[] | null) ?? [])
+    const heldAddons = ((cur.data as { addon_ids?: string[] | null } | null)?.addon_ids ?? [])
+    const keepRooms = heldRooms.filter((id) => answers.spaces.includes(roomName.get(id) ?? '\u0000'))
+    const newRooms = answers.spaces.filter((n) => !keepRooms.some((id) => roomName.get(id) === n)).map((n) => roomId.get(n)).filter((x): x is string => !!x)
+    const keepAddons = heldAddons.filter((id) => !addonName.has(id) || answers.addons.includes(addonName.get(id) as string))
+    const newAddons = addonsAdded.map((n) => addonId.get(n)).filter((x): x is string => !!x)
     const filed = await fileAgreementRequest(doc.id, {
-      ...(roomsDiffer && answers.spaces.length > 0
-        ? { roomIds: answers.spaces.map((n) => roomId.get(n)).filter((x): x is string => !!x) }
-        : {}),
-      ...(addonsAdded.length || addonsDropped.length
-        ? { addonIds: answers.addons.map((n) => addonId.get(n)).filter((x): x is string => !!x) }
-        : {}),
+      ...(roomsDiffer && answers.spaces.length > 0 ? { roomIds: [...keepRooms, ...newRooms] } : {}),
+      ...(addonsAdded.length || addonsDropped.length ? { addonIds: [...new Set([...keepAddons, ...newAddons])] } : {}),
     })
     if (filed) await sendChangeRequestsReceived(doc.id).catch((e) => console.error('[pay/agreement] request emails', e))
   }

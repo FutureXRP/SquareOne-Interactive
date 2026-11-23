@@ -25,9 +25,21 @@ interface RequestRow {
   old_addon_ids: string[] | null
   new_addon_ids: string[] | null
   decision_note: string | null
+  source?: 'reschedule' | 'agreement'
+  created_at?: string
 }
 
-const COLS = 'id, booking_id, status, old_during, new_during, old_room_ids, new_room_ids, old_addon_ids, new_addon_ids, decision_note'
+const COLS = 'id, booking_id, status, source, created_at, old_during, new_during, old_room_ids, new_room_ids, old_addon_ids, new_addon_ids, decision_note'
+
+function howAsked(r: RequestRow): string | undefined {
+  if (!r.source) return undefined
+  const when = r.created_at
+    ? ` — ${new Date(r.created_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' })}`
+    : ''
+  return r.source === 'agreement'
+    ? `Checked different rooms or add-ons on their rental agreement and confirmed they were asking for a change${when}`
+    : `Used “Request a new time” in My bookings${when}`
+}
 
 async function names(): Promise<{ rooms: Map<string, string>; addons: Map<string, string> }> {
   const db = serviceDb()
@@ -46,6 +58,7 @@ function factsOf(r: RequestRow, n: { rooms: Map<string, string>; addons: Map<str
     ...(r.new_room_ids ? { oldRooms: (r.old_room_ids ?? []).map(room), newRooms: r.new_room_ids.map(room) } : {}),
     ...(r.new_addon_ids ? { oldExtras: (r.old_addon_ids ?? []).map(addon), newExtras: r.new_addon_ids.map(addon) } : {}),
     ...(r.decision_note ? { decisionNote: r.decision_note } : {}),
+    ...(howAsked(r) ? { how: howAsked(r) } : {}),
   }
 }
 
@@ -85,7 +98,7 @@ export async function sendChangeRequestsReceived(bookingId?: string): Promise<nu
         { accountId: resolved.b.account_id, bookingId: r.booking_id })
     }
     const conflicts = await conflictsFor(r, n)
-    const alert = changeRequestAlert(resolved.facts, facts, { conflicts })
+    const alert = changeRequestAlert(resolved.facts, facts, { conflicts, requestId: r.id })
     for (const addr of await adminRecipients(resolved.to?.email)) {
       await sendAndLog('booking.change_request_alert', addr, alert, { bookingId: r.booking_id })
     }
@@ -151,6 +164,15 @@ export async function fileAgreementRequest(bookingId: string, ask: { roomIds?: s
   const { data: rooms } = await db.rpc('booking_room_ids', { p_booking: bookingId })
   const row = cur as { during: string; addon_ids?: string[] | null } | null
   if (!row) return false
+  // The same ask already waiting (a double submit, a retry, a second tab)
+  // is not a new request — no second row, no second email.
+  const sameSet = (a: string[] | null | undefined, b: string[] | undefined) =>
+    (a ?? null) === null ? b === undefined : !!b && a!.length === b.length && a!.every((x) => b.includes(x))
+  const { data: waiting } = await db.from('booking_change_requests').select('new_room_ids, new_addon_ids')
+    .eq('booking_id', bookingId).eq('status', 'pending').eq('source', 'agreement')
+    .order('created_at', { ascending: false }).limit(1)
+  const w = (waiting ?? [])[0] as { new_room_ids: string[] | null; new_addon_ids: string[] | null } | undefined
+  if (w && sameSet(w.new_room_ids, ask.roomIds) && sameSet(w.new_addon_ids, ask.addonIds)) return false
   await db.from('booking_change_requests').update({ status: 'withdrawn', decided_at: new Date().toISOString() })
     .eq('booking_id', bookingId).eq('status', 'pending').eq('source', 'agreement')
   const { error } = await db.from('booking_change_requests').insert({

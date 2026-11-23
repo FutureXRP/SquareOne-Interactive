@@ -85,7 +85,9 @@ export function isoDate(offset = 0): string {
 export function localRange(date: string, startH: number, hours: number): { fromIso: string; toIso: string } {
   // Tulsa time, whatever time zone this browser is in.
   const from = tulsaInstant(date, startH)
-  const to = new Date(from.getTime() + hours * 3600_000)
+  // Whole minutes: hours like 2h10m aren't exact in binary, and a
+  // millisecond off would read as a real move.
+  const to = new Date(from.getTime() + Math.round(hours * 60) * 60_000)
   return { fromIso: from.toISOString(), toIso: to.toISOString() }
 }
 
@@ -508,6 +510,12 @@ export async function reinstateBooking(b: StaffBooking): Promise<boolean> {
       hold_expires_at: null, hold_warned_at: null,
     })
     .eq('id', b.id).eq('status', 'canceled')
+  if (!error) {
+    // Staff bringing a booking back is the decision — it no longer waits
+    // on a card (0064), or the hourly job would release it again.
+    await supabase().from('bookings').update({ awaiting_card_since: null }).eq('id', b.id)
+      .not('awaiting_card_since', 'is', null).then(() => {}, () => {})
+  }
   if (error) { console.error('[bookings]', error.message); return false }
   emit(BOOKINGS_EVENT)
   notify(secured ? 'booking.confirmed' : 'booking.hold', b.id)
@@ -601,7 +609,11 @@ export async function undoPayoutPaid(booking: StaffBooking, staffName: string, b
   return true
 }
 
-export async function rescheduleBooking(id: string, date: string, startH: number, hours: number): Promise<{ ok: boolean; conflict: boolean }> {
+export async function rescheduleBooking(id: string, date: string, startH: number, hours: number, current?: { date: string; startH: number; hours: number }): Promise<{ ok: boolean; conflict: boolean }> {
+  // Nothing to do when it's the time it already has — no write, no
+  // "rescheduled" email, no change alert.
+  if (current && current.date === date && current.startH === startH && current.hours === hours) return { ok: true, conflict: false }
+  if (!date) return { ok: false, conflict: false }
   const { fromIso, toIso } = localRange(date, startH, hours)
   const { error } = await supabase().from('bookings').update({ during: `[${fromIso},${toIso})` }).eq('id', id)
   if (error) {
@@ -759,7 +771,10 @@ export async function voidPayment(p: PaymentRow, staffId: string | null): Promis
     if (row && row.status === 'confirmed' && !row.created_by) {
       const paidNow = row.payments.filter((x) => x.status === 'paid').reduce((n, x) => n + x.amount_cents, 0)
       const floor = row.deposit_cents && row.deposit_cents > 0 ? row.deposit_cents : 1
-      if (paidNow < floor) {
+      // Only when THIS payment was what secured it. A booking staff chose
+      // to "Keep without deposit" was never secured by money, so voiding a
+      // small payment on it must not undo that decision.
+      if (paidNow < floor && paidNow + p.amountCents >= floor) {
         await sb.from('bookings').update({ status: 'hold', hold_warned_at: null, hold_expires_at: null })
           .eq('id', p.bookingId).eq('status', 'confirmed')
       }
