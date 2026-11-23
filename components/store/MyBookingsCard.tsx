@@ -102,6 +102,11 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
 
   const move = async () => {
     if (busy) return
+    // Nothing to ask for: the same date, start, and length as now.
+    if (date === b.date && startH === b.startH && hours === b.hours) {
+      setMsg('That’s already your booking’s time — pick a different date, start, or length to request a change.')
+      return
+    }
     setBusy(true); setMsg(null)
     const res = await rescheduleMyBooking(b.id, date, startH, hours)
     setBusy(false)
@@ -249,7 +254,7 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
                 value={startH} onChange={(e) => setStartH(Number(e.target.value))}
                 style={{ padding: '8px 10px', border: `1px solid ${LINE}`, borderRadius: 8, fontSize: 13, color: INK, background: '#fff' }}
               >
-                {Array.from({ length: 30 }, (_, i) => 8 + i * 0.5).filter((h) => h <= 22).map((h) => (
+                {[...new Set([...Array.from({ length: 30 }, (_, i) => 8 + i * 0.5).filter((h) => h <= 22), b.startH])].sort((x, y) => x - y).map((h) => (
                   <option key={h} value={h}>{formatHour(h)}</option>
                 ))}
               </select>
@@ -260,7 +265,9 @@ function Detail({ b, room, onDone }: { b: MemberBooking; room: RoomConfig | unde
                 value={hours} onChange={(e) => setHours(Number(e.target.value))}
                 style={{ padding: '8px 10px', border: `1px solid ${LINE}`, borderRadius: 8, fontSize: 13, color: INK, background: '#fff' }}
               >
-                {[1, 2, 3, 4, 5, 6].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
+                {/* The booking's own length is always an option, so the picker
+                    never shows a length different from what it will send. */}
+                {[...new Set([1, 2, 3, 4, 5, 6, b.hours])].sort((x, y) => x - y).map((h) => <option key={h} value={h}>{h} hour{h !== 1 ? 's' : ''}</option>)}
               </select>
             </label>
             <button className="sq-btn sq-btn-primary" style={{ padding: '8px 16px' }} disabled={busy} onClick={move}>

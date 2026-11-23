@@ -736,6 +736,8 @@ export function customerChangedAlert(b: BookingFacts, changes: CustomerChange[],
 // A change a customer asked for (0057) — what it is now and what they
 // asked for, ready to show either side.
 export interface ChangeRequestFacts {
+  // How and when it was asked — so staff can check it with the customer.
+  how?: string
   oldWhen?: string
   newWhen?: string
   oldRooms?: string[]
@@ -785,7 +787,7 @@ export function changeRequestAlert(b: BookingFacts, c: ChangeRequestFacts, o: { 
       'A customer asked to change their booking',
       `<p style="margin:0 0 6px;">${b.name} asked for a change. <strong style="color:${INK};">Nothing has changed yet</strong> —
          it waits for an owner, admin, or manager to approve or decline it on the Bookings page.</p>
-       ${detailRows(changeRows(c))}
+       ${detailRows([...(c.how ? [['How they asked', c.how] as [string, string]] : []), ...changeRows(c)])}
        ${o.conflicts && o.conflicts.length > 0
          ? `<p style="margin:0 0 6px;padding:10px 14px;background:#fdecea;border-radius:10px;color:${INK};">
               <strong>Not available as asked:</strong> ${o.conflicts.join(', ')} ${o.conflicts.length === 1 ? 'is' : 'are'} already booked then.

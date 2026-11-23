@@ -25,9 +25,21 @@ interface RequestRow {
   old_addon_ids: string[] | null
   new_addon_ids: string[] | null
   decision_note: string | null
+  source?: 'reschedule' | 'agreement'
+  created_at?: string
 }
 
-const COLS = 'id, booking_id, status, old_during, new_during, old_room_ids, new_room_ids, old_addon_ids, new_addon_ids, decision_note'
+const COLS = 'id, booking_id, status, source, created_at, old_during, new_during, old_room_ids, new_room_ids, old_addon_ids, new_addon_ids, decision_note'
+
+function howAsked(r: RequestRow): string | undefined {
+  if (!r.source) return undefined
+  const when = r.created_at
+    ? ` — ${new Date(r.created_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' })}`
+    : ''
+  return r.source === 'agreement'
+    ? `Checked different rooms or add-ons on their rental agreement and confirmed they were asking for a change${when}`
+    : `Used “Request a new time” in My bookings${when}`
+}
 
 async function names(): Promise<{ rooms: Map<string, string>; addons: Map<string, string> }> {
   const db = serviceDb()
@@ -46,6 +58,7 @@ function factsOf(r: RequestRow, n: { rooms: Map<string, string>; addons: Map<str
     ...(r.new_room_ids ? { oldRooms: (r.old_room_ids ?? []).map(room), newRooms: r.new_room_ids.map(room) } : {}),
     ...(r.new_addon_ids ? { oldExtras: (r.old_addon_ids ?? []).map(addon), newExtras: r.new_addon_ids.map(addon) } : {}),
     ...(r.decision_note ? { decisionNote: r.decision_note } : {}),
+    ...(howAsked(r) ? { how: howAsked(r) } : {}),
   }
 }
 

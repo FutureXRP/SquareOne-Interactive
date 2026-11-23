@@ -21,6 +21,14 @@ function text(v: unknown, max = 200): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : ''
 }
 
+// Ticked rooms or extras, matched EXACTLY against the names on offer —
+// never trimmed or shortened, or a long or oddly spaced name would look
+// unticked and file a change nobody asked for. Duplicates collapse.
+function picks(v: unknown, allowed: string[]): string[] {
+  if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((s): s is string => typeof s === 'string' && allowed.includes(s)))]
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const found = await bookingForToken(token)
@@ -35,8 +43,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const answers: AgreementAnswers = {
     address: text(body.address, 300),
     guestCount: Math.max(0, Math.min(5000, Math.round(Number(body.guestCount) || 0))),
-    spaces: (Array.isArray(body.spaces) ? body.spaces : []).map((s) => text(s, 80)).filter((s) => doc.rooms.includes(s) || doc.bookedRooms.includes(s)),
-    addons: (Array.isArray(body.addons) ? body.addons : []).map((s) => text(s, 80)).filter((s) => doc.addons.includes(s) || doc.bookedAddons.includes(s)),
+    spaces: picks(body.spaces, [...doc.rooms, ...doc.bookedRooms]),
+    addons: picks(body.addons, [...doc.addons, ...doc.bookedAddons]),
     initials: {
       guidelines: text(initialsIn.guidelines, 8),
       expectations: text(initialsIn.expectations, 8),
@@ -74,6 +82,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const addonsAdded = answers.addons.filter((x) => !doc.bookedAddons.includes(x))
   const addonsDropped = doc.bookedAddons.filter((x) => !answers.addons.includes(x))
   const asks = roomsDiffer || addonsAdded.length > 0 || addonsDropped.length > 0
+  // A change is only ever filed when the renter said, in so many words,
+  // that they're asking for one. Boxes that merely differ — a stray click,
+  // a page out of date — are sent back to be confirmed or reset, never
+  // passed to our team as a request.
+  if (asks && body.requestChange !== true) {
+    return NextResponse.json({
+      message: 'The rooms or add-ons you checked are different from your booking. To ask our team for that change, tick “Yes, I’m asking to change my rooms or add-ons”. Otherwise press “Reset to my booking”.',
+      needsChangeConfirm: true,
+    }, { status: 409 })
+  }
   const prev = doc.agreement?.answers
   const sameAsBefore = !!prev && same(prev.spaces ?? [], answers.spaces) && same(prev.addons ?? [], answers.addons)
   const row = {

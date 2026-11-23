@@ -51,6 +51,9 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
   const [photo, setPhoto] = useState<PhotoPermission | ''>('')
   const [signature, setSignature] = useState('')
   const [agree, setAgree] = useState(false)
+  // Asking for different rooms or extras is a deliberate choice, never a
+  // side effect of a checkbox — the renter confirms it separately.
+  const [requestChange, setRequestChange] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,7 +73,7 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
       const res = await fetch(`/api/pay/${token}/agreement`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ address, phone, guestCount: Number(guestCount), spaces, addons: picked, initials, photoPermission: photo, signature, agree }),
+        body: JSON.stringify({ address, phone, guestCount: Number(guestCount), spaces, addons: picked, initials, photoPermission: photo, signature, agree, requestChange: asksForChange && requestChange }),
       })
       const json = (await res.json().catch(() => ({}))) as { message?: string; changeRequested?: boolean }
       if (res.ok) {
@@ -83,6 +86,22 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
     }
     setBusy(false)
   }
+
+  // Shown only when the boxes differ from the booking: say so plainly,
+  // offer the way back, and make asking for the change its own decision.
+  const changeBox = (
+    <div style={{ fontSize: 11.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 8, padding: '8px 10px', margin: '4px 0 8px', lineHeight: 1.45 }}>
+      <p style={{ margin: '0 0 6px' }}>This is different from what you booked. Nothing changes unless you ask — our team reviews every change.</p>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 7, cursor: 'pointer', margin: '0 0 6px', fontWeight: 700 }}>
+        <input type="checkbox" checked={requestChange} onChange={(e) => setRequestChange(e.target.checked)} style={{ width: 15, height: 15, marginTop: 1 }} />
+        Yes, I&rsquo;m asking to change my rooms or add-ons
+      </label>
+      <button type="button" className="sq-btn sq-btn-ghost" style={{ padding: '4px 10px', fontSize: 11.5 }}
+        onClick={() => { setSpaces(booked); setPicked(bookedAddons); setRequestChange(false) }}>
+        Reset to my booking
+      </button>
+    </div>
+  )
 
   const initialBox = (id: 'guidelines' | 'expectations' | 'fees') => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 4px', padding: '8px 12px', background: '#f4f7fb', borderRadius: 10 }}>
@@ -141,14 +160,10 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
               {r}
             </label>
           ))}
-          {asksForChange && (
-            <p style={{ fontSize: 11.5, color: '#5b4708', background: '#fdf3dc', borderRadius: 8, padding: '6px 9px', margin: '4px 0 6px', lineHeight: 1.45 }}>
-              This differs from your booking — signing sends it as a change request for our team to review.
-            </p>
-          )}
+          {asksForChange && changeBox}
           <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
-            The rooms you booked are checked. Changing these sends a change request — your booking stays as it
-            is until our team approves it, and you&rsquo;ll get an email either way.
+            The rooms you booked are already checked — leave them as they are unless you want to ask for different
+            rooms. Any change is only a request: your booking stays as it is until our team approves it.
           </p>
         </div>
         {addonList.length > 0 && (
@@ -161,7 +176,7 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
               </label>
             ))}
             <p style={{ fontSize: 11, color: FAINT, margin: '2px 0 0', lineHeight: 1.45 }}>
-              Add-ons you booked are checked. Changing these sends a change request — our team confirms availability and price before anything changes.
+              Add-ons you booked are already checked — leave them unless you want to ask for different ones. Any change is only a request; our team confirms availability and price first.
             </p>
           </div>
         )}
