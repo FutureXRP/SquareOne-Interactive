@@ -211,6 +211,12 @@ export async function ensureBookingCustomer(doc: BookingDoc): Promise<string> {
 
 async function storeCard(bookingId: string, customerId: string, pm: Stripe.PaymentMethod): Promise<void> {
   if (!pm.card) return
+  const { data: cur } = await serviceDb().from('bookings').select('status, card_pm_id').eq('id', bookingId).maybeSingle()
+  const b = cur as { status: string; card_pm_id?: string | null } | null
+  // Never onto a canceled or finished booking (a released request whose
+  // card page was finished late), and never twice for the same card —
+  // reloading the return page must not overwrite a newer card.
+  if (!b || (b.status !== 'hold' && b.status !== 'confirmed') || b.card_pm_id === pm.id) return
   await serviceDb().from('bookings').update({
     card_customer_id: customerId,
     card_pm_id: pm.id,

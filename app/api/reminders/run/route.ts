@@ -116,11 +116,13 @@ export async function GET(req: Request) {
     // Unpaid holds: the 24-hour notice, then a staff decision (0063). Its own
     // failure never takes the reminders down with it.
     const holds = await runUnpaidHolds().catch((e) => { console.error('[reminders] holds', e); return null })
-    // Customer changes staff haven't been told about yet (0056).
-    const changeAlerts = await alertBookingChanges().catch((e) => { console.error('[reminders] changes', e); return null })
-    // Change-request emails that didn't go out at the time (0057).
+    // Change-request emails that didn't go out at the time (0057). The
+    // answers go first: they claim the approval's own moves, so those
+    // aren't announced a second time as plain staff changes below.
     const requestEmails = await sendChangeRequestsReceived().catch(() => null)
     const decisionEmails = await sendChangeDecisions().catch(() => null)
+    // Booking changes the admins haven't been told about yet (0056).
+    const changeAlerts = await alertBookingChanges().catch((e) => { console.error('[reminders] changes', e); return null })
     return NextResponse.json({ ok: true, ...reminders, standing, closed, unfinished, missedHolds, bookingReminders, holds, changeAlerts, requestEmails, decisionEmails })
   } catch (e) {
     console.error('[reminders]', e)

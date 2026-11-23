@@ -29,6 +29,11 @@ export async function sendHoldEmails(bookingId: string, parts: { customer?: bool
   let staff = false
   if (!wantStaff) return { customer, staff }
   if (!any.b.approved_at && 'approved_at' in any.b) {
+    // Once per booking: a reinstated request, or two hourly runs at once,
+    // never announces it as a brand-new booking again.
+    const { data: already } = await serviceDb().from('email_log').select('id')
+      .eq('booking_id', bookingId).eq('kind', 'booking.approval_alert').limit(1)
+    if ((already ?? []).length > 0) return { customer, staff: true }
     for (const to of await adminRecipients(any.to?.email)) {
       await sendAndLog('booking.approval_alert', to, bookingApprovalAlert(any.facts), { bookingId })
     }

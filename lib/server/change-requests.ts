@@ -164,6 +164,15 @@ export async function fileAgreementRequest(bookingId: string, ask: { roomIds?: s
   const { data: rooms } = await db.rpc('booking_room_ids', { p_booking: bookingId })
   const row = cur as { during: string; addon_ids?: string[] | null } | null
   if (!row) return false
+  // The same ask already waiting (a double submit, a retry, a second tab)
+  // is not a new request — no second row, no second email.
+  const sameSet = (a: string[] | null | undefined, b: string[] | undefined) =>
+    (a ?? null) === null ? b === undefined : !!b && a!.length === b.length && a!.every((x) => b.includes(x))
+  const { data: waiting } = await db.from('booking_change_requests').select('new_room_ids, new_addon_ids')
+    .eq('booking_id', bookingId).eq('status', 'pending').eq('source', 'agreement')
+    .order('created_at', { ascending: false }).limit(1)
+  const w = (waiting ?? [])[0] as { new_room_ids: string[] | null; new_addon_ids: string[] | null } | undefined
+  if (w && sameSet(w.new_room_ids, ask.roomIds) && sameSet(w.new_addon_ids, ask.addonIds)) return false
   await db.from('booking_change_requests').update({ status: 'withdrawn', decided_at: new Date().toISOString() })
     .eq('booking_id', bookingId).eq('status', 'pending').eq('source', 'agreement')
   const { error } = await db.from('booking_change_requests').insert({

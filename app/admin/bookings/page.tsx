@@ -374,7 +374,9 @@ export default function AdminBookingsPage() {
               {b.status === 'canceled' ? (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: SUB, background: '#eef2f8', padding: '2px 10px', borderRadius: 999 }}>Canceled</span>
-                  {canBook && (
+                  {/* A canceled standing-reservation date stays on record —
+                      deleting it would let the weekly job book it again. */}
+                  {canBook && !b.standingId && (
                     <button className="sq-btn sq-btn-danger" style={{ padding: '4px 10px', fontSize: 10.5 }}
                       onClick={async () => { if (window.confirm(`Delete ${b.code} permanently?`)) await deleteBooking(b.id) }}>Delete</button>
                   )}
@@ -615,26 +617,43 @@ export default function AdminBookingsPage() {
                   <div>
                     <label className="sq-label">Date</label>
                     <input type="date" className="sq-input" defaultValue={b.date} key={`bd-${b.id}`}
-                      onBlur={async (e) => { const r = await rescheduleBooking(b.id, e.target.value, b.startH, b.hours); if (r.conflict) window.alert('That time is taken in that room.') }} />
+                      onBlur={async (e) => {
+                        // Clicking in and out changes nothing — and must send nothing.
+                        if (!e.target.value || e.target.value === b.date) return
+                        const r = await rescheduleBooking(b.id, e.target.value, b.startH, b.hours, b)
+                        if (r.conflict) window.alert('That time is taken in that room.')
+                      }} />
                   </div>
                   <div>
                     <label className="sq-label">Start</label>
-                    <select className="sq-select" value={Math.round(b.startH)}
-                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, Number(e.target.value), b.hours); if (r.conflict) window.alert('That time is taken in that room.') }}>
-                      {START_TIMES.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                    {/* The booking's real start is always an option, so the
+                        picker never shows (or saves) a rounded time. */}
+                    <select className="sq-select" value={b.startH}
+                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, Number(e.target.value), b.hours, b); if (r.conflict) window.alert('That time is taken in that room.') }}>
+                      {[...new Set([...START_TIMES, b.startH])].sort((x, y) => x - y).map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="sq-label">Length</label>
-                    <select className="sq-select" value={Math.round(b.hours)}
-                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, b.startH, Number(e.target.value)); if (r.conflict) window.alert('That length overlaps another booking.') }}>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((h) => <option key={h} value={h}>{h} hr</option>)}
+                    <select className="sq-select" value={b.hours}
+                      onChange={async (e) => { const r = await rescheduleBooking(b.id, b.date, b.startH, Number(e.target.value), b); if (r.conflict) window.alert('That length overlaps another booking.') }}>
+                      {[...new Set([1, 2, 3, 4, 5, 6, 7, 8, b.hours])].sort((x, y) => x - y).map((h) => <option key={h} value={h}>{Number.isInteger(h) ? `${h} hr` : `${Math.floor(h)} hr ${Math.round((h % 1) * 60)} min`}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="sq-label">Price ($)</label>
                     <input className="sq-input" inputMode="decimal" defaultValue={(b.priceCents / 100).toFixed(2)} key={`bp-${b.id}`}
-                      onBlur={(e) => updateBookingFields(b.id, { price_cents: dollarsToCents(e.target.value) })} />
+                      onBlur={(e) => {
+                        // Only a real price change saves (and emails anyone).
+                        // A blank or unreadable entry is a slip, not "$0" — put the price back.
+                        if (!Number.isFinite(Number.parseFloat(e.target.value.replace(/[$,\s]/g, '')))) {
+                          e.target.value = (b.priceCents / 100).toFixed(2)
+                          return
+                        }
+                        const cents = dollarsToCents(e.target.value)
+                        if (cents === b.priceCents) return
+                        updateBookingFields(b.id, { price_cents: cents })
+                      }} />
                   </div>
                   <div>
                     <label className="sq-label">Adjust once ($)</label>

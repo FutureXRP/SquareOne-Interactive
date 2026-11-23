@@ -28,6 +28,8 @@ async function claimSubmission(bookingId: string): Promise<boolean> {
   const { data, error } = await serviceDb().from('bookings')
     .update({ awaiting_card_since: null })
     .eq('id', bookingId).not('awaiting_card_since', 'is', null)
+    // A released (canceled) request stays released — it is never "sent".
+    .in('status', ['hold', 'confirmed'])
     .select('id')
   return !error && (data ?? []).length > 0
 }
@@ -43,7 +45,7 @@ export async function cardGate(bookingId: string): Promise<'send' | 'wait'> {
   return 'send'
 }
 
-// The card is on file: send the request to our team (and the customer's
+// The card is on file (or they paid): send the request to our team (and the customer's
 // "request received") — once, however many callers notice the card.
 export async function submitAwaitingRequest(bookingId: string): Promise<boolean> {
   if (!(await claimSubmission(bookingId))) return false

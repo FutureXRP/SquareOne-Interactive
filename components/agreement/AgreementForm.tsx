@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatCents } from '@/lib/format'
 import { AgreementTerms } from '@/components/agreement/AgreementDocument'
@@ -57,6 +57,16 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // After a refresh brings in the booking as it is now, start the boxes
+  // from that (what they typed elsewhere on the form is kept).
+  const bookedKey = `${booked.join('|')}#${bookedAddons.join('|')}`
+  useEffect(() => {
+    setSpaces(booked)
+    setPicked(bookedAddons)
+    setRequestChange(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookedKey])
+
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
@@ -75,7 +85,15 @@ export function AgreementForm({ token, snapshot, rooms, addons, bookedRoom, book
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ address, phone, guestCount: Number(guestCount), spaces, addons: picked, initials, photoPermission: photo, signature, agree, requestChange: asksForChange && requestChange }),
       })
-      const json = (await res.json().catch(() => ({}))) as { message?: string; changeRequested?: boolean }
+      const json = (await res.json().catch(() => ({}))) as { message?: string; changeRequested?: boolean; needsChangeConfirm?: boolean }
+      // The booking changed while this page was open, so the boxes here
+      // no longer match it — reload to show it as it is now.
+      if (res.status === 409 && json.needsChangeConfirm && !asksForChange) {
+        setError('Your booking was just updated by our team — this page has been refreshed. Please check the details and sign again.')
+        setBusy(false)
+        router.refresh()
+        return
+      }
       if (res.ok) {
         router.push(`/pay/${token}?signed=1${json.changeRequested ? '&asked=1' : ''}`)
         return
