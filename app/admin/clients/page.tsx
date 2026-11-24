@@ -9,6 +9,9 @@ import { useDebouncedSave } from '@/lib/use-debounced-save'
 import { ResetPasswordButton } from '@/components/admin/ResetPasswordButton'
 import { AccountWaivers } from '@/components/admin/AccountWaivers'
 import { getMyStaff, isAdminRole, type StaffRole } from '@/lib/staff-store'
+import { getStaffBookings, BOOKINGS_EVENT, type StaffBooking } from '@/lib/staff-bookings-store'
+import { getRooms } from '@/lib/facilities-store'
+import { ClientBookingsList, bookingsForAccount, bookingsMatching } from '@/components/admin/ClientBookings'
 
 function dollarsToCents(v: string): number {
   const n = Number.parseFloat(v.replace(/[$,\s]/g, ''))
@@ -28,6 +31,18 @@ export default function ClientsPage() {
   const [contactDrafts, setContactDrafts] = useState<Record<string, { email?: string; phone?: string }>>({})
 
   useEffect(() => { getMyStaff().then((me) => setMyRole(me?.role)).catch(() => {}) }, [])
+
+  // Every booking, for each client's history (and the search below).
+  const { data: allBookings } = useLive<StaffBooking[]>(getStaffBookings, [BOOKINGS_EVENT], [])
+  const [rooms, setRooms] = useState<Map<string, string>>(new Map())
+  useEffect(() => { getRooms().then((r) => setRooms(new Map(r.map((x) => [x.id, x.name])))).catch(() => {}) }, [])
+  // Which account's booking history is open.
+  const [historyId, setHistoryId] = useState<string | null>(null)
+  const historyOf = (c: ClientAccount) => bookingsForAccount(allBookings, {
+    accountId: c.id,
+    emails: c.contacts.map((p) => p.email ?? ''),
+    phones: c.contacts.map((p) => p.phone ?? ''),
+  })
 
   const debouncedPatch = useDebouncedSave(async (p: { id: string; name?: string; flag?: string | null }) => {
     await patchClientAccount(p.id, { name: p.name, flag: p.flag })
@@ -95,9 +110,27 @@ export default function ClientsPage() {
       </PageHero>
 
       <div style={{ marginBottom: 12 }}>
-        <input className="sq-input" style={{ maxWidth: 380 }} placeholder="Search by name, email, or phone…"
+        <input className="sq-input" style={{ maxWidth: 380 }} placeholder="Search by name, email, phone, or BK- code…"
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
+
+      {/* Every booking that matches the search — guests booked at the desk
+          with no account included — past, present, and future. */}
+      {needle.length >= 2 && (() => {
+        const found = bookingsMatching(allBookings, q, shown.map((c) => c.id))
+        return (
+          <div className="sq-card" style={{ ...card, padding: '14px 18px', marginBottom: 14 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: INK, margin: '0 0 2px' }}>
+              Bookings matching &ldquo;{q.trim()}&rdquo; <span style={{ color: FAINT, fontWeight: 600 }}>· {found.length}</span>
+            </p>
+            <p style={{ fontSize: 11.5, color: FAINT, margin: '0 0 6px' }}>
+              By the name on the booking, email, phone, or confirmation code — and every booking on the accounts listed below.
+            </p>
+            <ClientBookingsList bookings={found} all={allBookings} rooms={rooms} showName
+              empty="No bookings match — check the spelling, or try their email or phone." />
+          </div>
+        )
+      })()}
 
       <div className="sq-card" style={{ ...card, overflow: 'hidden' }}>
         {clients.length === 0 && (
@@ -142,8 +175,24 @@ export default function ClientsPage() {
                 <span style={{ fontSize: 13.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: bal > 0 ? RED : bal < 0 ? GREEN : FAINT, minWidth: 74, textAlign: 'right' }}>
                   {bal === 0 ? '—' : bal < 0 ? `+${formatCents(-bal)}` : formatCents(bal)}
                 </span>
+                {(() => {
+                  const n = historyOf(c).length
+                  const open = historyId === c.id
+                  return (
+                    <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => setHistoryId(open ? null : c.id)}>
+                      {open ? 'Hide bookings' : `Bookings${n > 0 ? ` (${n})` : ''}`}
+                    </button>
+                  )
+                })()}
                 <button className="sq-btn sq-btn-ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={() => setEditingId(isEditing ? null : c.id)}>{isEditing ? 'Close' : 'Edit'}</button>
               </div>
+
+              {historyId === c.id && (
+                <div style={{ padding: '2px 20px 16px 64px' }}>
+                  <ClientBookingsList bookings={historyOf(c)} all={allBookings} rooms={rooms}
+                    empty="No bookings yet — on this account, or under its email or phone." />
+                </div>
+              )}
 
               {isEditing && (
                 <div style={{ padding: '4px 20px 18px 64px' }}>
